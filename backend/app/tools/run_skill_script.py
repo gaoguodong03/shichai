@@ -152,7 +152,7 @@ def _list_available_scripts(script_root: Path) -> list[str]:
 
 
 def _load_manifest(script_root: Path) -> dict[str, Any]:
-    """读取 scripts/manifest.json（可选）。"""
+    """读取标准 scripts/manifest.json；非标准旧格式视为无 manifest。"""
     manifest_path = script_root / "manifest.json"
     if not manifest_path.exists():
         return {}
@@ -162,103 +162,128 @@ def _load_manifest(script_root: Path) -> dict[str, Any]:
         return {}
     if not isinstance(raw, dict):
         return {}
-    scripts = raw.get("scripts")
-    if isinstance(scripts, dict):
-        return scripts
-    return raw if all(isinstance(v, dict) for v in raw.values()) else {}
+    raw_entry = str(raw.get("entry") or "").strip().replace("\\", "/")
+    normalized_raw_entry = raw_entry
+    while normalized_raw_entry.startswith("./"):
+        normalized_raw_entry = normalized_raw_entry[2:].lstrip("/")
+    if normalized_raw_entry.lower().startswith("scripts/"):
+        return {}
+    entry = _normalize_skill_script_path(raw_entry)
+    if not entry or ".." in entry or entry.startswith("/"):
+        return {}
+    if Path(entry).suffix.lower() not in _ALLOWED_SCRIPT_SUFFIX:
+        return {}
+    description = str(raw.get("description") or "").strip()
+    args = raw.get("args")
+    if not description or not isinstance(args, list):
+        return {}
+    normalized_args: list[dict[str, Any]] = []
+    for item in args:
+        if not isinstance(item, dict):
+            return {}
+        name = str(item.get("name") or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            return {}
+        normalized_args.append(
+            {
+                "name": name,
+                "description": str(item.get("description") or "").strip(),
+                "required": bool(item.get("required")),
+                "type": str(item.get("type") or "string").strip() or "string",
+                "default": item.get("default"),
+            }
+        )
+    return {"entry": entry, "description": description, "args": normalized_args}
 
 
-def _script_meta_for(manifest: dict[str, Any], script_path: str) -> dict[str, Any]:
-    """从 manifest 中按脚本相对路径精确读取配置。"""
-    meta = manifest.get(script_path)
-    return meta if isinstance(meta, dict) else {}
+def _json_schema_type(raw: str) -> str:
+    allowed = {"string", "number", "integer", "boolean", "array", "object"}
+    return raw if raw in allowed else "string"
 
 
-def _parse_cli_args(cli_args: Any) -> tuple[list[str] | None, str | None]:
-    """
-    解析追加到脚本后的 argv 数组，由 subprocess 列表传入，不经 shell。
-    None 表示无额外参数。
-    """
-    if cli_args is None:
-        return [], None
-    if not isinstance(cli_args, list):
-        return None, "cli_args 必须是数组（每项为字符串，对应 argv 片段）"
-    if len(cli_args) > _CLI_ARGV_MAX_ITEMS:
-        return None, f"cli_args 数组长度不能超过 {_CLI_ARGV_MAX_ITEMS}"
-    out: list[str] = []
-    for i, item in enumerate(cli_args):
-        if not isinstance(item, str):
-            return None, f"cli_args[{i}] 必须是字符串"
-        if "\x00" in item:
-            return None, f"cli_args[{i}] 含非法字符"
-        if len(item) > _CLI_ARGV_MAX_STRLEN:
-            return None, f"cli_args[{i}] 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
-        out.append(item)
-    return out, None
-
-
-def _normalize_cli_field_name(name: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(name or "").strip().lower()).strip("_")
-
-
-def _cli_required_missing(required: list[Any], cli_argv: list[str]) -> list[Any]:
-    normalized_required = [_normalize_cli_field_name(item) for item in required]
-    named_values: dict[str, str] = {}
-    positionals: list[str] = []
-    i = 0
-    while i < len(cli_argv):
-        item = str(cli_argv[i] or "")
-        if item.startswith("--") and len(item) > 2:
-            flag, sep, inline_value = item[2:].partition("=")
-            key = _normalize_cli_field_name(flag)
-            if sep:
-                named_values[key] = inline_value
-            elif i + 1 < len(cli_argv) and not str(cli_argv[i + 1]).startswith("-"):
-                named_values[key] = str(cli_argv[i + 1])
-                i += 1
-            else:
-                named_values[key] = "true"
-        elif not item.startswith("-"):
-            positionals.append(item)
-        i += 1
-
-    missing: list[Any] = []
-    positional_index = 0
-    for original, normalized in zip(required, normalized_required):
-        named_value = named_values.get(normalized)
-        if named_value is not None and str(named_value).strip():
+def _input_schema_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """根据 manifest args 生成 LLM 可见 input_schema。"""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for arg in manifest.get("args") or []:
+        if not isinstance(arg, dict):
             continue
-        if positional_index < len(positionals) and str(positionals[positional_index]).strip():
-            positional_index += 1
+        name = str(arg.get("name") or "").strip()
+        if not name:
             continue
-        missing.append(original)
-    return missing
+        schema: dict[str, Any] = {
+            "type": _json_schema_type(str(arg.get("type") or "string")),
+            "description": str(arg.get("description") or "").strip(),
+        }
+        if arg.get("default") is not None:
+            schema["default"] = arg.get("default")
+        properties[name] = schema
+        if arg.get("required"):
+            required.append(name)
+    out: dict[str, Any] = {"type": "object", "properties": properties}
+    if required:
+        out["required"] = required
+    return out
 
 
-def _validate_against_manifest(
-    script_path: str,
-    script_meta: dict[str, Any],
-    parsed_input: Any,
-    cli_argv: list[str] | None = None,
-) -> str | None:
-    """按 manifest.input_schema 做最小校验（仅 required）。"""
-    schema = script_meta.get("input_schema")
-    if not isinstance(schema, dict):
+def _cli_flag_for_arg(name: str) -> str:
+    return "--" + str(name or "").strip().replace("_", "-")
+
+
+def _validate_cli_value(name: str, value: Any) -> str | None:
+    if value is None:
         return None
-    required = schema.get("required")
-    if not isinstance(required, list) or not required:
-        return None
-    if cli_argv is not None:
-        missing = _cli_required_missing(required, cli_argv)
-        if missing:
-            return f"脚本 {script_path} 缺少必填字段: {missing}"
-        return None
-    if not isinstance(parsed_input, dict):
-        return f"脚本 {script_path} 要求 cli_args 包含字段: {required}"
-    missing = [k for k in required if k not in parsed_input]
-    if missing:
-        return f"脚本 {script_path} 缺少必填字段: {missing}"
+    if isinstance(value, (dict, list)):
+        values = value if isinstance(value, list) else [json.dumps(value, ensure_ascii=False)]
+    else:
+        values = [value]
+    for item in values:
+        text = str(item)
+        if "\x00" in text:
+            return f"{name} 含非法字符"
+        if len(text) > _CLI_ARGV_MAX_STRLEN:
+            return f"{name} 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
     return None
+
+
+def _manifest_args_to_cli_argv(manifest: dict[str, Any], values: dict[str, Any]) -> tuple[list[str] | None, str | None]:
+    """把模型传入的结构化 manifest 参数转换为 CLI argv。"""
+    argv: list[str] = []
+    allowed_names = {str(item.get("name") or "") for item in (manifest.get("args") or []) if isinstance(item, dict)}
+    unknown = sorted(k for k in values if k not in allowed_names)
+    if unknown:
+        return None, f"脚本参数不在 manifest 中: {unknown}"
+    for arg in manifest.get("args") or []:
+        if not isinstance(arg, dict):
+            continue
+        name = str(arg.get("name") or "").strip()
+        if not name:
+            continue
+        required = bool(arg.get("required"))
+        raw_value = values.get(name, arg.get("default"))
+        is_empty = raw_value is None or raw_value == "" or raw_value == []
+        if is_empty:
+            if required:
+                return None, f"脚本缺少必填参数: {name}"
+            continue
+        value_error = _validate_cli_value(name, raw_value)
+        if value_error:
+            return None, value_error
+        flag = _cli_flag_for_arg(name)
+        if isinstance(raw_value, bool):
+            if raw_value:
+                argv.append(flag)
+            elif required:
+                argv.extend([flag, "false"])
+            continue
+        if isinstance(raw_value, list):
+            for item in raw_value:
+                argv.extend([flag, str(item)])
+            continue
+        argv.extend([flag, str(raw_value)])
+    if len(argv) > _CLI_ARGV_MAX_ITEMS:
+        return None, f"脚本参数转换后的 argv 数量不能超过 {_CLI_ARGV_MAX_ITEMS}"
+    return argv, None
 
 
 def _json_result(**kwargs: Any) -> str:
@@ -292,29 +317,11 @@ def _extract_sandbox_diag(gateway_error: str) -> dict[str, Any]:
 
 
 def _normalize_skill_script_path(script_path: str) -> str:
-    """
-    script_path 约定为相对 skill 的 scripts/ 目录。
-    SKILL.md 常写「scripts/foo.py」，模型照抄后会拼成 scripts/scripts/foo.py；
-    另如 scripts/__list__ 会误传。此处剥掉多余的 scripts/ 前缀（大小写不敏感）。
-    """
+    """规范化 manifest entry 的相对路径文本。"""
     p = (script_path or "").strip().replace("\\", "/")
     while p.startswith("./"):
         p = p[2:].lstrip("/")
-    p = p.lstrip("/")
-    low = p.lower()
-    if low == "scripts":
-        return ""
-    if low.startswith("scripts/"):
-        p = p[8:].lstrip("/")
     return p
-
-
-def _apply_script_path_normalization(script_path: str) -> str:
-    """对 __describe__:<path> 只规范化冒号后的路径。"""
-    if script_path.startswith("__describe__:"):
-        _, sep, tail = script_path.partition(":")
-        return "__describe__:" + _normalize_skill_script_path(tail)
-    return _normalize_skill_script_path(script_path)
 
 
 def _build_script_command(full: Path, extra_argv: list[str] | None = None) -> list[str]:
@@ -582,7 +589,7 @@ def _execute_script_subprocess(
 def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
     新建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
-    脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
+    脚本入口与 LLM 可见参数只来自 scripts/manifest.json。
     """
     skills_dir = _get_skills_dir()
     owner_user_id = _get_current_user_id()
@@ -592,8 +599,8 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
-    async def run_skill_script(script_path: str, cli_args: list[str] | None = None) -> str:
-        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。仅支持 cli_args（argv 数组）。支持 .py/.sh/.ps1/.cmd/.bat。"""
+    async def run_skill_script(**tool_args: Any) -> str:
+        """执行 manifest entry 指定的脚本，并把 manifest args 转换为 CLI argv。"""
         if write_mode != "workspace_all":
             return _json_result(
                 ok=False,
@@ -610,44 +617,13 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         workspace_root.mkdir(parents=True, exist_ok=True)
         available_scripts = _list_available_scripts(script_root)
         manifest = _load_manifest(script_root)
-
-        raw_script_param = (script_path or "").strip()
-        script_path = raw_script_param
-
-        script_path = _apply_script_path_normalization(script_path)
-
-        if script_path in ("__list__", ":list", "list"):
-            return _json_result(
-                ok=True,
-                code="scripts_list",
-                scripts=available_scripts,
-                count=len(available_scripts),
-                message="已返回当前 skill 的可执行脚本列表。",
-            )
-        if script_path in ("__manifest__", ":manifest", "manifest"):
-            return _json_result(
-                ok=True,
-                code="manifest",
-                manifest=manifest,
-                message="已返回当前 skill 的脚本 manifest。",
-            )
-        if script_path.startswith("__describe__:"):
-            target = script_path.split(":", 1)[1].strip()
-            return _json_result(
-                ok=True,
-                code="script_description",
-                script=target,
-                meta=_script_meta_for(manifest, target),
-                message="已返回脚本说明。",
-            )
-
-        if not script_path or ".." in script_path or script_path.startswith("/"):
+        script_path = str(manifest.get("entry") or "").strip()
+        if not manifest or not script_path:
             return _json_result(
                 ok=False,
-                code="invalid_script_path",
-                message="script_path 必须为相对路径且不包含 ..。",
+                code="missing_script_manifest",
+                message="当前 Skill 缺少标准 scripts/manifest.json，无法注入或执行脚本工具。",
             )
-        script_path = _normalize_skill_script_path(script_path)
         full = (script_root / script_path).resolve()
         if not str(full).startswith(str(script_root)) or not full.is_file():
             hint = ""
@@ -673,16 +649,11 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 available_scripts=available_scripts,
             )
 
-        parsed_input: dict[str, Any] = {}
-        cli_argv, cli_err = _parse_cli_args(cli_args)
+        cli_argv, cli_err = _manifest_args_to_cli_argv(manifest, dict(tool_args or {}))
         if cli_err:
-            return _json_result(ok=False, code="invalid_cli_args", message=cli_err)
-        script_meta = _script_meta_for(manifest, script_path)
-        schema_error = _validate_against_manifest(script_path, script_meta, parsed_input, cli_argv)
-        if schema_error:
-            return _json_result(ok=False, code="manifest_validation_failed", message=schema_error, meta=script_meta)
+            return _json_result(ok=False, code="manifest_validation_failed", message=cli_err)
 
-        timeout_sec = _resolve_script_timeout_sec(script_meta)
+        timeout_sec = _resolve_script_timeout_sec(manifest)
 
         if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
             return _json_result(
@@ -917,41 +888,15 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
             )
         return _json_result(**result_payload)
 
-    available_scripts = _list_available_scripts(script_root)
     manifest = _load_manifest(script_root)
-    if available_scripts:
-        script_descriptions = []
-        for script_name in available_scripts:
-            meta = _script_meta_for(manifest, script_name)
-            desc = str(meta.get("description") or "").strip()
-            script_descriptions.append(f"{script_name}: {desc}" if desc else script_name)
-        script_inventory = "当前可用脚本：" + "；".join(script_descriptions) + "。"
-    else:
-        script_inventory = "当前没有可用脚本；可先用 __list__ 确认可执行脚本。"
+    tool_description = str(manifest.get("description") or "执行当前 Skill 的标准脚本。").strip()
 
     return ToolSpec.from_function(
         name="run_skill_script",
         description=(
-            "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
-            "cli_args 填字符串数组，如 [\"--query\",\"问题\"]。"
-            "可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
-            f"{script_inventory}"
+            f"{tool_description}"
+            " 参数由 scripts/manifest.json 定义；模型只填写业务字段，不传脚本入口或命令行数组。"
         ),
         coroutine=run_skill_script,
-        args_schema={
-            "type": "object",
-            "properties": {
-                "script_path": {
-                    "type": "string",
-                    "description": "scripts/ 下的相对脚本路径，或 __list__/__manifest__/__describe__:<script>。",
-                },
-                "cli_args": {
-                    "type": "array",
-                    "description": "命令行 argv 数组，如 [\"--query\", \"用户原话\"]。",
-                    "items": {"type": "string"},
-                    "default": [],
-                },
-            },
-            "required": ["script_path"],
-        },
+        args_schema=_input_schema_from_manifest(manifest),
     )

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -199,48 +200,88 @@ def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths
     assert "不要要求用户提供 `backend/data/`" in instructions
 
 
-def test_normalize_skill_script_path_strips_scripts_prefix():
+def test_normalize_skill_script_path_only_strips_dot_prefix():
     from app.tools import run_skill_script as rss
 
     assert rss._normalize_skill_script_path("kb_document_store_cli.py") == "kb_document_store_cli.py"
-    assert rss._normalize_skill_script_path("scripts/kb_document_store_cli.py") == "kb_document_store_cli.py"
-    assert rss._normalize_skill_script_path(r"scripts\kb_document_store_cli.py") == "kb_document_store_cli.py"
-    assert rss._normalize_skill_script_path("./scripts/foo.py") == "foo.py"
-    assert rss._apply_script_path_normalization("scripts/__list__") == "__list__"
-    assert rss._apply_script_path_normalization("__describe__:scripts/bar.py") == "__describe__:bar.py"
+    assert rss._normalize_skill_script_path("scripts/kb_document_store_cli.py") == "scripts/kb_document_store_cli.py"
+    assert rss._normalize_skill_script_path(r"scripts\kb_document_store_cli.py") == "scripts/kb_document_store_cli.py"
+    assert rss._normalize_skill_script_path("./foo.py") == "foo.py"
 
 
-def test_parse_cli_args_accepts_array():
+def test_standard_manifest_rejects_scripts_prefixed_entry(tmp_path):
     from app.tools import run_skill_script as rss
 
-    argv, err = rss._parse_cli_args(["--query", "河北张家口其他人员住宿标准"])
-
-    assert err is None
-    assert argv == ["--query", "河北张家口其他人员住宿标准"]
-
-
-def test_parse_cli_args_rejects_legacy_json_string():
-    from app.tools import run_skill_script as rss
-
-    argv, err = rss._parse_cli_args('["--query","河北张家口其他人员住宿标准"]')
-
-    assert argv is None
-    assert err == "cli_args 必须是数组（每项为字符串，对应 argv 片段）"
-
-
-def test_manifest_required_fields_validate_cli_args_positionals():
-    from app.tools import run_skill_script as rss
-
-    meta = {"input_schema": {"type": "object", "required": ["skill_name"]}}
-
-    assert rss._validate_against_manifest("init_skill.py", meta, {}, ["my-skill"]) is None
-    assert (
-        rss._validate_against_manifest("init_skill.py", meta, {}, [])
-        == "脚本 init_skill.py 缺少必填字段: ['skill_name']"
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "entry": "scripts/probe.py",
+                "description": "错误入口。",
+                "args": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
 
+    assert rss._load_manifest(scripts_dir) == {}
 
-def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, tmp_path):
+
+def test_manifest_args_convert_to_cli_argv():
+    from app.tools import run_skill_script as rss
+
+    manifest = {
+        "entry": "extract_travel_standards.py",
+        "description": "查询差旅标准。",
+        "args": [
+            {"name": "province", "required": True},
+            {"name": "city", "required": True},
+            {"name": "output_path", "required": False},
+        ],
+    }
+
+    argv, err = rss._manifest_args_to_cli_argv(
+        manifest,
+        {"province": "河北", "city": "张家口", "output_path": "notes/result.md"},
+    )
+
+    assert err is None
+    assert argv == ["--province", "河北", "--city", "张家口", "--output-path", "notes/result.md"]
+
+
+def test_manifest_args_reject_unknown_legacy_cli_args():
+    from app.tools import run_skill_script as rss
+
+    manifest = {
+        "entry": "extract_travel_standards.py",
+        "description": "查询差旅标准。",
+        "args": [{"name": "query", "required": True}],
+    }
+
+    argv, err = rss._manifest_args_to_cli_argv(manifest, {"cli_args": ["--query", "河北张家口"]})
+
+    assert argv is None
+    assert err == "脚本参数不在 manifest 中: ['cli_args']"
+
+
+def test_manifest_args_require_manifest_required_fields():
+    from app.tools import run_skill_script as rss
+
+    manifest = {
+        "entry": "init_skill.py",
+        "description": "创建 Skill。",
+        "args": [{"name": "skill_name", "required": True}],
+    }
+
+    argv, err = rss._manifest_args_to_cli_argv(manifest, {})
+
+    assert argv is None
+    assert err == "脚本缺少必填参数: skill_name"
+
+
+def test_run_skill_script_tool_schema_comes_from_manifest_args(monkeypatch, tmp_path):
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
     from app.tools.run_skill_script import create_run_skill_script_tool
 
@@ -253,7 +294,17 @@ def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, 
         (skill_dir / "SKILL.md").write_text("---\nname: Web\n---\nbody\n", encoding="utf-8")
         (scripts_dir / "crawl_and_store.py").write_text("print('ok')\n", encoding="utf-8")
         (scripts_dir / "manifest.json").write_text(
-            '{"crawl_and_store.py":{"description":"抓取公开网页"}}',
+            json.dumps(
+                {
+                    "entry": "crawl_and_store.py",
+                    "description": "抓取公开网页并保存结果。",
+                    "args": [
+                        {"name": "url", "description": "公开网页 URL。", "required": True},
+                        {"name": "output_path", "description": "工作区输出路径。", "required": True},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
 
@@ -261,12 +312,13 @@ def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, 
     finally:
         reset_current_user_identity(token)
 
-    assert "crawl_and_store.py" in tool.description
     assert "抓取公开网页" in tool.description
     props = tool.args_schema["properties"]
-    assert "cli_args" in props
-    assert props["cli_args"]["type"] == "array"
-    assert set(props) == {"script_path", "cli_args"}
+    assert "script_path" not in props
+    assert "cli_args" not in props
+    assert set(props) == {"url", "output_path"}
+    assert tool.args_schema["required"] == ["url", "output_path"]
+    assert props["output_path"]["description"] == "工作区输出路径。"
 
 
 @pytest.mark.asyncio

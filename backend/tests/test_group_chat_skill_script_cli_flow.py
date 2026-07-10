@@ -88,7 +88,7 @@ def _frontend_flow_env(tmp_path, monkeypatch):
             {
                 "name": "沙箱依赖验证专家",
                 "description": "验证沙箱 Python 包依赖是否可用",
-                "system_prompt": "收到运行脚本请求时，使用 run_skill_script 调用指定脚本。",
+                "system_prompt": "收到运行脚本请求时，使用 run_skill_script 调用当前技能脚本。",
                 "skills": [{"name": "沙箱依赖验证", "directory_name": "sandbox-dependency-verify"}],
                 "llm_name": "fake",
             },
@@ -101,7 +101,7 @@ def _frontend_flow_env(tmp_path, monkeypatch):
 name: 沙箱依赖验证
 description: 运行 check_pkg_version.py 检查包版本。
 ---
-当用户要求运行脚本并传参时，调用 run_skill_script，传入 script_path 和 cli_args。
+当用户要求运行脚本并传参时，调用 run_skill_script，并只传入 manifest 中声明的 package 参数。
 """,
         encoding="utf-8",
     )
@@ -124,10 +124,9 @@ print(json.dumps({
     (scripts_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "check_pkg_version.py": {
-                    "description": "检查 Python 包版本",
-                    "input_schema": {"type": "object", "required": ["package"]},
-                }
+                "entry": "check_pkg_version.py",
+                "description": "检查 Python 包版本。",
+                "args": [{"name": "package", "description": "Python 包名。", "required": True}],
             },
             ensure_ascii=False,
         ),
@@ -141,7 +140,7 @@ print(json.dumps({
     invalidate_skills_cache_for_user(user)
 
 
-def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env, monkeypatch):
+def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monkeypatch):
     from app.agent import group_chat_runtime as group_chat
     from app.main import app
     from app.tools import run_skill_script
@@ -156,10 +155,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
                     {
                         "id": "call-check-pkg",
                         "name": "run_skill_script",
-                        "args": {
-                            "script_path": "check_pkg_version.py",
-                            "cli_args": ["--package", "pendulum"],
-                        },
+                        "args": {"package": "pendulum"},
                     }
                 ],
             ),
@@ -189,7 +185,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     chat_resp = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
-            "message": "运行脚本并传参：\n\nscript_path: check_pkg_version.py\ncli_args: [\"--package\",\"pendulum\"]",
+            "message": "运行脚本检查 pendulum 这个 Python 包版本。",
             "client_message_id": "script-flow-1",
             "target_agent_name": "沙箱依赖验证专家",
         },

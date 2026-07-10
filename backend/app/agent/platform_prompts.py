@@ -409,7 +409,7 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
         """
 ## 技能脚本工具
 
-用结构化工具调用执行当前技能脚本：`script_path` 填 scripts/ 下相对路径，`cli_args` 填字符串数组（如 `["--query","用户原话"]`）。不要传宿主机绝对路径。
+用结构化工具调用执行当前技能脚本。脚本入口由平台从 `scripts/manifest.json` 读取；你只填写工具 schema 中列出的业务参数，不传脚本路径、命令行数组或宿主机路径。
 
 {script_tool_names}
         """,

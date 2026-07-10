@@ -73,7 +73,7 @@ def _tool_call_display_name(tool_call: Any) -> str:
 
 def _tool_call_display_path(tool_call: Any) -> str:
     args = _tool_call_args(tool_call)
-    for key in ("path", "script_path", "__arg1"):
+    for key in ("path", "__arg1"):
         value = args.get(key)
         if value not in (None, ""):
             return str(value)

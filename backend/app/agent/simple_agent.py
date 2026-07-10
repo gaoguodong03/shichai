@@ -22,6 +22,7 @@ from app.agent.simple_agent_finalization import (
     _large_run_skill_script_success_direct_final_message,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
+    _run_skill_script_stdout_direct_final_message,
     _script_dependency_direct_final_message,
     _should_force_final_after_tool_success,
 )
@@ -51,17 +52,6 @@ from app.agent.tool_spec import ToolSpec
 logger = logging.getLogger(__name__)
 
 
-_RUN_SKILL_SCRIPT_METADATA_PATHS = {
-    "__list__",
-    ":list",
-    "list",
-    "__manifest__",
-    ":manifest",
-    "manifest",
-}
-_RUN_SKILL_SCRIPT_METADATA_CODES = {"scripts_list", "manifest", "script_description"}
-_RUN_SKILL_SCRIPT_CONTINUE_AFTER_SUCCESS_PATHS = {"init_skill.py"}
-_RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES = {"skill_initialized"}
 _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE = "continue"
 _WORKSPACE_WRITE_SUCCESS_MARKER = "已写入当前 Chat 工作区文件："
 _WORKSPACE_MUTATING_TOOL_NAMES = {
@@ -119,26 +109,6 @@ def _append_text_tool_protocol_retry_or_failure(
     return retry_count, failure_message, False
 
 
-def _normalized_skill_script_path(value: Any) -> str:
-    script_path = str(value or "").strip().replace("\\", "/")
-    while script_path.startswith("./"):
-        script_path = script_path[2:].lstrip("/")
-    if script_path.startswith("scripts/"):
-        script_path = script_path[8:].lstrip("/")
-    return script_path
-
-
-def _run_skill_raw_outputs_have_code(tool_out: dict[str, Any], codes: set[str]) -> bool:
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list) or not raw_outputs:
-        return False
-    for raw in raw_outputs:
-        payload = _json_loads_maybe(raw)
-        if not isinstance(payload, dict) or str(payload.get("code") or "") not in codes:
-            return False
-    return True
-
-
 def _iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[str, Any]]:
     raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
     if not isinstance(raw_outputs, list):
@@ -175,25 +145,6 @@ def _run_skill_outputs_request_agent_turn_continue(tool_out: dict[str, Any]) -> 
         if payload.next_action.agent_turn == _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
             saw_continue = True
     return saw_continue
-
-
-def _run_skill_workflow_outputs_are_successful(tool_out: dict[str, Any]) -> bool:
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list) or not raw_outputs:
-        return True
-    for raw in raw_outputs:
-        payload = _json_loads_maybe(raw)
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("ok") is False or str(payload.get("execution_status") or "").strip().lower() == "failed":
-            return False
-        stdout_payload = _json_loads_maybe(payload.get("stdout"))
-        if isinstance(stdout_payload, dict) and (
-            stdout_payload.get("ok") is False
-            or str(stdout_payload.get("execution_status") or "").strip().lower() == "failed"
-        ):
-            return False
-    return True
 
 
 def _has_successful_workspace_write_output(raw_outputs: list[str]) -> bool:
@@ -253,46 +204,8 @@ def _all_workspace_write_calls_already_succeeded(tool_calls: list[Any], seen_key
     return saw_write
 
 
-def _is_run_skill_script_metadata_probe(tool_out: dict[str, Any]) -> bool:
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if isinstance(calls, list) and calls:
-        saw_metadata_probe = False
-        for call in calls:
-            if not isinstance(call, dict):
-                return False
-            tool_name = str(call.get("tool") or call.get("name") or "").strip()
-            if not tool_name.startswith("run_skill_script"):
-                return False
-            args = _tool_call_args(call)
-            script_path = _normalized_skill_script_path(args.get("script_path") or args.get("__arg1"))
-            if script_path in _RUN_SKILL_SCRIPT_METADATA_PATHS or script_path.startswith("__describe__:"):
-                saw_metadata_probe = True
-                continue
-            return False
-        return saw_metadata_probe
-    return _run_skill_raw_outputs_have_code(tool_out, _RUN_SKILL_SCRIPT_METADATA_CODES)
-
-
 def _is_run_skill_script_workflow_step(tool_out: dict[str, Any]) -> bool:
-    if _run_skill_outputs_request_agent_turn_continue(tool_out):
-        return True
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if isinstance(calls, list) and calls:
-        saw_workflow_step = False
-        for call in calls:
-            if not isinstance(call, dict):
-                return False
-            tool_name = str(call.get("tool") or call.get("name") or "").strip()
-            if not tool_name.startswith("run_skill_script"):
-                return False
-            args = _tool_call_args(call)
-            script_path = _normalized_skill_script_path(args.get("script_path") or args.get("__arg1"))
-            if script_path in _RUN_SKILL_SCRIPT_CONTINUE_AFTER_SUCCESS_PATHS:
-                saw_workflow_step = True
-                continue
-            return False
-        return saw_workflow_step and _run_skill_workflow_outputs_are_successful(tool_out)
-    return _run_skill_raw_outputs_have_code(tool_out, _RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES)
+    return _run_skill_outputs_request_agent_turn_continue(tool_out)
 
 
 def _post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> bool:
@@ -752,6 +665,18 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": tool_error_message}
                     break
+                script_stdout_final_message = _run_skill_script_stdout_direct_final_message(tool_out)
+                if script_stdout_final_message is not None:
+                    messages.append(script_stdout_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "run_skill_script_stdout_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(script_stdout_final_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": script_stdout_final_message}
+                    break
                 mcp_direct_final_message = _mcp_tool_result_direct_final_message(tool_out)
                 if mcp_direct_final_message is not None:
                     messages.append(mcp_direct_final_message)
@@ -776,14 +701,6 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": large_script_final_message}
                     break
-                if _is_run_skill_script_metadata_probe(tool_out):
-                    tool_attempt_debug.append(
-                        {
-                            "source": "script_metadata_probe_continue",
-                            "matched": True,
-                        }
-                    )
-                    continue
                 if _is_run_skill_script_workflow_step(tool_out):
                     tool_attempt_debug.append(
                         {
@@ -1254,6 +1171,17 @@ class SimpleAgent:
                         }
                     )
                     break
+                script_stdout_final_message = _run_skill_script_stdout_direct_final_message(tool_out)
+                if script_stdout_final_message is not None:
+                    messages.append(script_stdout_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "run_skill_script_stdout_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(script_stdout_final_message)[:240],
+                        }
+                    )
+                    break
                 mcp_direct_final_message = _mcp_tool_result_direct_final_message(tool_out)
                 if mcp_direct_final_message is not None:
                     messages.append(mcp_direct_final_message)
@@ -1276,14 +1204,6 @@ class SimpleAgent:
                         }
                     )
                     break
-                if _is_run_skill_script_metadata_probe(tool_out):
-                    tool_attempt_debug.append(
-                        {
-                            "source": "script_metadata_probe_continue",
-                            "matched": True,
-                        }
-                    )
-                    continue
                 if _is_run_skill_script_workflow_step(tool_out):
                     tool_attempt_debug.append(
                         {

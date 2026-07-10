@@ -29,6 +29,11 @@ def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage
     calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
     if not isinstance(calls, list) or not calls:
         return None
+    if any(
+        isinstance(call, dict) and str(call.get("tool") or call.get("name") or "").startswith("run_skill_script_")
+        for call in calls
+    ):
+        return None
 
     raw_outputs = tool_out.get("tool_raw_outputs")
     if not isinstance(raw_outputs, list):

@@ -11,7 +11,7 @@ class _DummyTool:
         self.description = "dummy"
 
     def func(self, **kwargs):
-        return f"ok:{self.name}:{kwargs.get('script_path', '')}"
+        return f"ok:{self.name}:{kwargs.get('prompt', '')}"
 
 class _AsyncOnlyDummyTool:
     def __init__(self, name: str):
@@ -20,7 +20,7 @@ class _AsyncOnlyDummyTool:
         self.func = None
 
     async def coroutine(self, **kwargs):
-        return f"ok:{self.name}:{kwargs.get('script_path', '')}"
+        return f"ok:{self.name}:{kwargs.get('prompt', '')}"
 
 
 @pytest.mark.asyncio
@@ -34,7 +34,7 @@ async def test_skill_tool_alias_run_skill_script_resolved():
                     {
                         "id": "tc1",
                         "name": "run_skill_script",
-                        "args": {"script_path": "generate_image.py"},
+                        "args": {"prompt": "generate image"},
                     }
                 ],
             )
@@ -60,7 +60,7 @@ async def test_skill_tool_mangled_name_resolved():
                     {
                         "id": "tc2",
                         "name": "run_skill_script_app-icon-generator_extra",
-                        "args": {"script_path": "generate_image.py"},
+                        "args": {"prompt": "generate image"},
                     }
                 ],
             )
@@ -84,7 +84,7 @@ async def test_skill_tool_exec_supports_async_only_tool():
                     {
                         "id": "tc3",
                         "name": "run_skill_script_app-icon-generator",
-                        "args": {"script_path": "generate_image.py"},
+                        "args": {"prompt": "generate image"},
                     }
                 ],
             )
@@ -116,7 +116,7 @@ async def test_skill_tool_non_ascii_requested_name_resolved():
                     {
                         "id": "tc4",
                         "name": "run_skill_script_新-skill",
-                        "args": {"script_path": "generate_image.py"},
+                        "args": {"prompt": "generate image"},
                     }
                 ],
             )

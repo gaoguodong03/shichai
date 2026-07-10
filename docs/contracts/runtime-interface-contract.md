@@ -529,7 +529,7 @@ Skill 选择规则：
 | MCP | Skill frontmatter `allowed-tools.mcp` | 只有本轮 Skill 声明的 MCP server 才加载。 |
 | HTTP API | Skill frontmatter `allowed-tools.http_api` | 注入 `http_api_<name>` 工具。 |
 | 工作区文件 | 内置工具 | 注入读、写、编辑、重命名、建目录、列目录。 |
-| Skill 脚本 | 专家 `skills[].directory_name` | 磁盘存在 `SKILL.md` 时注入 `run_skill_script_<directory>`。 |
+| Skill 脚本 | 专家 `skills[].directory_name` + `scripts/manifest.json` | 同时存在 `SKILL.md` 和标准 `scripts/manifest.json` 时注入 `run_skill_script_<directory>`；模型只传 manifest `args` 生成的业务参数。 |
 | MCP 配置状态 | 配置缺失时 | 注入 `mcp_configuration_status`，提示用户缺环境变量或配置。 |
 
 这里的关键边界是：专家资源不再保存工具权限主契约；本轮工具权限由当前 Skill 的 frontmatter 决定。

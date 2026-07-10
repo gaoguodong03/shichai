@@ -139,7 +139,7 @@ async def test_simple_agent_calls_tool_runner_for_content_tool_json():
             {
                 "id": "tc1",
                 "name": "run_skill_script",
-                "args": {"script_path": "generate_image.py"},
+                "args": {"prompt": "generate image"},
             }
         ],
     )
@@ -706,14 +706,14 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_continues_after_script_manifest_probe_to_write_workspace():
-    manifest_probe = AIMessage(
+async def test_simple_agent_continues_after_script_next_action_to_write_workspace():
+    script_call = AIMessage(
         content="",
         tool_calls=[
             {
-                "id": "tc-manifest",
+                "id": "tc-script",
                 "name": "run_skill_script_skill-builder",
-                "args": {"script_path": "__manifest__"},
+                "args": {"skill_name": "demo"},
             }
         ],
     )
@@ -735,15 +735,19 @@ async def test_simple_agent_continues_after_script_manifest_probe_to_write_works
         tool_name = tool_call["name"]
         calls.append(tool_name)
         if tool_name.startswith("run_skill_script"):
+            raw = json.dumps(
+                {
+                    "execution_status": "succeeded",
+                    "content": "Skill 模板目录已新建，请继续写入 SKILL.md。",
+                    "artifacts": [{"type": "directory", "name": "demo", "path": "skills/demo"}],
+                    "next_action": {"agent_turn": "continue", "skill_session": "keep"},
+                },
+                ensure_ascii=False,
+            )
             return {
-                "messages": [ToolMessage(content='{"ok": true, "code": "manifest", "manifest": {}}', tool_call_id="tc-manifest")],
-                "tool_calls": [
-                    {
-                        "tool": tool_name,
-                        "arguments": {"script_path": "__manifest__"},
-                    }
-                ],
-                "tool_raw_outputs": ['{"ok": true, "code": "manifest", "manifest": {}, "message": "已返回当前 skill 的脚本 manifest。"}'],
+                "messages": [ToolMessage(content=raw, tool_call_id="tc-script")],
+                "tool_calls": [{"tool": tool_name, "arguments": {"skill_name": "demo"}}],
+                "tool_raw_outputs": [raw],
             }
         return {
             "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/demo/SKILL.md", tool_call_id="tc-write")],
@@ -758,7 +762,7 @@ async def test_simple_agent_continues_after_script_manifest_probe_to_write_works
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([manifest_probe, write_call, final_summary]),
+        llm=_FakeLLM([script_call, write_call, final_summary]),
         tools=[
             ToolSpec.from_function(
                 name="run_skill_script_skill-builder",
@@ -782,7 +786,7 @@ async def test_simple_agent_continues_after_script_manifest_probe_to_write_works
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     assert str(out["messages"][-1].content) == "已新建并写入 skills/demo/SKILL.md"
     assert any(
-        item.get("source") == "script_metadata_probe_continue"
+        item.get("source") == "script_workflow_step_continue"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -795,10 +799,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
             {
                 "id": "tc-init",
                 "name": "run_skill_script_skill-builder",
-                "args": {
-                    "script_path": "init_skill.py",
-                    "cli_args": ["toutiao-summary"],
-                },
+                "args": {"skill_name": "toutiao-summary"},
             }
         ],
     )
@@ -828,7 +829,15 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                     "ok": True,
                     "code": "script_executed",
                     "message": "脚本执行成功。",
-                    "stdout": "Skill 'toutiao-summary' initialized successfully.",
+                    "stdout": json.dumps(
+                        {
+                            "execution_status": "succeeded",
+                            "content": "Skill 模板目录已新建，请继续编辑 SKILL.md。",
+                            "artifacts": [{"type": "directory", "name": "toutiao-summary", "path": "skills/toutiao-summary"}],
+                            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
+                        },
+                        ensure_ascii=False,
+                    ),
                 },
                 ensure_ascii=False,
             )
@@ -837,10 +846,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                 "tool_calls": [
                     {
                         "tool": tool_name,
-                        "arguments": {
-                            "script_path": "init_skill.py",
-                            "cli_args": ["toutiao-summary"],
-                        },
+                        "arguments": {"skill_name": "toutiao-summary"},
                     }
                 ],
                 "tool_raw_outputs": [raw],
@@ -887,17 +893,14 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_continues_after_skill_initialized_payload_without_tool_trace():
+async def test_simple_agent_continues_after_script_next_action_payload_without_tool_trace():
     init_call = AIMessage(
         content="",
         tool_calls=[
             {
                 "id": "tc-init",
                 "name": "run_skill_script_skill-builder",
-                "args": {
-                    "script_path": "init_skill.py",
-                    "cli_args": ["toutiao-news-summary"],
-                },
+                "args": {"skill_name": "toutiao-news-summary"},
             }
         ],
     )
@@ -917,12 +920,10 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
     final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     raw = json.dumps(
         {
-            "ok": True,
-            "code": "skill_initialized",
-            "message": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行必要验证。",
-            "skill_name": "toutiao-news-summary",
-            "workspace_path": "skills/toutiao-news-summary",
-            "skill_content": "---\nname: toutiao-news-summary\n---\n# Toutiao News Summary\n",
+            "execution_status": "succeeded",
+            "content": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行必要验证。",
+            "artifacts": [{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
+            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
         },
         ensure_ascii=False,
     )
@@ -974,7 +975,6 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     final_text = str(out["messages"][-1].content)
     assert final_text == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
-    assert "skill_initialized" not in final_text
     assert "工具已执行完成" not in final_text
     assert any(
         item.get("source") == "script_workflow_step_continue"
@@ -990,10 +990,7 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
             {
                 "id": "tc-init",
                 "name": "run_skill_script_skill-builder",
-                "args": {
-                    "script_path": "create_template.py",
-                    "cli_args": ["toutiao-news-summary"],
-                },
+                "args": {"template_name": "toutiao-news-summary"},
             }
         ],
     )
@@ -1070,7 +1067,7 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
     assert "工具已执行完成" not in str(out["messages"][-1].content)
 
 
-def test_skill_initialized_result_code_without_next_action_does_not_continue_workflow():
+def test_script_stdout_without_next_action_does_not_continue_workflow():
     raw = json.dumps(
         {
             "execution_status": "succeeded",
@@ -1170,14 +1167,14 @@ async def test_simple_agent_stream_ignores_duplicate_structured_write_after_succ
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_stream_continues_after_script_manifest_probe_to_write_workspace():
-    manifest_probe = AIMessage(
+async def test_simple_agent_stream_continues_after_script_next_action_to_write_workspace():
+    script_call = AIMessage(
         content="",
         tool_calls=[
             {
-                "id": "tc-manifest",
+                "id": "tc-script",
                 "name": "run_skill_script_skill-builder",
-                "args": {"script_path": "__manifest__"},
+                "args": {"skill_name": "demo"},
             }
         ],
     )
@@ -1198,15 +1195,19 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
         tool_name = tool_call["name"]
         calls.append(tool_name)
         if tool_name.startswith("run_skill_script"):
+            raw = json.dumps(
+                {
+                    "execution_status": "succeeded",
+                    "content": "Skill 模板目录已新建，请继续写入 SKILL.md。",
+                    "artifacts": [{"type": "directory", "name": "demo", "path": "skills/demo"}],
+                    "next_action": {"agent_turn": "continue", "skill_session": "keep"},
+                },
+                ensure_ascii=False,
+            )
             return {
-                "messages": [ToolMessage(content='{"ok": true, "code": "manifest", "manifest": {}}', tool_call_id="tc-manifest")],
-                "tool_calls": [
-                    {
-                        "tool": tool_name,
-                        "arguments": {"script_path": "__manifest__"},
-                    }
-                ],
-                "tool_raw_outputs": ['{"ok": true, "code": "manifest", "manifest": {}, "message": "已返回当前 skill 的脚本 manifest。"}'],
+                "messages": [ToolMessage(content=raw, tool_call_id="tc-script")],
+                "tool_calls": [{"tool": tool_name, "arguments": {"skill_name": "demo"}}],
+                "tool_raw_outputs": [raw],
             }
         return {
             "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/demo/SKILL.md", tool_call_id="tc-write")],
@@ -1220,7 +1221,7 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([manifest_probe, write_call, AIMessage(content="已新建并写入 skills/demo/SKILL.md")]),
+        llm=_FakeLLM([script_call, write_call, AIMessage(content="已新建并写入 skills/demo/SKILL.md")]),
         tools=[
             ToolSpec.from_function(
                 name="run_skill_script_skill-builder",
@@ -1245,7 +1246,7 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
             final_debug = ev.get("tool_attempt_debug") or []
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert any(item.get("source") == "script_metadata_probe_continue" for item in final_debug)
+    assert any(item.get("source") == "script_workflow_step_continue" for item in final_debug)
 
 
 @pytest.mark.asyncio
@@ -1482,7 +1483,7 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
             {
                 "id": "tc-script",
                 "name": "run_skill_script_shixiseng_dedicated_crawler",
-                "args": {"script_path": "main.py"},
+                "args": {"query": "实习僧岗位"},
             }
         ],
     )
@@ -1504,7 +1505,7 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
     async def _tool_runner(state, tools):
         return {
             "messages": [ToolMessage(content=json.dumps(raw_payload, ensure_ascii=False), tool_call_id="tc-script")],
-            "tool_calls": [{"tool": "run_skill_script_shixiseng_dedicated_crawler", "arguments": {"script_path": "main.py"}}],
+            "tool_calls": [{"tool": "run_skill_script_shixiseng_dedicated_crawler", "arguments": {"query": "实习僧岗位"}}],
             "tool_raw_outputs": [json.dumps(raw_payload, ensure_ascii=False)],
         }
 
@@ -1679,7 +1680,7 @@ async def test_simple_agent_uses_unbound_client_after_tool_result():
             {
                 "id": "tc-check",
                 "name": "run_skill_script_sandbox-dep-check",
-                "args": {"script_path": "check_pkg_version.py"},
+                "args": {"package": "pytest"},
             }
         ],
     )
@@ -1704,7 +1705,7 @@ async def test_simple_agent_uses_unbound_client_after_tool_result():
                         {
                             "id": "tc-repeat",
                             "name": "run_skill_script_sandbox-dep-check",
-                            "args": {"script_path": "check_pkg_version.py"},
+                            "args": {"package": "pytest"},
                         }
                     ],
                 )
@@ -1728,7 +1729,7 @@ async def test_simple_agent_uses_unbound_client_after_tool_result():
             "tool_calls": [
                 {
                     "tool": "run_skill_script_sandbox-dep-check",
-                    "arguments": {"script_path": "check_pkg_version.py"},
+                    "arguments": {"package": "pytest"},
                 }
             ],
             "tool_raw_outputs": ["ok"],
@@ -1764,7 +1765,7 @@ async def test_script_dependency_failure_fallback_when_final_llm_fails():
             {
                 "id": "tc-check",
                 "name": "run_skill_script_sandbox-dep-check",
-                "args": {"script_path": "check_pkg_version.py"},
+                "args": {"package": "pytest"},
             }
         ],
     )
@@ -1798,7 +1799,7 @@ async def test_script_dependency_failure_fallback_when_final_llm_fails():
             "tool_calls": [
                 {
                     "tool": "run_skill_script_sandbox-dep-check",
-                    "arguments": {"script_path": "check_pkg_version.py"},
+                    "arguments": {"package": "pytest"},
                 }
             ],
             "tool_raw_outputs": [raw],
@@ -1837,7 +1838,7 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
             {
                 "id": "tc-list",
                 "name": "run_skill_script_shixiseng_dedicated_crawler",
-                "args": {"script_path": "__list__"},
+                "args": {"query": "不应重复调用"},
             }
         ],
     )
@@ -1952,7 +1953,7 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
             {
                 "id": "tc-check",
                 "name": "run_skill_script_sandbox-dep-check",
-                "args": {"script_path": "check_pkg_version.py"},
+                "args": {"package": "pytest"},
             }
         ],
     )
@@ -1985,7 +1986,7 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
             "tool_calls": [
                 {
                     "tool": "run_skill_script_sandbox-dep-check",
-                    "arguments": {"script_path": "check_pkg_version.py"},
+                    "arguments": {"package": "pytest"},
                 }
             ],
             "tool_raw_outputs": [raw],
@@ -2023,7 +2024,7 @@ async def test_run_skill_script_playwright_browser_missing_direct_final_without_
             {
                 "id": "tc-crawl",
                 "name": "run_skill_script_shixiseng_dedicated_crawler",
-                "args": {"script_path": "crawl_jobs.py"},
+                "args": {"query": "实习僧岗位"},
             }
         ],
     )
@@ -2053,7 +2054,7 @@ async def test_run_skill_script_playwright_browser_missing_direct_final_without_
             "tool_calls": [
                 {
                     "tool": "run_skill_script_shixiseng_dedicated_crawler",
-                    "arguments": {"script_path": "crawl_jobs.py"},
+                    "arguments": {"query": "实习僧岗位"},
                 }
             ],
             "tool_raw_outputs": [raw],
