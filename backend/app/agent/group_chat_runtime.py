@@ -27,6 +27,7 @@ from app.agent.group_chat_streaming import iter_with_keepalive, stream_backgroun
 from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_recent_context
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_orchestration_fsm import resolve_group_entry_route
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_runtime_logs import append_tool_execution_logs
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent, SseStartEvent
 from app.api.agents import load_agent_instances
@@ -123,7 +124,10 @@ def _request_user_text(request: GroupChatRequest) -> str:
     text = str(request.message or "").strip()
     attachment_lines = _attachment_prompt_lines(request)
     if attachment_lines:
-        text = (text + "\n\n" if text else "") + "【工作区附件】\n" + attachment_lines
+        text = (text + "\n\n" if text else "") + render_platform_prompt(
+            "user.attachments.section.v1",
+            {"attachment_lines": attachment_lines},
+        )
     return text.strip()
 
 

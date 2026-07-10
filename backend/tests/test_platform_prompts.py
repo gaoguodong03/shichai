@@ -153,6 +153,18 @@ def test_host_agent_catalog_sections_use_platform_prompt_registry():
     assert "可建议邀请的专家：" in rendered_invitable
 
 
+def test_user_attachment_prompt_section_uses_platform_prompt_registry():
+    """Attachment labels are part of the expert-visible user prompt."""
+    runtime_text = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
+
+    assert "【工作区附件】" not in runtime_text
+
+    rendered = render_platform_prompt("user.attachments.section.v1", {"attachment_lines": "- input.md: docs/input.md"})
+
+    assert "【工作区附件】" in rendered
+    assert "- input.md: docs/input.md" in rendered
+
+
 def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():
     """Prompt templates must not ask the model to reason from raw tool stdout/stderr fields."""
     template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
