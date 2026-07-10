@@ -125,5 +125,5 @@ def test_missing_workspace_read_tool_is_blocked_without_required_user_fields():
     )
 
     assert result["execution_status"] == "blocked"
-    assert result["message"] == "当前专家未启用 read_workspace_file，无法读取工作区文件。"
+    assert result["message"] == "当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。"
     assert "required_user_fields" not in result

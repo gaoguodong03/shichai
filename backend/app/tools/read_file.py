@@ -1,6 +1,7 @@
 """读取引用文件工具 - 经 OpenSandbox 挂载的工作区路径读取（不经宿主直读）。"""
 from pydantic import BaseModel, Field
 
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
@@ -45,10 +46,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     normalized = cleaned.strip().replace("\\", "/")
     pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
     if normalized.strip("/") in pseudo_names:
-        return "", (
-            f"错误：{normalized} 是工具返回字段，不是工作区文件。"
-            "请根据最近工具结果生成最终答复，不要调用 read_workspace_file。"
-        )
+        return "", render_platform_prompt("workspace.read_file.pseudo_field_error.v1", {"field": normalized})
     if not session_id:
         return "", "错误：read_workspace_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
 
@@ -98,7 +96,7 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
                 rel_path=rel,
             )
         except FileNotFoundError:
-            return f"错误：文件不存在：{raw}。不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。"
+            return render_platform_prompt("workspace.read_file.not_found.v1", {"path": raw})
         except UnicodeDecodeError:
             return f"错误：{raw} 不是 UTF-8 文本。"
         except Exception as e:

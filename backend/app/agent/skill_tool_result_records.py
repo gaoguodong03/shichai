@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_trace_contracts import ToolResultRecord
 
 
@@ -143,7 +144,11 @@ def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, a
 
 def _missing_tool_result_record(*, tool_name: str, arguments: dict, tool_call_id: str, available_tools: list[str]) -> dict:
     status = "blocked" if tool_name == "read_workspace_file" else "failed"
-    message = "当前专家未启用 read_workspace_file，无法读取工作区文件。" if status == "blocked" else f"工具 {tool_name} 不存在。"
+    message = (
+        render_platform_prompt("skill.execution.read_workspace_unavailable.v1", {})
+        if status == "blocked"
+        else render_platform_prompt("skill.execution.tool_missing_message.v1", {"tool_name": tool_name, "available_tools": ", ".join(available_tools)})
+    )
     payload: dict[str, Any] = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=None, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,

@@ -307,6 +307,8 @@ def test_call_api_module_does_not_export_generic_llm_tool():
 
 def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
     runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
+    result_records_text = (ROOT / "backend/app/agent/skill_tool_result_records.py").read_text(encoding="utf-8")
+    combined = runtime_text + "\n" + result_records_text
 
     forbidden_runtime_prompt_fragments = [
         "工具 {tool_name} 执行错误:",
@@ -315,13 +317,30 @@ def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
         "当前专家未启用 read_workspace_file",
     ]
     for phrase in forbidden_runtime_prompt_fragments:
-        assert phrase not in runtime_text
+        assert phrase not in combined
 
     for prompt_id in [
         "skill.execution.tool_error_message.v1",
         "skill.execution.tool_missing_message.v1",
         "skill.execution.tool_parse_error_message.v1",
         "skill.execution.read_workspace_unavailable.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_read_workspace_file_tool_messages_use_platform_prompt_registry():
+    """LLM-visible read_workspace_file tool guidance belongs in the shared prompt registry."""
+    tool_text = (ROOT / "backend/app/tools/read_file.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "请根据最近工具结果生成最终答复，不要调用 read_workspace_file。",
+        "不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。",
+    ]:
+        assert phrase not in tool_text
+
+    for prompt_id in [
+        "workspace.read_file.pseudo_field_error.v1",
+        "workspace.read_file.not_found.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 
