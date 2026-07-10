@@ -53,6 +53,22 @@ def test_backend_runtime_does_not_keep_session_index_contract():
     assert "sessions/index.json" not in combined
 
 
+def test_simple_agent_tool_summary_helpers_are_not_named_as_fallbacks():
+    """Tool-result summary paths are product behavior, not legacy fallback branches."""
+    runtime_files = [
+        PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_errors.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_finalization.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
+
+    for forbidden in [
+        "_final_response_or_tool_fallback",
+        "_script_dependency_fallback_summary",
+    ]:
+        assert forbidden not in combined
+
+
 def test_architecture_docs_do_not_advertise_session_index_contract():
     """Architecture docs must not reintroduce sessions/index.json after the contract removed it."""
     docs = [

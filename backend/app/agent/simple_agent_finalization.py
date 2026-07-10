@@ -119,7 +119,7 @@ def _script_dependency_direct_final_message(tool_out: dict[str, Any]) -> AIMessa
     raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
     if not isinstance(raw_outputs, list):
         return None
-    message = _script_dependency_fallback_summary([str(raw or "") for raw in raw_outputs])
+    message = _script_dependency_failure_summary([str(raw or "") for raw in raw_outputs])
     if not message:
         return None
     return AIMessage(content=message)
@@ -314,7 +314,7 @@ def _align_final_response_with_written_workspace_paths(
 
 
 def _deterministic_tool_summary_message(raw_outputs: list[str]) -> AIMessage:
-    dependency_message = _script_dependency_fallback_summary(raw_outputs)
+    dependency_message = _script_dependency_failure_summary(raw_outputs)
     if dependency_message:
         return AIMessage(content=dependency_message)
     summary, direct_markdown = _semantic_tool_output_summary(raw_outputs, limit=2400)
@@ -331,7 +331,7 @@ def _deterministic_tool_summary_message(raw_outputs: list[str]) -> AIMessage:
     return AIMessage(content=content)
 
 
-def _script_dependency_fallback_summary(raw_outputs: list[str]) -> str:
+def _script_dependency_failure_summary(raw_outputs: list[str]) -> str:
     def _iter_json_objects(text: str):
         decoder = json.JSONDecoder()
         pos = 0

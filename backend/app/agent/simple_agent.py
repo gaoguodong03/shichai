@@ -32,7 +32,7 @@ from app.agent.simple_agent_messages import (
     _max_output_continuations,
 )
 from app.agent.simple_agent_tool_errors import (
-    _final_response_or_tool_fallback,
+    _final_response_or_tool_summary,
     _terminal_tool_failure_message,
     _tool_error_direct_final_message,
 )
@@ -496,7 +496,7 @@ class SimpleAgent:
                         else:
                             yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
                             break
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         all_tool_raw_outputs,
                         tool_attempt_debug,
@@ -561,7 +561,7 @@ class SimpleAgent:
                             "tool_attempt_debug": tool_attempt_debug,
                         }
                         continue
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         all_tool_raw_outputs,
                         tool_attempt_debug,
@@ -620,7 +620,7 @@ class SimpleAgent:
                             "tool_attempt_debug": tool_attempt_debug,
                         }
                         continue
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         all_tool_raw_outputs,
                         tool_attempt_debug,
@@ -712,7 +712,7 @@ class SimpleAgent:
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
-            synthesis_response = _final_response_or_tool_fallback(
+            synthesis_response = _final_response_or_tool_summary(
                 synthesis_response,
                 all_tool_raw_outputs,
                 tool_attempt_debug,
@@ -986,7 +986,7 @@ class SimpleAgent:
                                 break
                         else:
                             break
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         tool_raw_outputs,
                         tool_attempt_debug,
@@ -1039,7 +1039,7 @@ class SimpleAgent:
                     )
                     if synthesized_tool_message is not None:
                         continue
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         tool_raw_outputs,
                         tool_attempt_debug,
@@ -1086,7 +1086,7 @@ class SimpleAgent:
                     )
                     if synthesized_tool_message is not None:
                         continue
-                    final_message = _final_response_or_tool_fallback(
+                    final_message = _final_response_or_tool_summary(
                         final_message,
                         tool_raw_outputs,
                         tool_attempt_debug,
@@ -1165,7 +1165,7 @@ class SimpleAgent:
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
-            synthesis_response = _final_response_or_tool_fallback(
+            synthesis_response = _final_response_or_tool_summary(
                 synthesis_response,
                 tool_raw_outputs,
                 tool_attempt_debug,

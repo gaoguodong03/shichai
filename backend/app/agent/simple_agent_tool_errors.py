@@ -171,7 +171,7 @@ def _tool_error_direct_final_message(
     return None
 
 
-def _final_response_or_tool_fallback(
+def _final_response_or_tool_summary(
     response: BaseMessage,
     raw_outputs: list[str],
     tool_attempt_debug: list[dict[str, Any]],
