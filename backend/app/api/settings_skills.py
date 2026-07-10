@@ -479,14 +479,12 @@ async def get_skills():
     }
 
 def _slugify(name: str) -> str:
-    """Generate the initial stable Skill directory name from a display name."""
+    """Generate a stable ASCII Skill directory seed, hashing non-Latin names."""
     raw = (name or "").strip()
-    # 仅保留 ASCII 的「词」字符与空白、连字符（显式 ASCII，避免 \\w 匹配到中文）
     s = re.sub(r"[^A-Za-z0-9_\s-]", "", raw, flags=re.ASCII)
     s = re.sub(r"[-\s]+", "-", s).strip("-").lower()
     if s:
         return s
-    # 纯中文/无可用拉丁字符：用哈希保证唯一、路径纯 ASCII
     h = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
     return f"skill-{h}"
 

@@ -203,6 +203,19 @@ def test_skill_bundle_import_reference_rewrites_have_core_module_boundary():
     assert "_remap_frontmatter_mcp_refs(" not in api_text
 
 
+def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
+    """Resource import modules follow the comment placement coding standard."""
+    paths = [
+        PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py",
+        PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py",
+        PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py",
+    ]
+
+    for path in paths:
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            assert not re.match(r"\s+#", line), f"{path}:{lineno}"
+
+
 def test_group_chat_archive_has_independent_module_boundary():
     """Archive segmentation is presentation logic, not session state storage."""
     archive_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_archive.py"
