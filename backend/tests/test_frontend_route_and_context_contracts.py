@@ -99,6 +99,12 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
         assert legacy not in combined
 
 
+def test_frontend_chat_stream_api_does_not_expose_legacy_start_event():
+    src = read("frontend/src/api/chat.ts")
+    assert "onStart" not in src
+    assert "eventType === 'start'" not in src
+
+
 def test_frontend_member_identity_uses_expert_name_without_agent_id_aliases():
     files = [
         "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",

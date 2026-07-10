@@ -9,7 +9,6 @@ export interface ChatStreamRequestPayload {
 }
 
 interface StreamChatEventHandlers {
-  onStart?: (data: Record<string, unknown>) => void
   onRoute?: (data: Record<string, unknown>) => void
   onProgress?: (data: { text?: string; phase?: string; agent_name?: string; skill?: string }) => void
   onMessage?: (data: Record<string, unknown>) => void
@@ -107,8 +106,7 @@ export async function streamSessionChat(
   await readEventStream(
     response,
     (eventType, data) => {
-      if (eventType === 'start') handlers.onStart?.(data)
-      else if (eventType === 'route') handlers.onRoute?.(data)
+      if (eventType === 'route') handlers.onRoute?.(data)
       else if (eventType === 'progress') handlers.onProgress?.(data as { text?: string; phase?: string; agent_name?: string; skill?: string })
       else if (eventType === 'message') handlers.onMessage?.(data)
       else if (eventType === 'end') handlers.onEnd?.(data)

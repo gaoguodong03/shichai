@@ -253,7 +253,6 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
           body: [
-            `event: start\ndata: ${JSON.stringify({ type: 'start', run_id: 'run-e2e-custom' })}\n\n`,
             `event: route\ndata: ${JSON.stringify({ type: 'route', run_id: 'run-e2e-custom', agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
             `event: progress\ndata: ${JSON.stringify({ type: 'progress', run_id: 'run-e2e-custom', agent_name: '写作专家', skill: 'skill-write', phase: 'tool_running' })}\n\n`,
           ].join(''),

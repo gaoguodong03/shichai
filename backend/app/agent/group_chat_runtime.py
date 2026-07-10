@@ -29,7 +29,7 @@ from app.agent.group_chat_title_meta import _record_user_message_and_refresh_tit
 from app.agent.group_orchestration_fsm import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_runtime_logs import append_tool_execution_logs
-from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent, SseStartEvent
+from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent
 from app.agent.structured_output_contracts import ArtifactRef
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
@@ -233,7 +233,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             task=current_task if current_task is not None else asyncio.create_task(asyncio.sleep(0)),
         )
         try:
-            yield _sse("start", SseStartEvent(type="start", run_id=run_id).model_dump())
             async for event in _run_contract_events(
                 group_session_id=group_session_id,
                 request=request,

@@ -71,11 +71,6 @@ class SseRouteEvent(StrictApiModel):
     skill: str | None = Field(default=None, min_length=1)
 
 
-class SseStartEvent(StrictApiModel):
-    type: Literal["start"] = "start"
-    run_id: str = Field(min_length=1)
-
-
 class SseProgressEvent(StrictApiModel):
     type: Literal["progress"] = "progress"
     run_id: str = Field(min_length=1)

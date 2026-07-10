@@ -446,7 +446,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           created_at: now,
         })
         return eventStream(route, [
-          ['start', { type: 'start', run_id: 'run-e2e' }],
           ['message', {
             message_id: 'host-stream',
             speaker: { type: 'host', agent_name: hostName },
@@ -476,7 +475,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         },
       })
       return eventStream(route, [
-        ['start', { type: 'start', run_id: 'run-e2e' }],
         ['route', { type: 'route', run_id: 'run-e2e', agent_name: '问答专家', skill: 'skill-qa' }],
         ['progress', { type: 'progress', run_id: 'run-e2e', phase: 'executing', agent_name: '问答专家', skill: 'skill-qa' }],
         ['message', {

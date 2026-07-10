@@ -53,7 +53,7 @@ def test_collect_artifacts_keeps_only_strict_public_artifact_refs():
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_starts_with_start_event(monkeypatch, tmp_path):
+async def test_chat_stream_omits_legacy_start_event(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
 
@@ -95,9 +95,10 @@ async def test_chat_stream_starts_with_start_event(monkeypatch, tmp_path):
     )
 
     events = await _collect_stream_events(response)
-    assert events[0][0] == "start"
-    assert events[0][1]["type"] == "start"
-    assert events[0][1]["run_id"]
+    event_names = [event_name for event_name, _payload in events]
+    assert "start" not in event_names
+    assert set(event_names) <= {"route", "progress", "message", "end", "error"}
+    assert events[0][0] == "message"
     assert "agent_running" not in {payload.get("phase") for _, payload in events}
     assert "message_ready" not in {payload.get("phase") for _, payload in events}
 
