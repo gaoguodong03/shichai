@@ -70,7 +70,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByText('未声明 Python 依赖，本技能会话不安装额外 Python 依赖。')).toBeVisible()
   })
 
-  test('导入技能包后展示统一新增保留摘要', async ({ page }) => {
+  test('导入技能包后展示统一新增覆盖摘要', async ({ page }) => {
     const state = createE2eState()
     await loginByStorage(page)
     await mockApi(page, state)
@@ -81,10 +81,13 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
         body: JSON.stringify({
           status: 'ok',
           data: {
-            id: 'skill-imported',
+            directory_name: 'skill-imported',
             name: '导入技能',
-            mcp_added: 1,
-            mcp_skipped: 0,
+            summary: {
+              overwritten_directory_names: [],
+              mcp_added: 1,
+              mcp_updated: 0,
+            },
           },
         }),
       })
@@ -100,8 +103,8 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('heading', { name: '导入技能' })).toBeVisible()
     await page.getByRole('button', { name: '确认导入' }).click()
     await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
-    await expect(page.getByText('技能：新增 1 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('工具：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('技能：新增 1 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 1 个，覆盖 0 个')).toBeVisible()
   })
 
   test('导入工具包成功弹窗使用工具摘要', async ({ page }) => {
@@ -114,7 +117,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           status: 'ok',
-          data: { summary: { mcp_added: 1, mcp_skipped: 2 } },
+          data: { summary: { mcp_added: 1, mcp_updated: 2 } },
         }),
       })
     })
@@ -126,7 +129,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
       mimeType: 'application/zip',
       buffer: Buffer.from('mock zip'),
     })
-    await expectAlert(page, '导入成功', '工具：新增 1 个，保留 2 个')
+    await expectAlert(page, '导入成功', '工具：新增 1 个，覆盖 2 个')
   })
 
   test('技能详情页不展示公开链接入口，编辑按钮在编辑态变为保存', async ({ page }) => {

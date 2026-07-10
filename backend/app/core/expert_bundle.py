@@ -16,9 +16,7 @@ EXPERT_MANIFEST_NAME = "bundle.json"
 def merge_single_expert_into_instances(
     instances: List[Dict[str, Any]],
     expert_row: Dict[str, Any],
-    *,
-    name_conflict: str,
-) -> Tuple[List[Dict[str, Any]], str | None, bool, List[str]]:
+) -> Tuple[List[Dict[str, Any]], str | None, List[str]]:
     """Merge one expert by current name identity; same-name rows are overwritten."""
     from app.core.scenario_bundle import strip_agent_row_for_disk
 
@@ -48,12 +46,12 @@ def merge_single_expert_into_instances(
         order = [name for name in order if name in by_name]
 
     if not incoming_name:
-        return [by_name[name] for name in order if name in by_name], None, True, []
+        return [by_name[name] for name in order if name in by_name], None, []
 
     by_name[incoming_name] = work
     if incoming_name not in order:
         order.append(incoming_name)
-    return [by_name[name] for name in order if name in by_name], incoming_name, False, overwritten_agent_names
+    return [by_name[name] for name in order if name in by_name], incoming_name, overwritten_agent_names
 
 
 def read_expert_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:

@@ -9,8 +9,8 @@ function isZipFile(file: File) {
   return name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 }
 
-function importSummaryLine(label: string, added: number, overwritten: number, failed = 0): string {
-  return `${label}：新增 ${Math.max(0, added)} 个，覆盖 ${Math.max(0, overwritten)} 个，失败 ${Math.max(0, failed)} 个`
+function importSummaryLine(label: string, added: number, overwritten: number): string {
+  return `${label}：新增 ${Math.max(0, added)} 个，覆盖 ${Math.max(0, overwritten)} 个`
 }
 
 export function useZipResourceImports(options: {
@@ -64,7 +64,6 @@ export function useZipResourceImports(options: {
     try {
       const fd = new FormData()
       fd.append('file', pendingSkillZipFile.value)
-      fd.append('name_conflict', 'overwrite')
       const r = await apiRequest('/settings/skills/import-zip', {
         method: 'POST',
         body: fd,
@@ -84,7 +83,6 @@ export function useZipResourceImports(options: {
               '工具',
               j?.data?.mcp_added ?? j?.data?.summary?.mcp_added ?? 0,
               j?.data?.mcp_updated ?? j?.data?.summary?.mcp_updated ?? 0,
-              j?.data?.mcp_failed ?? j?.data?.summary?.mcp_failed ?? 0,
             ),
           ].join('\n'),
         }
@@ -129,7 +127,7 @@ export function useZipResourceImports(options: {
       const summary = j?.data?.summary || {}
       await appAlert({
         title: '导入成功',
-        message: importSummaryLine('工具', summary.mcp_added ?? 0, summary.mcp_updated ?? 0, summary.mcp_failed ?? 0),
+        message: importSummaryLine('工具', summary.mcp_added ?? 0, summary.mcp_updated ?? 0),
         variant: 'success',
       })
     } catch (err) {

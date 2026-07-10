@@ -36,7 +36,6 @@ type ScenarioBundlePreview = {
     mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
-    would_skip_skills?: string[]
     name_conflict_existing_names?: string[]
     would_overwrite_experts?: Record<string, string[]>
     would_remap_skills?: Record<string, string>
@@ -53,7 +52,6 @@ type AgentBundlePreview = {
     mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
-    would_skip_skills?: string[]
     name_conflict_existing_names?: string[]
     would_remap_skills?: Record<string, string>
     would_remap_tools?: Record<string, string>
@@ -183,8 +181,8 @@ export function useBundleImports(options: {
     return item.display_name || typeLabel
   }
 
-  function importSummaryLine(label: string, added: number, overwritten: number, failed = 0): string {
-    return `${label}：新增 ${Math.max(0, added)} 个，覆盖 ${Math.max(0, overwritten)} 个，失败 ${Math.max(0, failed)} 个`
+  function importSummaryLine(label: string, added: number, overwritten: number): string {
+    return `${label}：新增 ${Math.max(0, added)} 个，覆盖 ${Math.max(0, overwritten)} 个`
   }
 
   const scenarioConflictPreviewRows = computed(() => {
@@ -285,14 +283,12 @@ export function useBundleImports(options: {
           summary?: {
             preset_imported_names?: string[]
             skills_imported?: string[]
-            skills_skipped?: string[]
             skills_overwritten?: string[]
             agent_imported_names?: string[]
             overwritten_agent_names?: string[]
             overwritten_existing_names?: string[]
             mcp_added?: number
             mcp_updated?: number
-            mcp_failed?: number
           }
         }
       }
@@ -306,7 +302,7 @@ export function useBundleImports(options: {
             importSummaryLine('场景', (s.preset_imported_names || []).length, (s.overwritten_existing_names || []).length),
             importSummaryLine('专家', (s.agent_imported_names || []).length, (s.overwritten_agent_names || []).length),
             importSummaryLine('技能', (s.skills_imported || []).length, (s.skills_overwritten || []).length),
-            importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_updated ?? 0, s.mcp_failed ?? 0),
+            importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_updated ?? 0),
           ].join('\n')
         : '导入成功'
       await options.fetchScenarioPresets()
@@ -463,12 +459,10 @@ export function useBundleImports(options: {
           summary?: {
             imported_agent_name?: string
             skills_imported?: string[]
-            skipped_by_name?: boolean
             overwritten_agent_names?: string[]
             skills_overwritten?: string[]
             mcp_added?: number
             mcp_updated?: number
-            mcp_failed?: number
           }
         }
       }
@@ -484,7 +478,7 @@ export function useBundleImports(options: {
         '导入成功',
         importSummaryLine('专家', agentAddedCount, overwrittenAgentCount),
         importSummaryLine('技能', skillWriteCount, skillOverwriteCount),
-        importSummaryLine('工具', summary?.mcp_added ?? 0, summary?.mcp_updated ?? 0, summary?.mcp_failed ?? 0),
+        importSummaryLine('工具', summary?.mcp_added ?? 0, summary?.mcp_updated ?? 0),
       ].join('\n')
       await options.fetchAgents()
       await options.fetchSkills()
@@ -583,17 +577,11 @@ async function loadBundlePreview<T>(options: {
 function appendScenarioBundleOptions(fd: FormData, file: File, dryRun: boolean) {
   fd.append('file', file)
   fd.append('dry_run', dryRun ? 'true' : 'false')
-  fd.append('overwrite_experts', 'true')
-  fd.append('overwrite_skills', 'true')
-  fd.append('mcp_skip_existing', 'false')
-  fd.append('name_conflict', 'overwrite')
 }
 
 function appendAgentBundleOptions(fd: FormData, file: File, dryRun: boolean) {
   fd.append('file', file)
   fd.append('dry_run', dryRun ? 'true' : 'false')
-  fd.append('overwrite_skills', 'true')
-  fd.append('mcp_skip_existing', 'false')
 }
 
 function appendLlmBundleOptions(fd: FormData, file: File, dryRun: boolean) {

@@ -8,8 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
+from app.api.import_contract import reject_legacy_import_strategy_fields
 from app.api.request_models import StrictRequestModel
 
 from app.core.security import user_context_dependency
@@ -161,10 +162,9 @@ async def export_agent_instance_bundle(agent_name: str):
 
 @router.post("/agents/import-bundle")
 async def import_agent_instance_bundle(
+    request: Request,
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
-    overwrite_skills: bool = Form(True),
-    mcp_skip_existing: bool = Form(False),
 ):
     """导入专家包：合并技能、MCP 与专家条目。"""
     from app.api.settings_mcp import load_mcp_config
@@ -183,6 +183,7 @@ async def import_agent_instance_bundle(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
+    await reject_legacy_import_strategy_fields(request)
 
     tmp: Optional[Path] = None
     try:
@@ -238,7 +239,6 @@ async def import_agent_instance_bundle(
                         "skill_display_names": skill_display_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite,
-                        "would_skip_skills": [],
                         "name_conflict_existing_names": same_name_agent_names,
                         "missing_references": missing_references,
                     },

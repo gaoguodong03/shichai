@@ -403,15 +403,12 @@ def list_skill_directories_in_bundle_skills_dir(bundle_dir: Path) -> List[str]:
 def copy_bundle_skills_to_user(
     bundle_dir: Path,
     user_skills_dir: Path,
-    *,
-    overwrite: bool,
-) -> Tuple[List[str], List[str]]:
+) -> List[str]:
     """将 bundle_dir/skills/<id>/ 复制到用户技能目录，目录名即 skill_directory。"""
     imported: List[str] = []
-    skipped: List[str] = []
     skills_root = bundle_skills_root(bundle_dir)
     if not skills_root.is_dir():
-        return imported, skipped
+        return imported
     user_skills_dir.mkdir(parents=True, exist_ok=True)
     for child in skills_root.iterdir():
         if not child.is_dir():
@@ -427,13 +424,10 @@ def copy_bundle_skills_to_user(
         except ValueError:
             continue
         if dest.exists():
-            if not overwrite:
-                skipped.append(sid)
-                continue
             shutil.rmtree(dest)
         shutil.copytree(child, dest)
         imported.append(sid)
-    return imported, skipped
+    return imported
 
 
 def strip_agent_row_for_disk(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -448,8 +442,6 @@ def _name_key(raw: Any) -> str:
 def merge_agent_instances_for_bundle(
     user_instances: List[Dict[str, Any]],
     bundle_instances: List[Dict[str, Any]],
-    *,
-    overwrite: bool,
 ) -> List[Dict[str, Any]]:
     by_name: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
@@ -473,8 +465,6 @@ def merge_agent_instances_for_bundle(
         ]
         conflict_names = list(dict.fromkeys(conflict_names))
         if conflict_names:
-            if not overwrite:
-                continue
             for old_name in conflict_names:
                 by_name.pop(old_name, None)
             order = [old_name for old_name in order if old_name in by_name]
@@ -486,9 +476,7 @@ def merge_agent_instances_for_bundle(
 def merge_mcp_servers_for_bundle(
     user_servers: List[Dict[str, Any]],
     bundle_servers: List[Dict[str, Any]],
-    *,
-    skip_existing: bool,
-) -> Tuple[List[Dict[str, Any]], int, int, int]:
+) -> Tuple[List[Dict[str, Any]], int, int]:
     by_name: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     for s in user_servers:
@@ -499,7 +487,6 @@ def merge_mcp_servers_for_bundle(
         by_name[key] = normalize_tool_row(s)
         order.append(key)
     added = 0
-    skipped = 0
     updated = 0
     for s in bundle_servers:
         name = str(s.get("name") or "").strip()
@@ -507,13 +494,10 @@ def merge_mcp_servers_for_bundle(
             continue
         incoming_name_key = _name_key(name)
         if incoming_name_key in by_name:
-            if skip_existing:
-                skipped += 1
-                continue
             by_name[incoming_name_key] = normalize_tool_row(s)
             updated += 1
         else:
             by_name[incoming_name_key] = normalize_tool_row(s)
             order.append(incoming_name_key)
             added += 1
-    return [by_name[i] for i in order if i in by_name], added, skipped, updated
+    return [by_name[i] for i in order if i in by_name], added, updated

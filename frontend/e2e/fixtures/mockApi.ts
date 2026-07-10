@@ -485,7 +485,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
             mcps: [{ name: '导入工具' }],
             name_conflict_existing_names: [],
             would_overwrite_skills: [],
-            would_skip_skills: [],
             would_remap_skills: {},
             would_remap_tools: {},
             would_overwrite_tools: [],
@@ -502,11 +501,11 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, {
         summary: {
           imported_agent_name: '导入专家',
-          kept_agent_names: [],
+          overwritten_agent_names: [],
           skills_imported: ['skill-imported'],
-          skills_kept: [],
+          skills_overwritten: [],
           mcp_added: 1,
-          mcp_skipped: 0,
+          mcp_updated: 0,
         },
       })
     }
@@ -536,13 +535,13 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         },
         summary: {
           preset_imported_names: ['导入资源包场景'],
-          kept_existing_names: [],
+          overwritten_existing_names: [],
           agent_imported_names: ['问答专家'],
-          kept_agent_names: [],
+          overwritten_agent_names: [],
           skills_imported: ['skill-qa'],
-          skills_kept: [],
+          skills_overwritten: [],
           mcp_added: 1,
-          mcp_skipped: 0,
+          mcp_updated: 0,
         },
       })
     }

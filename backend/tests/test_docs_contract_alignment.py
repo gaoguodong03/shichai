@@ -254,3 +254,19 @@ def test_simple_agent_text_tool_protocol_has_independent_module_boundary():
         "def _text_tool_protocol_failure_message",
     ]:
         assert old_private_definition not in agent_text
+
+
+def test_resource_import_docs_do_not_advertise_legacy_conflict_controls():
+    """Resource import docs must expose the current overwrite contract, not caller-selected strategies."""
+    text = (PROJECT_ROOT / "docs" / "design" / "interface-document.md").read_text(encoding="utf-8")
+    section = text.split("### 7.5 专家资源包", 1)[1].split("## 11. 工作区文件接口", 1)[0]
+
+    for legacy_control in [
+        "overwrite_experts",
+        "overwrite_skills",
+        "mcp_skip_existing",
+        "name_conflict",
+        "是否覆盖",
+        "是否跳过",
+    ]:
+        assert legacy_control not in section

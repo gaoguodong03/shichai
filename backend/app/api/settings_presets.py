@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.api.import_contract import reject_legacy_import_strategy_fields
 from app.api.request_models import StrictRequestModel
 from app.api.settings_mcp import load_mcp_config, save_mcp_config
 from app.core.resource_store import mirror_rows_to_resource_dir
@@ -542,10 +543,6 @@ async def import_session_preset_bundle(
     request: Request,
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
-    overwrite_experts: bool = Form(True),
-    overwrite_skills: bool = Form(True),
-    mcp_skip_existing: bool = Form(False),
-    name_conflict: str = Form("overwrite"),
 ):
     """导入场景包：合并 Agent、Skill、工具与场景预设。dry_run=true 时返回包内清单、同名覆盖与名称映射预览。"""
     from app.api.agents import load_agent_instances
@@ -556,10 +553,7 @@ async def import_session_preset_bundle(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
-
-    conflict = str(name_conflict or "overwrite").strip().lower()
-    if conflict != "overwrite":
-        raise HTTPException(status_code=400, detail="当前场景资源包导入只支持同名覆盖")
+    await reject_legacy_import_strategy_fields(request)
 
     tmp: Optional[Path] = None
     try:
@@ -639,11 +633,9 @@ async def import_session_preset_bundle(
                         "skill_display_names": skill_display_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite_skills,
-                        "would_skip_skills": [],
                         "would_remap_skills": skill_directory_map,
                         "would_remap_tools": tool_name_map,
                         "would_overwrite_tools": would_overwrite_mcp,
-                        "would_skip_tools": [],
                         "would_overwrite_experts": expert_conflicts,
                         "name_conflict_existing_names": preset_name_conflicts,
                         "missing_references": missing_references,
@@ -665,7 +657,7 @@ async def import_session_preset_bundle(
         meta = _request_log_meta(request)
         user_ctx = get_current_user_context(default_fallback=False)
         logger.info(
-            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s resource_names_before=%s resource_names_after=%s skills_imported=%s skills_failed=%s mcp_added=%s mcp_updated=%s mcp_failed=%s referer=%s",
+            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s resource_names_before=%s resource_names_after=%s skills_imported=%s mcp_added=%s mcp_updated=%s referer=%s",
             user_ctx.user_id if user_ctx else "",
             user_ctx.username if user_ctx else get_current_username() or "",
             meta["client"],
@@ -677,10 +669,8 @@ async def import_session_preset_bundle(
             before_import_resource_names,
             _scenario_resource_names(),
             summary.get("skills_imported") or [],
-            summary.get("skills_skipped") or [],
             summary.get("mcp_added") or 0,
             summary.get("mcp_updated") or 0,
-            summary.get("mcp_failed") or 0,
             meta["referer"],
         )
 
@@ -764,11 +754,9 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_names": preset_name_conflicts,
                     "would_overwrite_skills": overwritten_skill_directories,
-                    "would_skip_skills": [],
                     "would_remap_skills": skill_directory_map,
                     "would_remap_tools": tool_name_map,
                     "would_overwrite_tools": overwritten_tool_names,
-                    "would_skip_tools": [],
                     "would_overwrite_experts": expert_conflicts,
                     "missing_references": missing_references,
                 },
@@ -823,7 +811,6 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "overwritten_existing_names": overwritten_existing_names,
                 "skills_imported": imported_skills,
                 "skills_overwritten": overwritten_skills,
-                "skills_skipped": [],
                 "agent_imported_names": [
                     str(row.get("name") or "").strip()
                     for row in agent_rows_to_import
@@ -837,7 +824,6 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 **requirements_result,
                 "mcp_added": mcp_added,
                 "mcp_updated": mcp_updated,
-                "mcp_failed": 0,
             },
         }
     finally:

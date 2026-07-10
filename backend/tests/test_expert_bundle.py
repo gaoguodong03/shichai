@@ -10,7 +10,7 @@ from app.core.scenario_bundle import extract_scenario_bundle_dir
 from app.core.expert_bundle import read_expert_bundle_manifest
 
 
-def test_merge_single_expert_overwrites_same_name_even_when_skip_requested():
+def test_merge_single_expert_overwrites_same_name():
     user = [{"name": "Old", "description": "", "system_prompt": "", "skills": [], "llm_name": ""}]
     bundle_row = {
         "name": "Old",
@@ -19,8 +19,7 @@ def test_merge_single_expert_overwrites_same_name_even_when_skip_requested():
         "skills": [],
         "llm_name": "",
     }
-    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="skip")
-    assert skipped is False
+    merged, fid, overwritten = merge_single_expert_into_instances(user, bundle_row)
     assert fid == "Old"
     assert overwritten == ["Old"]
     assert len(merged) == 1
@@ -40,8 +39,7 @@ def test_merge_single_expert_overwrite_all_same_name_and_keep_import():
         "skills": [],
         "llm_name": "",
     }
-    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="overwrite")
-    assert skipped is False
+    merged, fid, overwritten = merge_single_expert_into_instances(user, bundle_row)
     assert fid == "Same"
     assert overwritten == ["Same"]
     assert [x["name"] for x in merged] == ["Same"]

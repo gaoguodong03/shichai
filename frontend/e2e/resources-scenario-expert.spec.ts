@@ -144,15 +144,13 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
             },
             summary: {
               preset_imported_names: ['导入后场景'],
-              kept_existing_names: [],
+              overwritten_existing_names: [],
               agent_imported_names: ['问答专家'],
-              kept_agent_names: [],
+              overwritten_agent_names: [],
               skills_imported: [],
-              skills_kept: [],
-              skills_skipped: [],
-              skipped_by_name: [],
+              skills_overwritten: [],
               mcp_added: 0,
-              mcp_skipped: 0,
+              mcp_updated: 0,
             },
           },
         }),
@@ -178,10 +176,10 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
     await page.getByRole('button', { name: '确认导入' }).click()
     await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
-    await expect(page.getByText('场景：新增 1 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('专家：新增 1 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('技能：新增 0 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('工具：新增 0 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('场景：新增 1 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('专家：新增 1 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('技能：新增 0 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 0 个，覆盖 0 个')).toBeVisible()
     await page.waitForTimeout(300)
 
     expect(emptyPresetPutCount).toBe(0)
@@ -228,7 +226,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
     await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
     await expect(page.getByText('冲突预览')).toBeVisible()
-    await expect(page.getByText('同名内容将保留本地版本')).toBeVisible()
+    await expect(page.getByText('同名内容将覆盖本地内容')).toBeVisible()
     await expect(page.getByText('场景：冲突场景')).toBeVisible()
     await expect(page.getByText('专家：导入专家')).toBeVisible()
     await expect(page.getByText('技能 缺失技能')).toBeVisible()
@@ -271,7 +269,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('书童四九', { exact: true })).toHaveCount(0)
   })
 
-  test('专家导入成功后展示统一新增保留摘要', async ({ page }) => {
+  test('专家导入成功后展示统一新增覆盖摘要', async ({ page }) => {
     const state = createE2eState()
     let importCallCount = 0
     await loginByStorage(page)
@@ -295,11 +293,11 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
             : {
                 summary: {
                   imported_agent_name: '导入专家',
-                  kept_agent_names: [],
+                  overwritten_agent_names: [],
                   skills_imported: ['skill-imported'],
-                  skills_kept: [],
+                  skills_overwritten: [],
                   mcp_added: 1,
-                  mcp_skipped: 0,
+                  mcp_updated: 0,
                 },
               },
         }),
@@ -316,8 +314,8 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByRole('heading', { name: '导入专家' })).toBeVisible()
     await page.getByRole('button', { name: '确认导入' }).click()
     await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
-    await expect(page.getByText('专家：新增 1 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('技能：新增 1 个，保留 0 个')).toBeVisible()
-    await expect(page.getByText('工具：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('专家：新增 1 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('技能：新增 1 个，覆盖 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 1 个，覆盖 0 个')).toBeVisible()
   })
 })

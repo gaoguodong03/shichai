@@ -11,8 +11,9 @@ from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from app.api.import_contract import reject_legacy_import_strategy_fields
 from app.api.request_models import StrictRequestModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
@@ -224,7 +225,8 @@ async def export_mcp_server_zip(tool_name: str):
 
 
 @router.post("/settings/mcp/import-zip")
-async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Form(False)):
+async def import_mcp_server_zip(request: Request, file: UploadFile = File(...), dry_run: bool = Form(False)):
+    await reject_legacy_import_strategy_fields(request)
     raw = await file.read()
     rows = _read_mcp_bundle_rows(raw)
     for row in rows:
@@ -258,10 +260,8 @@ async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Fo
             "summary": {
                 "mcp_added": mcp_added,
                 "mcp_updated": mcp_updated,
-                "mcp_failed": 0,
                 "tools_added": mcp_added,
                 "tools_updated": mcp_updated,
-                "tools_failed": 0,
             },
         },
     }

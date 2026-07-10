@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.core.scenario_bundle import (
     build_scenario_bundle_zip_bytes,
+    copy_bundle_skills_to_user,
     extract_scenario_bundle_dir,
     merge_agent_instances_for_bundle,
     merge_mcp_servers_for_bundle,
@@ -18,7 +19,7 @@ from app.core.scenario_bundle import (
 def test_merge_agent_upsert_and_append():
     user = [{"agent_id": "a1", "name": "Old"}]
     bundle = [{"agent_id": "a1", "name": "New"}, {"agent_id": "a2", "name": "B"}]
-    out = merge_agent_instances_for_bundle(user, bundle, overwrite=True)
+    out = merge_agent_instances_for_bundle(user, bundle)
     assert [r["name"] for r in out] == ["Old", "New", "B"]
     assert all("agent_id" not in r for r in out)
 
@@ -26,29 +27,30 @@ def test_merge_agent_upsert_and_append():
 def test_merge_agent_overwrites_same_name_with_new_id():
     user = [{"agent_id": "local-a", "name": "Expert A"}, {"agent_id": "keep", "name": "Keep"}]
     bundle = [{"agent_id": "shared-a", "name": "Expert A"}]
-    out = merge_agent_instances_for_bundle(user, bundle, overwrite=True)
+    out = merge_agent_instances_for_bundle(user, bundle)
     assert [r["name"] for r in out] == ["Keep", "Expert A"]
     assert all("agent_id" not in r for r in out)
 
 
-def test_merge_agent_skip_overwrite():
+def test_merge_agent_always_overwrites_same_name():
     user = [{"agent_id": "a1", "name": "Keep"}]
-    bundle = [{"agent_id": "a1", "name": "New"}]
-    out = merge_agent_instances_for_bundle(user, bundle, overwrite=False)
-    assert out[0]["name"] == "Keep"
+    bundle = [{"agent_id": "a2", "name": "Keep", "description": "new"}]
+    out = merge_agent_instances_for_bundle(user, bundle)
+    assert out == [{"name": "Keep", "description": "new"}]
 
 
-def test_merge_mcp_skip_existing():
+def test_merge_mcp_always_overwrites_same_name_and_appends_new():
     user = [{"name": "U", "type": "mcp", "server_config": '{"mcpServers":{"U":{"command":"old"}}}'}]
     bundle = [
         {"name": "U", "type": "mcp", "server_config": '{"mcpServers":{"U":{"command":"new"}}}'},
         {"name": "N", "type": "mcp", "server_config": '{"mcpServers":{"N":{"command":"n"}}}'},
     ]
-    merged, added, skipped, updated = merge_mcp_servers_for_bundle(user, bundle, skip_existing=True)
+    merged, added, updated = merge_mcp_servers_for_bundle(user, bundle)
     names = [s["name"] for s in merged]
     assert names == ["U", "N"]
     assert all("id" not in s for s in merged)
-    assert added == 1 and skipped == 1 and updated == 0
+    assert "new" in merged[0]["server_config"]
+    assert added == 1 and updated == 1
 
 
 def test_merge_mcp_overwrites_same_name():
@@ -57,11 +59,22 @@ def test_merge_mcp_overwrites_same_name():
         {"name": "Keep", "type": "mcp", "server_config": '{"mcpServers":{"Keep":{"command":"keep"}}}'},
     ]
     bundle = [{"name": "Tool A", "type": "mcp", "server_config": '{"mcpServers":{"Tool A":{"command":"new"}}}'}]
-    merged, added, skipped, updated = merge_mcp_servers_for_bundle(user, bundle, skip_existing=False)
+    merged, added, updated = merge_mcp_servers_for_bundle(user, bundle)
     by = {r["name"]: r["server_config"] for r in merged}
     assert "new" in by["Tool A"]
     assert "keep" in by["Keep"]
-    assert added == 0 and skipped == 0 and updated == 1
+    assert added == 0 and updated == 1
+
+
+def test_copy_bundle_skills_to_user_always_overwrites_without_skip_branch():
+    import inspect
+
+    params = inspect.signature(copy_bundle_skills_to_user).parameters
+    assert "overwrite" not in params
+
+    text = inspect.getsource(copy_bundle_skills_to_user)
+    assert "skipped" not in text
+    assert "if not overwrite" not in text
 
 
 def test_roundtrip_zip_manifest():

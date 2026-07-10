@@ -16,10 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any, Set, Tuple
 
+from app.api.import_contract import reject_legacy_import_strategy_fields
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import require_user_context, sandbox_requirements_path, skills_dir_path
 from app.core.session_preset_validate import (
@@ -283,7 +284,6 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "directory_name": sid0,
                     "name": incoming_name,
                     "overwrite_directory_names": existing_same_name_directories,
-                    "skip_existing_directory_names": [],
                     "python_requirements": req_preview,
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "missing_references": missing_references,
@@ -330,7 +330,6 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "tool_name_map": tool_name_map,
                 "mcp_added": mcp_added,
                 "mcp_updated": mcp_updated,
-                "mcp_failed": 0,
                 "overwritten_tool_names": overwritten_tool_names,
             },
             **requirements_result,
@@ -370,7 +369,6 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
             "summary": {
                 "mcp_added": mcp_added,
                 "mcp_updated": mcp_updated,
-                "mcp_failed": 0,
                 "tool_name_map": tool_name_map,
                 "overwritten_tool_names": overwritten_tool_names,
             },
@@ -424,11 +422,9 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_names": same_name_agent_names,
                     "would_overwrite_skills": overwritten_directory_names,
-                    "would_skip_skills": [],
                     "would_remap_skills": directory_name_map,
                     "would_remap_tools": tool_name_map,
                     "would_overwrite_tools": overwritten_tool_names,
-                    "would_skip_tools": [],
                     "missing_references": missing_references,
                 },
             }
@@ -464,7 +460,6 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             for x in instances
             if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
-        skipped_by_name = False
         final_name = str(norm.get("name") or "").strip()
         remapped_norm = dict(norm)
         remapped_skills: List[Any] = []
@@ -484,16 +479,13 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             "object_type": "expert",
             "summary": {
                 "imported_agent_name": final_name,
-                "skipped_by_name": skipped_by_name,
                 "overwritten_agent_names": same_name_agent_names,
                 "skills_imported": imported_skills,
                 "skills_overwritten": overwritten_skills,
-                "skills_skipped": [],
                 "skill_map": directory_name_map,
                 "tool_map": tool_name_map,
                 "mcp_added": len([name for name in imported_mcp_names if name and name not in existing_mcp_names]),
                 "mcp_updated": len([name for name in imported_mcp_names if name and name in existing_mcp_names]),
-                "mcp_failed": 0,
                 "overwritten_tool_names": overwritten_tool_names,
                 "missing_references": missing_references,
                 **requirements_result,
@@ -590,8 +582,8 @@ async def create_skill(skill: SkillCreate):
 
 @router.post("/settings/skills/import-zip")
 async def import_skill_zip(
+    request: Request,
     file: UploadFile = File(...),
-    name_conflict: str = Form("overwrite"),
 ):
     """通过当前资源包 ZIP 导入 Skill。"""
     filename = (file.filename or "").strip()
@@ -601,10 +593,7 @@ async def import_skill_zip(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
-
-    conflict_mode = str(name_conflict or "overwrite").strip().lower()
-    if conflict_mode != "overwrite":
-        raise HTTPException(status_code=400, detail="当前 Skill 资源包导入只支持同名覆盖")
+    await reject_legacy_import_strategy_fields(request)
 
     result = await _import_skill_from_bundle_bytes(raw, dry_run=False)
     summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}

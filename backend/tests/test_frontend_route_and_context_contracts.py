@@ -99,6 +99,52 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
         assert legacy not in combined
 
 
+def test_frontend_resource_imports_do_not_send_legacy_conflict_controls():
+    combined = "\n".join(
+        read(path)
+        for path in [
+            "frontend/src/features/resources/useBundleImports.ts",
+            "frontend/src/features/resources/useZipResourceImports.ts",
+            "frontend/e2e/fixtures/mockApi.ts",
+            "frontend/e2e/resources-scenario-expert.spec.ts",
+            "frontend/e2e/resources-skill-mcp-llm.spec.ts",
+        ]
+    )
+    for legacy_control in [
+        "fd.append('name_conflict'",
+        "fd.append('overwrite_experts'",
+        "fd.append('overwrite_skills'",
+        "fd.append('mcp_skip_existing'",
+    ]:
+        assert legacy_control not in combined
+
+
+def test_frontend_resource_imports_do_not_model_legacy_skip_summaries():
+    combined = "\n".join(
+        read(path)
+        for path in [
+            "frontend/src/features/resources/useBundleImports.ts",
+            "frontend/src/features/resources/useZipResourceImports.ts",
+            "frontend/e2e/fixtures/mockApi.ts",
+            "frontend/e2e/resources-scenario-expert.spec.ts",
+            "frontend/e2e/resources-skill-mcp-llm.spec.ts",
+        ]
+    )
+
+    for legacy_field in [
+        "would_skip_skills",
+        "skipped_by_name",
+        "skills_skipped",
+        "mcp_failed",
+        "tools_failed",
+        "mcp_skipped",
+        "skills_kept",
+        "kept_agent_names",
+        "kept_existing_names",
+    ]:
+        assert legacy_field not in combined
+
+
 def test_e2e_stream_mocks_use_current_sse_event_payloads():
     files = [
         "frontend/e2e/fixtures/mockApi.ts",
