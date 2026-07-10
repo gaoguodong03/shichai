@@ -186,6 +186,14 @@ def test_user_attachment_prompt_section_uses_platform_prompt_registry():
     assert "- input.md: docs/input.md" in rendered
 
 
+def test_workspace_rename_prompt_uses_current_target_path_schema():
+    """The workspace rename prompt must name the current tool argument."""
+    rendered = render_platform_prompt("skill.execution.workspace_tool.rename.v1", {})
+
+    assert "target_path" in rendered
+    assert "new_name" not in rendered
+
+
 def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():
     """Prompt templates must not ask the model to reason from raw tool stdout/stderr fields."""
     template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")

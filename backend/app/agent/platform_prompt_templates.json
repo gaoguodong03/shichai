@@ -40,7 +40,7 @@
   "skill.execution.workspace_tool.read.v1": "- read_workspace_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。",
   "skill.execution.workspace_tool.write.v1": "- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。",
   "skill.execution.workspace_tool.edit.v1": "- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。",
-  "skill.execution.workspace_tool.rename.v1": "- rename_workspace_file: 重命名工作区内文件或目录。",
+  "skill.execution.workspace_tool.rename.v1": "- rename_workspace_file: 重命名工作区内文件或目录；参数使用原路径 path 和目标相对路径 target_path。",
   "skill.execution.workspace_tool.mkdir.v1": "- mkdir_workspace: 在工作区内新建目录。",
   "skill.execution.workspace_tool.list.v1": "- list_workspace_directory: 递归列出目录中文件（含子目录）。",
   "skill.execution.workspace_read_rule.v1": "当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，你必须优先使用可用文件读取工具，而不是只用自然语言解释路径是否正确；path 必须用用户本条消息里写的路径，不要用会话里较早提到的旧文件路径。",
