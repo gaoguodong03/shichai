@@ -54,6 +54,15 @@ def test_architecture_docs_do_not_advertise_session_index_contract():
         assert not re.search(r"sessions/\s*\n\s*index\.json", text), path
 
 
+def test_user_resource_storage_docs_use_name_based_resource_index_examples():
+    """Resource storage docs must not show id-based resource index rows."""
+    text = (PROJECT_ROOT / "docs" / "architecture" / "user-resource-store" / "storage-standard.md").read_text(encoding="utf-8")
+
+    assert '"id": "scenario-' not in text
+    assert '"resource_key"' not in text
+    assert '"name": "编写PPT"' in text
+
+
 def test_skill_script_manifest_has_independent_module_boundary():
     """Script manifest parsing belongs outside the sandbox execution entrypoint."""
     manifest_module = PROJECT_ROOT / "backend" / "app" / "tools" / "skill_script_manifest.py"

@@ -215,7 +215,7 @@ resources/models/<name>/model.json
 
 ## 3. 索引文件
 
-每类资源有自己的 `index.json`。
+资源中心的每类资源可以有自己的 `index.json`，用于列表页排序、筛选和摘要展示。资源身份仍以资源主体字段为准：场景、专家、工具和模型使用 `name`，Skill 使用 `directory_name`。
 
 示例：
 
@@ -224,7 +224,6 @@ resources/models/<name>/model.json
   "version": 1,
   "items": [
     {
-      "id": "scenario-ppt-writing-v1",
       "name": "编写PPT",
       "description": "把用户想法转成PPT大纲、配图并组装PPTX",
       "avatar_url": "",
@@ -240,8 +239,10 @@ resources/models/<name>/model.json
 
 - 列表页优先读 index。
 - 详情页读取资源主体文件。
+- index 行不引入独立 `id` 主键；引用和查找使用资源契约中的身份字段。
 - 如果 index 缺项但资源目录存在，可以后台修复 index。
 - 如果 index 有项但资源目录缺失，前端应显示缺失或跳过，后端应记录健康检查问题。
+- 会话目录不使用资源级 index 规则；会话列表扫描 `sessions/{session_id}/session.json`。
 
 ## 4. 会话层
 
