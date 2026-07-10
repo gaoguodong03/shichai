@@ -113,7 +113,7 @@ def build_llm_credential_notice(llm_name: str, cfg: Dict[str, Any]) -> str:
     model_desc = describe_llm_provider(llm_name, cfg)
     return (
         f"模型型号为 {model_desc}，此时没有配置密钥或密钥错误。"
-        "请前往「设置 → 密钥」添加密钥，并在「资源中心 → 配置模型」中为该模型选择密钥后重试。"
+        "请前往「设置 → 环境变量」添加变量，并在「资源中心 → 配置模型」中为该模型填写 api_key_env 后重试。"
     )
 
 

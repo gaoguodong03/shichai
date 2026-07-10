@@ -92,7 +92,7 @@ def resolve_data_audio_path(path: str, *, data_root: Path = DEFAULT_DATA_ROOT) -
 def get_api_key() -> str:
     key = (os.getenv("QWEN_AUDIO_API_KEY") or os.getenv("QWEN_API_KEY") or "").strip()
     if not key:
-        raise ValueError("未配置 QWEN_AUDIO_API_KEY 或 QWEN_API_KEY。请在 MCP transport.env 中选择密钥。")
+        raise ValueError("未配置 QWEN_AUDIO_API_KEY 或 QWEN_API_KEY。请在 MCP transport.env 中引用对应环境变量。")
     return key
 
 

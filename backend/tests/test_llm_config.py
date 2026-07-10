@@ -262,6 +262,10 @@ def test_build_llm_credential_notice_mentions_model():
     assert "qwen3-max" in notice
     assert "通义千问" not in notice
     assert "没有配置密钥或密钥错误" in notice
+    assert "设置 → 环境变量" in notice
+    assert "api_key_env" in notice
+    assert "设置 → 密钥" not in notice
+    assert "选择密钥" not in notice
 
 
 def test_llm_credential_notice_for_agent_when_key_missing(monkeypatch):

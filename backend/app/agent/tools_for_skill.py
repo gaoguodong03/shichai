@@ -342,7 +342,7 @@ def _mcp_configuration_issues(
                 {
                     "server": server_name,
                     "code": "mcp_secret_missing",
-                    "message": "MCP 配置引用了未设置的密钥或环境变量。",
+                    "message": "MCP 配置引用了未设置的环境变量。",
                     "missing": missing,
                 }
             )
@@ -363,7 +363,7 @@ def _create_mcp_configuration_status_tool(issues: List[Dict[str, Any]]) -> ToolS
             {
                 "ok": False,
                 "code": "mcp_configuration_unavailable",
-                "message": "本轮 Skill 声明的 MCP 工具未能加载，请先在资源中心配置对应密钥后重试。",
+                "message": "本轮 Skill 声明的 MCP 工具未能加载，请先在资源中心配置对应环境变量后重试。",
                 "missing": missing,
                 "issues": issues,
             },

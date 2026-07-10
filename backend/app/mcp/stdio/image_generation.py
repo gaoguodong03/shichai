@@ -62,7 +62,7 @@ def get_api_key() -> str:
     """Return the configured image API key in Bearer form."""
     key = os.getenv("JENIYA_API_KEY", "").strip()
     if not key:
-        raise ValueError("未配置 JENIYA_API_KEY。请在 MCP transport.env 中配置该密钥。")
+        raise ValueError("未配置 JENIYA_API_KEY。请在 MCP transport.env 中引用对应环境变量。")
     return key if key.startswith("Bearer ") else f"Bearer {key}"
 
 

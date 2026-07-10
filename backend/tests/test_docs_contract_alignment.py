@@ -473,6 +473,21 @@ def test_frontend_settings_env_vars_do_not_use_secret_navigation_identity():
         assert legacy not in combined
 
 
+def test_runtime_user_messages_do_not_reference_removed_secret_settings_entry():
+    """Runtime-facing notices must send users to env vars, not the removed secret settings entry."""
+    runtime_paths = [
+        PROJECT_ROOT / "backend" / "app" / "agent" / "llm_client.py",
+        PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "audio_asr.py",
+        PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "volces_icon.py",
+        PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "image_generation.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "tools_for_skill.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_paths)
+
+    for legacy in ["设置 → 密钥", "选择密钥", "添加密钥", "密钥设置", "配置该密钥", "对应密钥", "未设置的密钥"]:
+        assert legacy not in combined
+
+
 def test_sandbox_tool_docs_use_current_workspace_rename_schema():
     """Sandbox tool authoring docs must match the current workspace rename parameter."""
     text = (PROJECT_ROOT / "docs" / "skills" / "sandbox-tool-interface.md").read_text(encoding="utf-8")
