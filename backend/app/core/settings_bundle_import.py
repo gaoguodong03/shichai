@@ -59,6 +59,59 @@ def mcp_name_identity_import_plan(
     return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
 
 
+def mcp_name_map_for_import(
+    existing_servers: List[Dict[str, Any]],
+    rows_to_import: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Build the post-import tool display-name map used by Skill frontmatter rewrites."""
+    names: Dict[str, str] = {}
+    for row in existing_servers:
+        name = str(row.get("name") or "").strip()
+        if name:
+            names[name] = name
+    for row in rows_to_import or []:
+        name = str(row.get("name") or "").strip()
+        if name:
+            names[name] = name
+    return names
+
+
+def remap_frontmatter_mcp_refs(
+    fm: Dict[str, Any],
+    tool_name_map: Dict[str, str],
+    mcp_name_map: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Rewrite imported Skill allowed-tools references to post-import tool names."""
+    if not tool_name_map:
+        return fm
+    names = mcp_name_map or {}
+
+    def remap_list(raw: Any) -> Any:
+        if not isinstance(raw, list):
+            return raw
+        out: List[Any] = []
+        seen: Set[str] = set()
+        for item in raw:
+            old = str(item.get("name") if isinstance(item, dict) else item or "").strip()
+            if not old:
+                continue
+            new = tool_name_map.get(old, old)
+            label = names.get(new, new)
+            if label not in seen:
+                seen.add(label)
+                out.append(label)
+        return out
+
+    section = fm.get("allowed-tools")
+    if isinstance(section, dict):
+        copied_section = {key: section.get(key) for key in ("mcp", "http_api", "python") if key in section}
+        for key in ("mcp", "http_api"):
+            if key in copied_section:
+                copied_section[key] = remap_list(copied_section.get(key))
+        fm["allowed-tools"] = copied_section
+    return fm
+
+
 def agent_name_identity_import_plan(
     existing_agents: List[Dict[str, Any]],
     bundle_agents: List[Dict[str, Any]],

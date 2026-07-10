@@ -38,8 +38,10 @@ from app.core.settings_bundle_import import (
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     mcp_rows_for_bundle_refs,
     mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
+    mcp_name_map_for_import,
     normalized_name_key,
     prepare_scene_import_by_name_identity,
+    remap_frontmatter_mcp_refs,
     skill_name_identity_import_plan as _skill_name_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
@@ -559,9 +561,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     from app.api.agents import load_agent_instances, save_agent_instances
     from app.api.settings_skills import (
         _merge_imported_skill_requirements_and_prewarm,
-        _mcp_name_map_for_import,
         _read_skill_file,
-        _remap_frontmatter_mcp_refs,
         _sanitize_skill_frontmatter_for_write,
         _write_skill_file,
     )
@@ -651,7 +651,11 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             if not (skill_dir / "SKILL.md").is_file():
                 continue
             fm, body = _read_skill_file(skill_dir)
-            fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
+            fm = remap_frontmatter_mcp_refs(
+                fm,
+                tool_name_map,
+                mcp_name_map_for_import(load_mcp_config(), mcp_rows_to_import),
+            )
             _sanitize_skill_frontmatter_for_write(fm)
             _write_skill_file(skill_dir, fm, body)
         merged_agents = _upsert_rows_by_name(load_agent_instances(), agent_rows_to_import, "name")

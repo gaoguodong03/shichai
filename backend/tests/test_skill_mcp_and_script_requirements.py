@@ -60,7 +60,7 @@ def test_sanitize_skill_frontmatter_keeps_only_contract_fields():
 
 
 def test_import_frontmatter_remap_drops_http_api_alias():
-    from app.api.settings_skills import _remap_frontmatter_mcp_refs
+    from app.core.settings_bundle_import import remap_frontmatter_mcp_refs
 
     fm = {
         ALLOWED_TOOLS_FM_KEY: {
@@ -71,7 +71,7 @@ def test_import_frontmatter_remap_drops_http_api_alias():
         }
     }
 
-    out = _remap_frontmatter_mcp_refs(
+    out = remap_frontmatter_mcp_refs(
         fm,
         {"old-mcp": "new-mcp", "old-http": "new-http", "canonical-http": "new-canonical-http"},
         {"new-mcp": "New MCP", "new-http": "New HTTP", "new-canonical-http": "New Canonical HTTP"},

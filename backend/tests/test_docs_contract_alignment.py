@@ -185,6 +185,24 @@ def test_scene_bundle_import_planning_has_core_module_boundary():
         assert forbidden not in api_text
 
 
+def test_skill_bundle_import_reference_rewrites_have_core_module_boundary():
+    """Skill bundle tool reference remapping belongs in core, not API routes."""
+    api_text = "\n".join(
+        [
+            (PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py").read_text(encoding="utf-8"),
+            (PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py").read_text(encoding="utf-8"),
+        ]
+    )
+    module_text = (PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py").read_text(encoding="utf-8")
+
+    assert "def mcp_name_map_for_import" in module_text
+    assert "def remap_frontmatter_mcp_refs" in module_text
+    assert "def _mcp_name_map_for_import" not in api_text
+    assert "def _remap_frontmatter_mcp_refs" not in api_text
+    assert "_mcp_name_map_for_import(" not in api_text
+    assert "_remap_frontmatter_mcp_refs(" not in api_text
+
+
 def test_group_chat_archive_has_independent_module_boundary():
     """Archive segmentation is presentation logic, not session state storage."""
     archive_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_archive.py"

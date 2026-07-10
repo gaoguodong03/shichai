@@ -34,6 +34,8 @@ from app.core.settings_bundle_import import (
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     find_missing_references_for_skill_bundle as _find_missing_references_for_skill_bundle,
     mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
+    mcp_name_map_for_import,
+    remap_frontmatter_mcp_refs,
     skill_name_identity_import_plan as _skill_name_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
@@ -99,58 +101,6 @@ def _get_sandbox_requirements_path() -> Path:
 
 def _normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().lower()
-
-
-def _mcp_name_map_for_import(rows_to_import: List[Dict[str, Any]]) -> Dict[str, str]:
-    names: Dict[str, str] = {}
-    for row in load_mcp_config():
-        rid = str(row.get("name") or "").strip()
-        name = str(row.get("name") or "").strip()
-        if rid and name:
-            names[rid] = name
-    for row in rows_to_import or []:
-        rid = str(row.get("name") or "").strip()
-        name = str(row.get("name") or "").strip()
-        if rid and name:
-            names[rid] = name
-    return names
-
-
-def _remap_frontmatter_mcp_refs(
-    fm: Dict[str, Any],
-    tool_name_map: Dict[str, str],
-    mcp_name_map: Dict[str, str] | None = None,
-) -> Dict[str, Any]:
-    if not tool_name_map:
-        return fm
-    names = mcp_name_map or {}
-
-    def remap_list(raw: Any) -> Any:
-        if not isinstance(raw, list):
-            return raw
-        out: List[Any] = []
-        seen: Set[str] = set()
-        for item in raw:
-            old = str(item.get("name") if isinstance(item, dict) else item or "").strip()
-            if not old:
-                continue
-            new = tool_name_map.get(old, old)
-            label = names.get(new, new)
-            if label not in seen:
-                seen.add(label)
-                out.append(label)
-        return out
-
-    section = fm.get(ALLOWED_TOOLS_FM_KEY)
-    if isinstance(section, dict):
-        copied_section = {key: section.get(key) for key in ("mcp", "http_api", "python") if key in section}
-        for key in ("mcp", "http_api"):
-            if key in copied_section:
-                copied_section[key] = remap_list(copied_section.get(key))
-        fm[ALLOWED_TOOLS_FM_KEY] = copied_section
-    return fm
-
-
 
 
 def _python_requirements_from_skill_dir(skill_dir: Path) -> List[str]:
@@ -296,8 +246,8 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             shutil.rmtree(dest)
         shutil.copytree(src, dest)
         fm2, body2 = _read_skill_file(dest)
-        mcp_name_map = _mcp_name_map_for_import(mcp_rows_to_import)
-        fm2 = _remap_frontmatter_mcp_refs(fm2, tool_name_map, mcp_name_map)
+        mcp_name_map = mcp_name_map_for_import(load_mcp_config(), mcp_rows_to_import)
+        fm2 = remap_frontmatter_mcp_refs(fm2, tool_name_map, mcp_name_map)
         fm2["name"] = str(fm2.get("name") or incoming_name)
         fm2["description"] = str(fm2.get("description") or "")
         _sanitize_skill_frontmatter_for_write(fm2)
@@ -444,7 +394,11 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             if not (skill_dir / "SKILL.md").is_file():
                 continue
             fm, body = _read_skill_file(skill_dir)
-            fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
+            fm = remap_frontmatter_mcp_refs(
+                fm,
+                tool_name_map,
+                mcp_name_map_for_import(load_mcp_config(), mcp_rows_to_import),
+            )
             _sanitize_skill_frontmatter_for_write(fm)
             _write_skill_file(skill_dir, fm, body)
         existing_mcp_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
