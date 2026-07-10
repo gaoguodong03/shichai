@@ -259,9 +259,9 @@ def _ensure_structured_action_prompt(
 
     parts = [prompt_text]
     if not has_goal:
-        parts.append(f"【群聊讨论目标】\n{discussion_goal}")
+        parts.append(render_platform_prompt("expert.action.goal_section.v1", {"discussion_goal": discussion_goal}))
     if not has_input:
-        parts.append(f"【输入依据】\n{context_excerpt}")
+        parts.append(render_platform_prompt("expert.action.input_section.v1", {"input_prompt": context_excerpt}))
     if not has_output_format:
         parts.append(render_platform_prompt("expert.action.output_format.v1", {}))
     if not has_boundary:

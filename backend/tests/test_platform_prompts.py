@@ -106,8 +106,34 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "agent.text_tool_protocol.failure.v1",
         "expert.context.reference_notice.v1",
         "host.previous_speaker.v1",
+        "expert.action.goal_section.v1",
+        "expert.action.input_section.v1",
+        "title.group_topic.user_messages.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_expert_action_repair_sections_use_platform_prompt_registry():
+    runtime_text = (ROOT / "backend/app/agent/group_chat_memory_prompt.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        'parts.append(f"【群聊讨论目标】\\n{discussion_goal}")',
+        'parts.append(f"【输入依据】\\n{context_excerpt}")',
+    ]:
+        assert phrase not in runtime_text
+
+    for prompt_id in [
+        "expert.action.goal_section.v1",
+        "expert.action.input_section.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_group_title_user_messages_use_platform_prompt_registry():
+    runtime_text = (ROOT / "backend/app/agent/group_chat_title_meta.py").read_text(encoding="utf-8")
+
+    assert '"最近用户发言：\\n"' not in runtime_text
+    assert "title.group_topic.user_messages.v1" in PLATFORM_PROMPTS
 
 
 def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():

@@ -75,7 +75,10 @@ async def _ai_title_from_recent_user_messages(
 
         client = llm.get_client()
         system_prompt = render_platform_prompt("title.group_topic.v1", {"max_chars": max_chars})
-        content = "最近用户发言：\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])
+        content = render_platform_prompt(
+            "title.group_topic.user_messages.v1",
+            {"user_messages": "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])},
+        )
         resp = await client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=content)])
         raw = (getattr(resp, "content", "") or "").strip()
         if not raw:
