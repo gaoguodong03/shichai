@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 
@@ -87,17 +87,6 @@ def _normalize_workspace_path(value: Any) -> str:
     return text
 
 
-def _iter_values(value: Any) -> Iterable[Any]:
-    if isinstance(value, dict):
-        for item in value.values():
-            yield item
-            yield from _iter_values(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield item
-            yield from _iter_values(item)
-
-
 def _looks_like_success_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("execution_status") or "").strip().lower()
     ok = payload.get("ok")
@@ -108,10 +97,13 @@ def _extract_success_paths_from_payload(payload: dict[str, Any]) -> List[str]:
     if not _looks_like_success_payload(payload):
         return []
     paths: List[str] = []
-    for value in _iter_values(payload):
-        if not isinstance(value, str):
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        return []
+    for item in artifacts:
+        if not isinstance(item, dict):
             continue
-        normalized = _normalize_workspace_path(value)
+        normalized = _normalize_workspace_path(item.get("path"))
         if normalized and ("/" in normalized or normalized.lower().endswith(_WORKSPACE_FILE_EXTENSIONS)):
             paths.append(normalized)
     return paths

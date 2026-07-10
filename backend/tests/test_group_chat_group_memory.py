@@ -323,6 +323,23 @@ def test_guard_delivery_claims_keeps_successful_root_payload_file_claim(tmp_path
     assert out == content
 
 
+def test_guard_delivery_claims_does_not_trust_success_payload_free_text_path(tmp_path):
+    gc = _get_tool_trace_module()
+    content = "已生成文档，并保存到工作区：report.docx"
+    raw_results = ['{"execution_status":"succeeded","output":"report.docx","artifacts":[]}']
+    (tmp_path / "report.docx").write_text("doc", encoding="utf-8")
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "run_skill_script", "arguments": {"path": "report.docx"}}],
+        tool_output_texts=raw_results,
+        workspace_root=tmp_path,
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert out != content
+
+
 def test_guard_delivery_claims_rejects_legacy_success_code_payload(tmp_path):
     gc = _get_tool_trace_module()
     content = "已生成文档，并保存到工作区：report.docx"
