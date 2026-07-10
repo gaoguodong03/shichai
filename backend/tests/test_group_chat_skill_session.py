@@ -46,6 +46,34 @@ def test_script_stdout_content_is_skill_result_source_of_truth():
     assert result["content"] == "脚本 stdout 原文结果。"
 
 
+def test_script_stdout_artifacts_are_skill_result_source_of_truth():
+    result = skill_result_from_content(
+        status="succeeded",
+        content="模型综合后的产物说明。",
+        artifacts=[],
+        tool_results=[
+            {
+                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
+                "execution_status": "succeeded",
+                "message": "脚本完成",
+                "output": {
+                    "stdout": json.dumps(
+                        {
+                            "execution_status": "succeeded",
+                            "content": "脚本输出。",
+                            "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
+                            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        ],
+    )
+
+    assert result["artifacts"] == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
+
+
 def test_skill_result_uses_hidden_state_block_and_strips_visible_content():
     hidden_payload = {
         "execution_status": "blocked",

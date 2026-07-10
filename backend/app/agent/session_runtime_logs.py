@@ -20,6 +20,19 @@ def _log_path(session_id: str):
     return ensure_sessions_dir() / session_id / "execution_logs" / _TOOL_EXECUTION_LOG
 
 
+def _artifact_refs_from(value: Any) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or "").strip()
+        name = str(item.get("name") or "").strip()
+        path = str(item.get("path") or "").strip()
+        if kind and name and path:
+            rows.append({"type": kind, "name": name, "path": path})
+    return rows
+
+
 def _runtime_log_from_tool_result(
     item: dict[str, Any],
     *,
@@ -45,7 +58,9 @@ def _runtime_log_from_tool_result(
     if "id" not in clean_tool_call or "name" not in clean_tool_call:
         return None
 
-    artifacts = item.get("artifacts") if isinstance(item.get("artifacts"), list) else []
+    artifacts = _artifact_refs_from(item.get("artifacts"))
+    if not artifacts and isinstance(output.get("json_data"), dict):
+        artifacts = _artifact_refs_from(output.get("json_data", {}).get("artifacts"))
     created_at = format_storage_timestamp()
     record = _clean_dict(
         {

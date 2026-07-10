@@ -145,10 +145,15 @@ def skill_result_from_content(
         display_content = protocol_error
     elif problem_content and display_content.strip() in _GENERIC_EMPTY_CONTENT:
         display_content = problem_content
+    result_artifacts = script_payload.artifacts if script_payload is not None else list(artifacts or [])
     return {
         "execution_status": normalized,
         "content": display_content,
-        "artifacts": list(artifacts or []),
+        "artifacts": [
+            artifact.model_dump() if hasattr(artifact, "model_dump") else dict(artifact)
+            for artifact in result_artifacts
+            if isinstance(artifact, dict) or hasattr(artifact, "model_dump")
+        ],
         "next_action": next_action,
     }
 

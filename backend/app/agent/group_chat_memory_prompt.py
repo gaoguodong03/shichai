@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -88,52 +87,6 @@ def _normalize_workspace_index_path(value: Any) -> str:
     if not path or path in {"memory/facts.md", "memory/index.md"}:
         return ""
     return path[:240]
-
-
-def _iter_artifact_paths(payload: Any) -> List[str]:
-    paths: List[str] = []
-    if isinstance(payload, dict):
-        for key, value in payload.items():
-            key_text = str(key or "").lower()
-            if key_text in {
-                "path",
-                "file_path",
-                "filepath",
-                "workspace_path",
-                "output_path",
-                "download_url",
-                "output",
-                "markdown",
-            }:
-                normalized = _normalize_workspace_index_path(value)
-                if normalized:
-                    paths.append(normalized)
-            paths.extend(_iter_artifact_paths(value))
-    elif isinstance(payload, list):
-        for item in payload:
-            paths.extend(_iter_artifact_paths(item))
-    return paths
-
-
-def _extract_paths_from_tool_output_value(value: Any) -> List[str]:
-    text = str(value or "")
-    paths: List[str] = []
-    try:
-        decoded = json.loads(text)
-    except Exception:
-        decoded = None
-    if decoded is not None:
-        paths.extend(_iter_artifact_paths(decoded))
-    for pattern in (
-        r"已写入当前 Chat 工作区文件[:：]\s*([^\s]+)",
-        r"已写入当前工作区文件[:：]\s*([^\s]+)",
-        r"/api/workspaces/[^\"'\s)]+/files/download\?path=([^\"'\s)]+)",
-    ):
-        for match in re.finditer(pattern, text):
-            normalized = _normalize_workspace_index_path(match.group(1))
-            if normalized:
-                paths.append(normalized)
-    return paths
 
 
 def _extract_index_paths_from_message(msg: Dict[str, Any]) -> List[str]:

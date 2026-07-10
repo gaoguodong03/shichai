@@ -100,6 +100,14 @@ def test_group_chat_runtime_does_not_replace_unverified_delivery_claims():
     assert "本轮没有确认文件生成成功" not in runtime_text
 
 
+def test_group_memory_index_uses_skill_result_artifacts_only():
+    memory_prompt = _read("app/agent/group_chat_memory_prompt.py")
+
+    assert "_extract_paths_from_tool_output_value" not in memory_prompt
+    assert "_iter_artifact_paths" not in memory_prompt
+    assert "workspace_path" not in memory_prompt
+
+
 def test_group_chat_title_meta_does_not_infer_required_user_fields():
     title_meta = _read("app/agent/group_chat_title_meta.py")
 

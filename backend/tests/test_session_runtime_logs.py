@@ -62,6 +62,40 @@ def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeyp
     assert all(value is not None for value in rows[0].values())
 
 
+def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "t1"}})
+
+    append_tool_execution_logs(
+        "s1",
+        message_id="msg-1",
+        agent_name="文档专家",
+        skill="report-writer",
+        tool_results=[
+            {
+                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script", "arguments": {}},
+                "execution_status": "succeeded",
+                "message": "脚本完成",
+                "output": {
+                    "text": "raw",
+                    "json_data": {
+                        "execution_status": "succeeded",
+                        "content": "已生成报告。",
+                        "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
+                        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                    },
+                    "stdout": "",
+                    "stderr": "",
+                },
+            }
+        ],
+    )
+
+    rows = load_tool_execution_logs("s1")
+
+    assert rows[0]["artifacts"] == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
+
+
 def test_append_tool_execution_logs_skips_unknown_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions({"s1": {"title": "会话", "updated_at": "t1"}})
