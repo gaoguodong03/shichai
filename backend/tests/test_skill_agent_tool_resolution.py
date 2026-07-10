@@ -24,7 +24,7 @@ class _AsyncOnlyDummyTool:
 
 
 @pytest.mark.asyncio
-async def test_skill_tool_alias_run_skill_script_resolved():
+async def test_skill_tool_rejects_generic_run_skill_script_alias():
     tool = _DummyTool("run_skill_script_app-icon-generator")
     state = {
         "messages": [
@@ -43,14 +43,14 @@ async def test_skill_tool_alias_run_skill_script_resolved():
     }
     out = await _call_tool_impl(state, [tool])
     assert isinstance(out, dict)
-    assert out.get("messages")
     debug = out.get("tool_attempt_debug") or []
-    assert debug and debug[0].get("resolved_tool") == "run_skill_script_app-icon-generator"
-    assert debug[0].get("matched") is True
+    assert debug and debug[0].get("resolved_tool") == "run_skill_script"
+    assert debug[0].get("matched") is False
+    assert "工具 run_skill_script 不存在" in str((out.get("messages") or [])[0].content)
 
 
 @pytest.mark.asyncio
-async def test_skill_tool_mangled_name_resolved():
+async def test_skill_tool_rejects_mangled_script_tool_name():
     tool = _DummyTool("run_skill_script_app-icon-generator")
     state = {
         "messages": [
@@ -69,8 +69,9 @@ async def test_skill_tool_mangled_name_resolved():
     }
     out = await _call_tool_impl(state, [tool])
     debug = out.get("tool_attempt_debug") or []
-    assert debug and debug[0].get("resolved_tool") == "run_skill_script_app-icon-generator"
-    assert debug[0].get("matched") is True
+    assert debug and debug[0].get("resolved_tool") == "run_skill_script_app-icon-generator_extra"
+    assert debug[0].get("matched") is False
+    assert "工具 run_skill_script_app-icon-generator_extra 不存在" in str((out.get("messages") or [])[0].content)
 
 
 @pytest.mark.asyncio
@@ -105,7 +106,7 @@ def test_build_skill_script_tool_name_sanitizes_non_ascii():
 
 
 @pytest.mark.asyncio
-async def test_skill_tool_non_ascii_requested_name_resolved():
+async def test_skill_tool_rejects_non_visible_non_ascii_requested_name():
     safe_name = build_skill_script_tool_name("新-skill")
     tool = _DummyTool(safe_name)
     state = {
@@ -125,5 +126,6 @@ async def test_skill_tool_non_ascii_requested_name_resolved():
     }
     out = await _call_tool_impl(state, [tool])
     debug = out.get("tool_attempt_debug") or []
-    assert debug and debug[0].get("resolved_tool") == safe_name
-    assert debug[0].get("matched") is True
+    assert debug and debug[0].get("resolved_tool") == "run_skill_script_新-skill"
+    assert debug[0].get("matched") is False
+    assert "工具 run_skill_script_新-skill 不存在" in str((out.get("messages") or [])[0].content)

@@ -16,7 +16,6 @@ from app.agent.skill_agent_paths import (
     _normalize_read_file_path_argument,
     _tool_is_workspace_plain_read_file,
 )
-from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.skill_tool_result_records import (
     _missing_tool_result_record,
     _tool_mcp_identity,
@@ -130,23 +129,6 @@ _SKILL_AGENT_MAX_STEPS = max(2, int(os.getenv("SKILL_AGENT_MAX_STEPS", "6")))
 _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
     1, int(os.getenv("SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS", "1"))
 )
-
-def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | None:
-    """当模型将多个工具名拼接（如 amap-maps_maps_geo + amap-maps_maps_weather）时，解析出第一个有效工具名。"""
-    if tool_name in valid_names:
-        return tool_name
-    for name in sorted(valid_names, key=len, reverse=True):
-        if tool_name.startswith(name):
-            return name
-    best = None
-    best_pos = 999999
-    for name in valid_names:
-        pos = tool_name.find(name)
-        if pos != -1 and pos < best_pos:
-            best_pos = pos
-            best = name
-    return best
-
 
 async def _execute_tool_safely(tool: ToolSpec, arguments: dict) -> object:
     """统一执行工具，兼容 func=None 但 coroutine 可用的 ToolSpec。"""
@@ -418,17 +400,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         valid_names = [getattr(t, "name", "") for t in tools_list if getattr(t, "name", "")]
         if requested in valid_names:
             return requested
-        if requested.startswith("run_skill_script_"):
-            skill_suffix = requested[len("run_skill_script_") :]
-            normalized = build_skill_script_tool_name(skill_suffix)
-            if normalized in valid_names:
-                return normalized
-        if requested == "run_skill_script":
-            candidates = [n for n in valid_names if n.startswith("run_skill_script_")]
-            if len(candidates) == 1:
-                return candidates[0]
-        resolved = _resolve_mangled_tool_name(requested, valid_names)
-        return resolved or requested
+        return requested
 
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:

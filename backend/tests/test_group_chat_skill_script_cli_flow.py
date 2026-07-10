@@ -154,7 +154,7 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
                 tool_calls=[
                     {
                         "id": "call-check-pkg",
-                        "name": "run_skill_script",
+                        "name": "run_skill_script_sandbox-dependency-verify",
                         "args": {"package": "pendulum"},
                     }
                 ],
