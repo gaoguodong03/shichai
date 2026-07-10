@@ -238,6 +238,30 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
+def test_write_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monkeypatch):
+    """工作区写工具按 user_id 隔离用户数据，不能用可变 username。"""
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    captured: dict[str, str] = {}
+
+    class _FakeSandboxService:
+        async def write_workspace_text(self, *, user_id, **_kwargs):
+            captured["user_id"] = user_id
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    token = set_current_user_identity(user_id="user-stable-write", username="writer@example.com")
+    try:
+        tool = create_write_workspace_file_tool("sess-stable-write")
+        out = asyncio.run(tool.ainvoke({"path": "stable.md", "content": "正文"}))
+    finally:
+        reset_current_user_identity(token)
+
+    assert "已写入" in out
+    assert captured["user_id"] == "user-stable-write"
+
+
 def test_write_workspace_file_tool_keeps_model_timestamp_path(temp_user_data_root, monkeypatch):
     """write_workspace_file 不再改写模型传入的时间戳路径。"""
     from app.api.files import get_workspace_root
@@ -512,6 +536,34 @@ def test_read_file_reads_current_layout_workspace_relative_path(temp_user_data_r
     out = asyncio.run(tool.ainvoke({"path": "web-crawler/候选清单-2026070415122700.md"}))
 
     assert out == "候选清单正文"
+
+
+def test_read_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monkeypatch):
+    """工作区读工具按 user_id 隔离用户数据，不能用可变 username。"""
+    from app.api.files import get_workspace_root
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.tools import read_file as read_file_module
+    from app.tools.read_file import create_read_file_tool
+
+    captured: dict[str, str] = {}
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, user_id, workspace_path, rel_path, **_kwargs):
+            captured["user_id"] = user_id
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    token = set_current_user_identity(user_id="user-stable-read", username="reader@example.com")
+    try:
+        ws = get_workspace_root("sess-stable-read")
+        (ws / "input.md").write_text("正文", encoding="utf-8")
+        tool = create_read_file_tool("sess-stable-read")
+        out = asyncio.run(tool.ainvoke({"path": "input.md"}))
+    finally:
+        reset_current_user_identity(token)
+
+    assert out == "正文"
+    assert captured["user_id"] == "user-stable-read"
 
 
 def test_read_file_missing_path_does_not_search_for_candidates(temp_user_data_root, monkeypatch):

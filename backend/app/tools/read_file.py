@@ -88,7 +88,7 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
         ws_root = get_workspace_root_path(session_id)
         svc = get_shared_sandbox_service()
         try:
-            user_id = get_current_user().username
+            user_id = get_current_user().user_id
             text = await svc.read_workspace_text(
                 user_id=user_id,
                 session_id=session_id,

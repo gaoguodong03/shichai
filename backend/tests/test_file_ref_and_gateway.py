@@ -780,6 +780,31 @@ def test_run_skill_script_user_identity_uses_stable_user_id():
         reset_current_user_identity(token)
 
 
+def test_builtin_workspace_tools_use_stable_user_id(monkeypatch, tmp_path):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured: dict[str, str] = {}
+
+    class _FakeSandboxService:
+        async def list_workspace_files_flat(self, *, user_id, **_kwargs):
+            captured["user_id"] = user_id
+            return []
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr(tools_for_skill, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    token = set_current_user_identity(user_id="user-stable-tools", username="tools@example.com")
+    try:
+        tools = tools_for_skill._create_builtin_workspace_tools("sess-builtin-tools")
+        list_tool = next(item for item in tools if item.name == "list_workspace_directory")
+        out = asyncio.run(list_tool.ainvoke({"path": ""}))
+    finally:
+        reset_current_user_identity(token)
+
+    assert "目录 ." in out
+    assert captured["user_id"] == "user-stable-tools"
+
+
 def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
     from app.tools.filesystem_session_wrapper import _normalize_path_for_session
 

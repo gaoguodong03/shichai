@@ -130,7 +130,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
             )
         svc = get_shared_sandbox_service()
         try:
-            user_id = get_current_user().username
+            user_id = get_current_user().user_id
             await svc.write_workspace_text(
                 user_id=user_id,
                 session_id=workspace_id,

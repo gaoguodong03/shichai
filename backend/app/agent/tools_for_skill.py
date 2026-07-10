@@ -71,7 +71,7 @@ def _filter_redundant_workspace_mcp_tools(tools: List) -> List:
 
 def _create_builtin_workspace_tools(workspace_id: str) -> List:
     ws_root = get_workspace_root(workspace_id)
-    user_id = get_current_user().username
+    user_id = get_current_user().user_id
 
     def _rel_safe(path: str) -> str:
         try:
