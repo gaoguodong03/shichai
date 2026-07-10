@@ -176,7 +176,6 @@ async def list_sessions_with_workspace_files(
         session_item = session_definitions.get(session_id) or {}
         ws_root = _get_workspace_root_path_without_create(session_id, user=current_user)
         file_count = _count_files_recursively(ws_root)
-        # 约束：没有文件的会话不应有工作区。若目录存在但为空，顺手清理。
         if file_count == 0:
             try:
                 if ws_root.exists() and ws_root.is_dir():
@@ -263,7 +262,6 @@ async def list_workspace_files(
             })
         except (ValueError, OSError):
             continue
-    # 前端展示用 path 字段维持 workspace 内视角
     return {"status": "ok", "data": {"path": path or "/", "entries": entries}}
 
 
