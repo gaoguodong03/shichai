@@ -186,6 +186,29 @@ def test_normalize_skill_refs_dedupes_by_directory_name_not_display_name():
     ]
 
 
+def test_normalize_skill_refs_preserves_directory_name_identity():
+    refs = normalize_skill_refs(
+        [
+            {"name": "大小写敏感 Skill", "directory_name": "Skill-ABC_01"},
+            {"name": "嵌套路径旧输入", "directory_name": "/nested/skill"},
+        ]
+    )
+
+    assert refs == [{"name": "大小写敏感 Skill", "directory_name": "Skill-ABC_01"}]
+
+
+def test_normalize_scenario_host_preserves_skill_directory_identity():
+    row = normalize_scenario_row(
+        {
+            "name": "主持人 Skill 场景",
+            "agent_names": ["专家A"],
+            "host": {"skill_name": "主持 Skill", "skill_directory": "Host-Skill_01"},
+        }
+    )
+
+    assert row["host"]["skill_directory"] == "Host-Skill_01"
+
+
 def test_normalize_agent_row_keeps_only_name_llm_prompt_description_and_skills():
     row = normalize_agent_row(
         {

@@ -29,6 +29,16 @@ def _normalize_skill_folder(raw: Any) -> str:
     return folder
 
 
+def _normalize_skill_directory_ref(raw: Any) -> str:
+    """Normalize a Skill reference without changing the directory identity."""
+    text = str(raw or "").strip().replace("\\", "/").strip("/")
+    if not text or "/" in text or text in {".", ".."}:
+        return ""
+    if ".." in text.split("/"):
+        return ""
+    return text
+
+
 def strip_resource_ids(value: Any) -> Any:
     """Remove every known resource id key from nested dict/list payloads."""
     if isinstance(value, list):
@@ -136,7 +146,7 @@ def normalize_skill_refs(raw: Any) -> List[Dict[str, str]]:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()
-        directory_name = _normalize_skill_folder(item.get("directory_name"))
+        directory_name = _normalize_skill_directory_ref(item.get("directory_name"))
         if not name or not directory_name:
             continue
         key = directory_name.casefold()
@@ -179,7 +189,7 @@ def _normalize_scenario_host_snapshot(raw: Any) -> Dict[str, Any]:
     """Normalize host snapshots to the current `host` contract."""
     cfg = raw if isinstance(raw, dict) else {}
     skill_name = str(cfg.get("skill_name") or "").strip()
-    skill_directory = _normalize_skill_folder(cfg.get("skill_directory"))
+    skill_directory = _normalize_skill_directory_ref(cfg.get("skill_directory"))
     return {
         "name": str(cfg.get("name") or "").strip(),
         "llm_name": str(cfg.get("llm_name") or "").strip(),
