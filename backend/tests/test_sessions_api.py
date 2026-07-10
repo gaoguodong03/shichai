@@ -97,6 +97,27 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     assert get_after_delete.status_code == 404
 
 
+def test_session_definition_mutations_use_contract_checkpoint_trigger(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "检查点触发源"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert checkpoints
+    assert checkpoints[-1]["trigger"] == "manual_snapshot"
+
+    update_resp = client.put(f"/api/sessions/{session_id}", json={"title": "检查点触发源更新"})
+    assert update_resp.status_code == 200
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert checkpoints[-1]["trigger"] == "manual_snapshot"
+    assert "session_" + "created" not in {item.get("trigger") for item in checkpoints}
+    assert "session_" + "changed" not in {item.get("trigger") for item in checkpoints}
+
+
 def test_sessions_api_uses_agent_names_contract(client: TestClient):
     agent_resp = client.post("/api/agents", json={"name": "运行时专家"})
     assert agent_resp.status_code == 200

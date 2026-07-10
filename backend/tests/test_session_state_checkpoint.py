@@ -323,6 +323,23 @@ def test_snapshots_expose_contract_ids_and_last_message_id(client: TestClient):
     assert messages[0]["message_id"] == "msg-1"
 
 
+def test_capture_session_checkpoint_default_trigger_is_contract_manual_snapshot(client: TestClient):
+    from app.session_state.service import capture_session_checkpoint
+
+    create_resp = client.post("/api/sessions", json={"title": "默认触发源"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = _set_user()
+    try:
+        save_group_history(session_id, [_user_msg("msg-default-trigger", "默认触发源")], checkpoint_trigger=None)
+        checkpoint = capture_session_checkpoint(session_id)
+    finally:
+        reset_current_user_identity(token)
+
+    assert checkpoint["trigger"] == "manual_snapshot"
+
+
 def test_rollback_rejects_legacy_message_count(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "回溯优先级"})
     assert create_resp.status_code == 200

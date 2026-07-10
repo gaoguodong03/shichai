@@ -117,7 +117,7 @@ def create_session_internal(
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(gsid, trigger="session_created")
+        capture_session_checkpoint(gsid, trigger="manual_snapshot")
     except Exception:
         logger.warning("session_state initial checkpoint failed: %s", gsid, exc_info=True)
     return _build_session_payload(gsid, session_definitions[gsid])
@@ -313,7 +313,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "created_at": format_storage_timestamp(),
                     }
                 )
-            _save_group_history(group_session_id, messages, checkpoint_trigger="session_changed")
+            _save_group_history(group_session_id, messages, checkpoint_trigger="manual_snapshot")
     if _ensure_scene_profile_contract(session_definitions[group_session_id]):
         pass
     session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
@@ -321,7 +321,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(group_session_id, trigger="session_changed")
+        capture_session_checkpoint(group_session_id, trigger="manual_snapshot")
     except Exception:
         logger.warning("session_state update checkpoint failed: %s", group_session_id, exc_info=True)
     return {"status": "ok", "data": _build_session_payload(group_session_id, session_definitions[group_session_id])}

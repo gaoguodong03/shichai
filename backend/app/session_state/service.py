@@ -202,7 +202,7 @@ def auto_checkpoint_suppressed() -> bool:
     return bool(_AUTO_CHECKPOINT_SUPPRESSED.get())
 
 
-def capture_session_checkpoint(session_id: str, *, trigger: str = "manual") -> Dict[str, Any]:
+def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapshot") -> Dict[str, Any]:
     """Capture the current file-backed session state as a checkpoint object."""
     if auto_checkpoint_suppressed():
         return {"skipped": True, "trigger": trigger}
