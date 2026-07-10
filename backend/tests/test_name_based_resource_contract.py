@@ -1,9 +1,7 @@
 import json
-import re
 from pathlib import Path
 
 from app.core.name_based_resources import (
-    next_available_skill_folder,
     normalize_agent_row,
     normalize_scenario_row,
     normalize_skill_refs,
@@ -170,25 +168,6 @@ def test_saved_http_api_tool_only_resolves_platform_env_syntax(monkeypatch):
     assert tool.invoke({}) == "ok"
     assert called["url"] == "https://api.example.com/${EXA_API_KEY}"
     assert json.loads(called["headers_json"]) == {"Authorization": "Bearer ${EXA_API_KEY}"}
-
-
-def test_next_available_skill_folder_uses_new_skill_path_when_folder_conflicts_with_different_name(tmp_path: Path):
-    existing = tmp_path / "skill-abc12345"
-    existing.mkdir()
-    (existing / "SKILL.md").write_text("---\nname: 旧技能\n---\n", encoding="utf-8")
-
-    incoming = tmp_path / "incoming"
-    incoming.mkdir()
-    (incoming / "SKILL.md").write_text("---\nname: 新技能\n---\n", encoding="utf-8")
-
-    folder = next_available_skill_folder(
-        desired_folder="skill-abc12345",
-        skill_name="新技能",
-        user_skills_dir=tmp_path,
-    )
-
-    assert folder != "skill-abc12345"
-    assert re.fullmatch(r"skill-[a-f0-9]{8}", folder)
 
 
 def test_normalize_skill_refs_keep_name_and_directory_name_only():

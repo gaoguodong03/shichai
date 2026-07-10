@@ -474,3 +474,15 @@ def test_resource_import_docs_use_skill_directory_identity():
             "Skill 同名覆盖",
         ]:
             assert forbidden not in text, path
+
+
+def test_name_based_resource_helpers_do_not_keep_skill_display_name_directory_planner():
+    """Skill directory conflict helpers must not use frontmatter name as import identity."""
+    text = (PROJECT_ROOT / "backend" / "app" / "core" / "name_based_resources.py").read_text(encoding="utf-8")
+
+    for forbidden in [
+        "def next_available_skill_folder",
+        "def _read_skill_name",
+        "def _normalize_skill_folder",
+    ]:
+        assert forbidden not in text

@@ -6,12 +6,7 @@ database-style ids, and import identity is the human-readable resource name.
 from __future__ import annotations
 
 import json
-import re
-import uuid
-from pathlib import Path
 from typing import Any, Dict, List
-
-import yaml
 
 
 _ID_KEYS = {
@@ -19,14 +14,6 @@ _ID_KEYS = {
     *(f"{prefix}_id" for prefix in ("agent", "expert", "skill", "mcp_server", "llm_provider", "provider", "server", "model", "scenario")),
     *(f"{prefix}_ids" for prefix in ("agent", "expert", "skill", "mcp_server")),
 }
-
-
-def _normalize_skill_folder(raw: Any) -> str:
-    folder = str(raw or "").strip().replace("\\", "/").strip("/")
-    folder = re.sub(r"[^A-Za-z0-9_-]+", "-", folder).strip("-_").lower()
-    if not folder:
-        return ""
-    return folder
 
 
 def _normalize_skill_directory_ref(raw: Any) -> str:
@@ -103,40 +90,6 @@ def normalize_tool_row(raw: Dict[str, Any]) -> Dict[str, Any]:
     else:
         raise ValueError(f"unsupported tool type: {tool_type}")
     return row
-
-
-def _read_skill_name(skill_dir: Path) -> str:
-    skill_file = skill_dir / "SKILL.md"
-    if not skill_file.is_file():
-        return ""
-    text = skill_file.read_text(encoding="utf-8")
-    if not text.strip().startswith("---"):
-        return ""
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return ""
-    try:
-        data = yaml.safe_load(parts[1]) or {}
-    except Exception:
-        return ""
-    return str(data.get("name") or "").strip() if isinstance(data, dict) else ""
-
-
-def next_available_skill_folder(*, desired_folder: str, skill_name: str, user_skills_dir: Path) -> str:
-    """Return a skill folder name for importing a differently named Skill."""
-    folder = _normalize_skill_folder(desired_folder)
-    if not folder:
-        folder = f"skill-{uuid.uuid4().hex[:8]}"
-    target = user_skills_dir / folder
-    if not target.exists():
-        return folder
-    existing_name = _read_skill_name(target)
-    if existing_name and existing_name.strip().casefold() == str(skill_name or "").strip().casefold():
-        return folder
-    candidate = f"skill-{uuid.uuid4().hex[:8]}"
-    while (user_skills_dir / candidate).exists():
-        candidate = f"skill-{uuid.uuid4().hex[:8]}"
-    return candidate
 
 
 def normalize_skill_refs(raw: Any) -> List[Dict[str, str]]:
