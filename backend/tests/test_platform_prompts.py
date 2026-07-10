@@ -248,6 +248,7 @@ def test_workspace_visibility_tool_messages_use_platform_prompt_registry():
 
     assert "请读取用户明确提供的工作区文件" not in visibility_text
     assert "调度任务会由平台直接放在本轮提示词中" not in visibility_text
+    assert "不能通过工作区文件工具访问" not in visibility_text
 
     rendered = render_platform_prompt(
         "workspace.visibility.internal_diagnostic_path_error.v1",
@@ -256,6 +257,14 @@ def test_workspace_visibility_tool_messages_use_platform_prompt_registry():
 
     assert "memory/messages/trace.jsonl" in rendered
     assert "请读取用户明确提供的工作区文件" in rendered
+
+    rendered = render_platform_prompt(
+        "workspace.visibility.internal_system_path_error.v1",
+        {"path": "memory"},
+    )
+
+    assert "memory" in rendered
+    assert "内部系统目录" in rendered
 
 
 def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():

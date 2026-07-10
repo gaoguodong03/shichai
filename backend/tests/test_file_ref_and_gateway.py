@@ -144,7 +144,7 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     import app.mcp.manager as mcp_manager
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    monkeypatch.setenv("EXISTING_ENV", "keep")
+    monkeypatch.setenv("EXISTING_ENV", "do-not-inherit")
 
     env = mcp_manager._build_stdio_child_env(
         username="user-runtime",
@@ -152,7 +152,7 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
         env_vars={"JENIYA_API_KEY": "sk-test"},
     )
 
-    assert env["EXISTING_ENV"] == "keep"
+    assert "EXISTING_ENV" not in env
     assert env["JENIYA_API_KEY"] == "sk-test"
     assert env["ST49_MCP_USER_ID"] == "user-runtime"
     assert env["ST49_MCP_USERNAME"] == "user-runtime"

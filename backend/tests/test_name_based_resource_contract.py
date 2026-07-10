@@ -197,6 +197,21 @@ def test_normalize_skill_refs_preserves_directory_name_identity():
     assert refs == [{"name": "大小写敏感 Skill", "directory_name": "Skill-ABC_01"}]
 
 
+def test_normalize_skill_refs_dedupes_by_exact_directory_name_identity():
+    refs = normalize_skill_refs(
+        [
+            {"name": "大写目录 Skill", "directory_name": "Skill-ABC_01"},
+            {"name": "小写目录 Skill", "directory_name": "skill-abc_01"},
+            {"name": "重复目录 Skill", "directory_name": "Skill-ABC_01"},
+        ]
+    )
+
+    assert refs == [
+        {"name": "大写目录 Skill", "directory_name": "Skill-ABC_01"},
+        {"name": "小写目录 Skill", "directory_name": "skill-abc_01"},
+    ]
+
+
 def test_normalize_scenario_host_preserves_skill_directory_identity():
     row = normalize_scenario_row(
         {

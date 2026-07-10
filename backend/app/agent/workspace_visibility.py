@@ -86,4 +86,7 @@ def internal_diagnostic_path_error(path: str) -> str:
 
 def internal_system_path_error(path: str) -> str:
     rel = normalize_workspace_rel_path(path)
-    return f"错误：{rel or path} 是内部系统目录，不能通过工作区文件工具访问。"
+    return render_platform_prompt(
+        "workspace.visibility.internal_system_path_error.v1",
+        {"path": rel or path},
+    )

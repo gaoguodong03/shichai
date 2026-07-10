@@ -360,7 +360,24 @@ def _build_stdio_child_env(
     if not should_create:
         return None
 
-    env: Dict[str, str] = {k: str(v) for k, v in os.environ.items()}
+    inherited_names = (
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "NODE_EXTRA_CA_CERTS",
+        "SHUTONG_USER_DATA_ROOT",
+    )
+    env: Dict[str, str] = {
+        key: str(os.environ[key])
+        for key in inherited_names
+        if os.environ.get(key)
+    }
     if isinstance(raw_env, dict):
         env.update({str(k): _subst_mcp_placeholders(str(v), env_vars) for k, v in raw_env.items()})
 
