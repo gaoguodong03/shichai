@@ -705,10 +705,16 @@
                         class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                       >
                         <option value="">使用应用默认</option>
+                        <option v-if="missingScenarioLeaderLlmName" :value="missingScenarioLeaderLlmName">
+                          缺失模型：{{ missingScenarioLeaderLlmName }}
+                        </option>
                         <option v-for="modelName in llmModelNames" :key="modelName" :value="modelName">
                           {{ scenarioLlmOptionLabel(modelName) }}
                         </option>
                       </select>
+                      <p v-if="missingScenarioLeaderLlmName" class="mt-1 text-xs text-red-600">
+                        缺失模型：{{ missingScenarioLeaderLlmName }}
+                      </p>
                     </div>
                   </div>
                   <div>
@@ -1457,6 +1463,7 @@ const {
   filteredScenarioLeaderSkills,
   missingScenarioExpertRefs,
   missingScenarioLeaderSkillRefs,
+  missingScenarioLeaderLlmName,
   agentDisplayName,
   scenarioExpertMissing,
   scenarioLlmOptionLabel,

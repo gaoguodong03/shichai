@@ -34,10 +34,16 @@
                   class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 >
                   <option value="">使用应用默认</option>
+                  <option v-if="missingHostLlmName" :value="missingHostLlmName">
+                    缺失模型：{{ missingHostLlmName }}
+                  </option>
                   <option v-for="name in Object.keys(llmProviders)" :key="name" :value="name">
                     {{ name }}
                   </option>
                 </select>
+                <p v-if="missingHostLlmName" class="mt-1 text-xs text-red-600">
+                  缺失模型：{{ missingHostLlmName }}
+                </p>
               </div>
             </div>
 
@@ -173,6 +179,10 @@ const visibleSkills = computed(() => {
 })
 
 const hiddenSkillCount = computed(() => Math.max(0, filteredSkills.value.length - visibleSkills.value.length))
+const missingHostLlmName = computed(() => {
+  const name = String(form.value.llm_name || '').trim()
+  return name && !llmProviders.value[name] ? name : ''
+})
 
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()

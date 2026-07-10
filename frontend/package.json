@@ -13,6 +13,7 @@
     "test:skill-label": "node --disable-warning=ExperimentalWarning scripts/check-group-skill-label.mjs",
     "test:mcp-config": "node scripts/check-mcp-config-contract.mjs",
     "test:llm-missing-reference": "node scripts/check-llm-default-missing-reference.mjs",
+    "test:missing-model-prompts": "node scripts/check-missing-model-reference-prompts.mjs",
     "test:e2e": "playwright test",
     "test:e2e:full": "playwright test",
     "preview": "vite preview"

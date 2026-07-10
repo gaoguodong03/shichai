@@ -49,7 +49,7 @@ export function useScenarioEditor(options: {
   skills: Ref<SkillItem[]>
   llmProviders: Ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>
 }) {
-  const { selectedId, resourceSubModule, scenarioSearch, agentInstances, skills } = options
+  const { selectedId, resourceSubModule, scenarioSearch, agentInstances, skills, llmProviders } = options
 
   const scenarioPresets = ref<ScenarioPreset[]>([])
   const scenarioLoading = ref(false)
@@ -138,6 +138,10 @@ export function useScenarioEditor(options: {
         directory_name: skill.directory_name,
       })),
   )
+  const missingScenarioLeaderLlmName = computed(() => {
+    const name = String(scenarioLeaderLlmName.value || '').trim()
+    return name && !llmProviders.value[name] ? name : ''
+  })
 
   function agentDisplayName(agentName: string): string {
     const hit = (agentInstances.value || []).find((d) => d.name === agentName)
@@ -409,6 +413,7 @@ export function useScenarioEditor(options: {
     filteredScenarioLeaderSkills,
     missingScenarioExpertRefs,
     missingScenarioLeaderSkillRefs,
+    missingScenarioLeaderLlmName,
     agentDisplayName,
     scenarioExpertMissing,
     scenarioLeaderSkillLabel,

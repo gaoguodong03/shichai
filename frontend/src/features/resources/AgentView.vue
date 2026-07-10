@@ -31,10 +31,16 @@
                 class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
               >
                 <option value="">使用应用默认</option>
+                <option v-if="missingAgentLlmName" :value="missingAgentLlmName">
+                  缺失模型：{{ missingAgentLlmName }}
+                </option>
                 <option v-for="name in Object.keys(llmProviders)" :key="name" :value="name">
                   {{ name }}
                 </option>
               </select>
+              <p v-if="missingAgentLlmName" class="mt-1 text-xs text-red-600">
+                缺失模型：{{ missingAgentLlmName }}
+              </p>
             </div>
           </div>
 
@@ -270,6 +276,10 @@ function toggleSkill(skill: { name: string; directory_name: string }) {
 }
 
 const selectedSkillDirectories = computed(() => form.value.skills.map((s) => s.directory_name))
+const missingAgentLlmName = computed(() => {
+  const name = String(form.value.llm_name || '').trim()
+  return name && !llmProviders.value[name] ? name : ''
+})
 
 function skillMissing(ref: SkillRef): boolean {
   return Boolean(ref.directory_name && !(skills.value || []).some((s) => s.directory_name === ref.directory_name || s.name === ref.name))
