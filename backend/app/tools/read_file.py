@@ -52,7 +52,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     if normalized.strip("/") in pseudo_names:
         return "", (
             f"错误：{normalized} 是工具返回字段，不是工作区文件。"
-            "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_workspace_file。"
+            "请根据最近工具结果生成最终答复，不要调用 read_workspace_file。"
         )
     if not session_id:
         return "", "错误：read_workspace_file 需要会话上下文（session_id），请使用群聊工作区工具链。"

@@ -179,6 +179,14 @@ def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():
         assert phrase not in template_text
 
 
+def test_runtime_does_not_pass_removed_tool_stream_prompt_variables():
+    """Runtime call sites must not preserve removed stdout/stderr prompt variables."""
+    runtime_text = (ROOT / "backend/app/agent/simple_agent_finalization.py").read_text(encoding="utf-8")
+
+    assert "stdout_block" not in runtime_text
+    assert "stderr_block" not in runtime_text
+
+
 def test_expert_turn_missing_sections_use_platform_prompt_registry():
     builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
 

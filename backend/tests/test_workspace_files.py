@@ -450,6 +450,17 @@ def test_workspace_read_tool_is_named_read_workspace_file():
     assert tool.name == "read_workspace_file"
 
 
+def test_read_file_pseudo_field_error_does_not_teach_raw_tool_stream_fields():
+    """read_workspace_file errors must not reintroduce raw stdout/stderr prompt instructions."""
+    from app.tools.read_file import create_read_file_tool
+
+    tool = create_read_file_tool("sess-r")
+    out = asyncio.run(tool.ainvoke({"path": "stdout"}))
+
+    assert "工具返回字段" in out
+    assert "stdout/stderr/returncode" not in out
+
+
 def test_read_file_reads_current_layout_workspace_relative_path(temp_user_data_root, monkeypatch):
     """read_file 应按当前 sessions/{id}/workspace 布局读取工作区相对路径。"""
     from app.api.files import get_workspace_root

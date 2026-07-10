@@ -222,8 +222,6 @@ def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -
             "agent.final_synthesis.after_tool_success.v1",
             {
                 "message": message,
-                "stdout_block": "",
-                "stderr_block": "",
             },
         )
     )
