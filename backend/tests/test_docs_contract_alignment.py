@@ -105,3 +105,30 @@ def test_skill_script_sandbox_request_has_independent_module_boundary():
     ]:
         assert old_private_definition not in runner_text
     assert len(runner_text.splitlines()) < 600
+
+
+def test_simple_agent_tool_flow_has_independent_module_boundary():
+    """Tool-output flow predicates belong outside the SimpleAgent loop file."""
+    flow_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_flow.py"
+    agent_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py"
+
+    assert flow_module.exists()
+    flow_text = flow_module.read_text(encoding="utf-8")
+    agent_text = agent_module.read_text(encoding="utf-8")
+
+    for name in [
+        "def iter_run_skill_raw_output_payloads",
+        "def run_skill_outputs_request_agent_turn_continue",
+        "def remember_successful_workspace_writes",
+        "def all_workspace_write_calls_already_succeeded",
+        "def post_tool_synthesis_should_use_bound_client",
+    ]:
+        assert name in flow_text
+    for old_private_definition in [
+        "def _iter_run_skill_raw_output_payloads",
+        "def _run_skill_outputs_request_agent_turn_continue",
+        "def _remember_successful_workspace_writes",
+        "def _all_workspace_write_calls_already_succeeded",
+        "def _post_tool_synthesis_should_use_bound_client",
+    ]:
+        assert old_private_definition not in agent_text

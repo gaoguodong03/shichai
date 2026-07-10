@@ -18,7 +18,6 @@ from app.agent.simple_agent_finalization import (
     _deterministic_tool_fallback_message,
     _fallback_after_llm_failure_message,
     _final_synthesis_instruction,
-    _json_loads_maybe,
     _large_run_skill_script_success_direct_final_message,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
@@ -40,25 +39,25 @@ from app.agent.simple_agent_tool_errors import (
     _terminal_tool_failure_message,
     _tool_error_direct_final_message,
 )
+from app.agent.simple_agent_tool_flow import (
+    all_workspace_write_calls_already_succeeded as _all_workspace_write_calls_already_succeeded,
+    has_successful_workspace_write_output as _has_successful_workspace_write_output,
+    has_workspace_mutating_tool_call as _has_workspace_mutating_tool_call,
+    is_run_skill_script_workflow_step as _is_run_skill_script_workflow_step,
+    post_tool_synthesis_should_use_bound_client as _post_tool_synthesis_should_use_bound_client,
+    remember_successful_workspace_writes as _remember_successful_workspace_writes,
+)
 from app.agent.simple_agent_tool_ids import (
     _missing_tool_response_messages,
     _normalize_ai_tool_call_ids,
     _normalize_tool_message_ids,
     _tool_call_args,
 )
-from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
 
 
-_RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE = "continue"
-_WORKSPACE_WRITE_SUCCESS_MARKER = "已写入当前 Chat 工作区文件："
-_WORKSPACE_MUTATING_TOOL_NAMES = {
-    "write_workspace_file",
-    "edit_workspace_file",
-    "rename_workspace_file",
-}
 _TEXT_TOOL_PROTOCOL_RETRY_LIMIT = 1
 _TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION = render_platform_prompt("agent.text_tool_protocol.retry.v1", {})
 _TEXT_TOOL_PROTOCOL_FAILURE_CONTENT = render_platform_prompt("agent.text_tool_protocol.failure.v1", {})
@@ -107,122 +106,6 @@ def _append_text_tool_protocol_retry_or_failure(
         }
     )
     return retry_count, failure_message, False
-
-
-def _iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list):
-        return []
-    payloads: list[dict[str, Any]] = []
-    for raw in raw_outputs:
-        payload = _json_loads_maybe(raw)
-        if isinstance(payload, dict):
-            payloads.append(payload)
-            stdout_payload = _json_loads_maybe(payload.get("stdout"))
-            if isinstance(stdout_payload, dict):
-                payloads.append(stdout_payload)
-    return payloads
-
-
-def _iter_strict_skill_stdout_payloads(tool_out: dict[str, Any]) -> list[SkillScriptStdoutPayload]:
-    out: list[SkillScriptStdoutPayload] = []
-    for payload in _iter_run_skill_raw_output_payloads(tool_out):
-        try:
-            out.append(SkillScriptStdoutPayload.model_validate(payload))
-        except Exception:
-            continue
-    return out
-
-
-def _run_skill_outputs_request_agent_turn_continue(tool_out: dict[str, Any]) -> bool:
-    payloads = _iter_strict_skill_stdout_payloads(tool_out)
-    if not payloads:
-        return False
-    saw_continue = False
-    for payload in payloads:
-        if payload.execution_status == "failed":
-            return False
-        if payload.next_action.agent_turn == _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
-            saw_continue = True
-    return saw_continue
-
-
-def _has_successful_workspace_write_output(raw_outputs: list[str]) -> bool:
-    return any(_WORKSPACE_WRITE_SUCCESS_MARKER in str(raw or "") for raw in raw_outputs or [])
-
-
-def _has_workspace_mutating_tool_call(tool_calls: list[Any]) -> bool:
-    for tool_call in tool_calls or []:
-        if not isinstance(tool_call, dict):
-            continue
-        if str(tool_call.get("name") or tool_call.get("tool") or "").strip() in _WORKSPACE_MUTATING_TOOL_NAMES:
-            return True
-    return False
-
-
-def _workspace_write_call_key(tool_call: Any) -> str:
-    if not isinstance(tool_call, dict):
-        return ""
-    tool_name = str(tool_call.get("name") or tool_call.get("tool") or "").strip()
-    if tool_name != "write_workspace_file":
-        return ""
-    args = _tool_call_args(tool_call)
-    path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
-    content = str(args.get("content") or args.get("__arg2") or "")
-    if not path or not content:
-        return ""
-    return f"{tool_name}\0{path}\0{content}"
-
-
-def _remember_successful_workspace_writes(tool_out: dict[str, Any], seen_keys: set[str]) -> None:
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list) or not _has_successful_workspace_write_output(raw_outputs):
-        return
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if not isinstance(calls, list):
-        return
-    for call in calls:
-        key = _workspace_write_call_key(call)
-        if key:
-            seen_keys.add(key)
-
-
-def _all_workspace_write_calls_already_succeeded(tool_calls: list[Any], seen_keys: set[str]) -> bool:
-    if not seen_keys or not tool_calls:
-        return False
-    saw_write = False
-    for call in tool_calls:
-        if not isinstance(call, dict):
-            return False
-        tool_name = str(call.get("name") or call.get("tool") or "").strip()
-        if tool_name != "write_workspace_file":
-            return False
-        key = _workspace_write_call_key(call)
-        if not key or key not in seen_keys:
-            return False
-        saw_write = True
-    return saw_write
-
-
-def _is_run_skill_script_workflow_step(tool_out: dict[str, Any]) -> bool:
-    return _run_skill_outputs_request_agent_turn_continue(tool_out)
-
-
-def _post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> bool:
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if not isinstance(calls, list) or not calls:
-        return False
-    saw_call = False
-    for call in calls:
-        if not isinstance(call, dict):
-            return False
-        tool_name = str(call.get("tool") or call.get("name") or "").strip()
-        if not tool_name:
-            return False
-        saw_call = True
-        if not tool_name.startswith("run_skill_script"):
-            return True
-    return not saw_call
 
 
 @dataclass
