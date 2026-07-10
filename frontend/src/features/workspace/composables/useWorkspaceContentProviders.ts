@@ -353,7 +353,6 @@ export function useWorkspaceContentProviders(args: {
     toolbarDisplayShowHostAvatar,
     toolbarDisplayLabelText,
     streamingPulse,
-    extractAutoInvitedNames,
     isExpertAssistantMessagePayload,
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,
@@ -417,13 +416,10 @@ export function useWorkspaceContentProviders(args: {
     scrollGroupAssistantMessageIntoView,
     scrollToMessage,
     applyOrchestrationEndMeta,
-    extractAutoInvitedNames,
     resolveSuggestedNamesFromPayload,
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
-    emitAgentAdded: () => emit('agent-added'),
-    loadGroupDetail,
   })
   const {
     appendStreamingContent,

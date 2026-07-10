@@ -280,6 +280,12 @@ def test_frontend_does_not_restore_invites_from_history_messages():
         assert forbidden not in combined
 
 
+def test_frontend_only_consumes_current_invite_field():
+    src = read("frontend/src/features/workspace/composables/useGroupOrchestrationState.ts")
+    assert "suggested_add_agent_names" in src
+    assert "auto_invited_agent_names" not in src
+
+
 def test_frontend_does_not_send_legacy_next_prompt_channel():
     files = [
         "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",

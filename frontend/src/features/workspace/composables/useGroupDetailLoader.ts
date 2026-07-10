@@ -8,7 +8,7 @@ export type GroupDetail = {
   messages: GroupMessage[]
   agent_map: Record<string, { name?: string; description?: string }>
   agent_names: string[]
-  host?: { name?: string; llm_name?: string; system_prompt?: string; skill_name?: string; skill_directory?: string }
+  host?: { name?: string; llm_name?: string; system_prompt?: string; skill_directory?: string }
   runtime?: { running?: boolean; agent_name?: string; skill?: string; phase?: string; started_at?: string }
 }
 

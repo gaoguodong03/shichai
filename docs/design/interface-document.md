@@ -213,7 +213,6 @@ Content-Type: application/json
     "name": "四九",
     "llm_name": "qwen3-max",
     "system_prompt": "主持人提示词",
-    "skill_name": "主持人 Skill",
     "skill_directory": "host-skill"
   }
 }
@@ -229,7 +228,6 @@ Content-Type: application/json
 | `host.name` | string | 否 | 主持人显示名 |
 | `host.llm_name` | string | 否 | 主持人使用的模型名称 |
 | `host.system_prompt` | string | 否 | 主持人调度提示词，只影响主持人 |
-| `host.skill_name` | string | 否 | 主持人 Skill 展示名快照，不作为加载主键 |
 | `host.skill_directory` | string | 否 | 主持人 Skill 目录名，引用 Skill `directory_name` |
 
 ### 5.3 会话详情

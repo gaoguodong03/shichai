@@ -144,13 +144,6 @@ export function useGroupOrchestrationState(args: {
     return []
   }
 
-  function extractAutoInvitedNames(payload: Record<string, unknown> | null | undefined): string[] {
-    if (!payload) return []
-    const agentNames = payload.auto_invited_agent_names as string[] | undefined
-    if (Array.isArray(agentNames) && agentNames.length) return agentNames
-    return []
-  }
-
   function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null | undefined): boolean {
     if (!payload) return false
     if (messageSpeakerType(payload) !== 'expert') return false
@@ -439,7 +432,6 @@ export function useGroupOrchestrationState(args: {
     toolbarDisplayShowHostAvatar,
     toolbarDisplayLabelText,
     streamingPulse,
-    extractAutoInvitedNames,
     isExpertAssistantMessagePayload,
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,

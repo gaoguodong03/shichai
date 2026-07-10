@@ -21,7 +21,6 @@ class HostSnapshot(StrictApiModel):
     name: str = ""
     llm_name: str = ""
     system_prompt: str = ""
-    skill_name: str = ""
     skill_directory: str = ""
 
 

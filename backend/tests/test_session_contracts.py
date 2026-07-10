@@ -26,6 +26,21 @@ def test_session_create_accepts_host_snapshot_and_agent_names():
     assert parsed.host and parsed.host.name == "四九"
 
 
+@pytest.mark.parametrize("model", [SessionCreateRequest, SessionUpdateRequest])
+def test_session_host_snapshot_rejects_display_only_skill_name(model):
+    with pytest.raises(ValidationError):
+        model.model_validate(
+            {
+                "host": {
+                    "name": "四九",
+                    "llm_name": "qwen3-max",
+                    "skill_name": "主持人 Skill 展示名",
+                    "skill_directory": "group-host",
+                }
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "extra_field",
     ["action", "host_takeover_requested", "ignore_auto_agent_name", "ignore_auto_skill", "agent_name", "next_speaker"],

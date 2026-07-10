@@ -72,6 +72,16 @@ def test_design_docs_do_not_reference_removed_host_config_module():
     assert "backend/app/core/host_profile_contract.py" in text
 
 
+def test_session_api_docs_do_not_advertise_host_skill_display_snapshot():
+    """Session host snapshots use the runtime contract, not scenario display fields."""
+    text = (PROJECT_ROOT / "docs" / "design" / "interface-document.md").read_text(encoding="utf-8")
+    section = text.split("### 5.2 新建会话", 1)[1].split("### 5.3 会话详情", 1)[0]
+
+    assert "host.skill_directory" in section
+    assert "host.skill_name" not in section
+    assert '"skill_name"' not in section
+
+
 def test_skill_script_manifest_has_independent_module_boundary():
     """Script manifest parsing belongs outside the sandbox execution entrypoint."""
     manifest_module = PROJECT_ROOT / "backend" / "app" / "tools" / "skill_script_manifest.py"

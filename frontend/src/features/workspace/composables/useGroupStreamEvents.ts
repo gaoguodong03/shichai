@@ -66,13 +66,10 @@ export function useGroupStreamEvents(args: {
   scrollGroupAssistantMessageIntoView: (data: Record<string, unknown>) => void
   scrollToMessage: (messageId: string) => void
   applyOrchestrationEndMeta: (data: Record<string, unknown>) => void
-  extractAutoInvitedNames: (data: Record<string, unknown> | null | undefined) => string[]
   resolveSuggestedNamesFromPayload: (data: Record<string, unknown> | null | undefined) => string[]
   isExpertAssistantMessagePayload: (data: Record<string, unknown> | null | undefined) => boolean
   clearAttachedFiles: () => void
   clearAutoSwitchHint: () => void
-  emitAgentAdded: () => void
-  loadGroupDetail: () => Promise<void> | void
 }) {
   const {
     selectedGroupSessionId,
@@ -86,13 +83,10 @@ export function useGroupStreamEvents(args: {
     scrollGroupAssistantMessageIntoView,
     scrollToMessage,
     applyOrchestrationEndMeta,
-    extractAutoInvitedNames,
     resolveSuggestedNamesFromPayload,
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
-    emitAgentAdded,
-    loadGroupDetail,
   } = args
 
   function activeSessionId(sessionId = selectedGroupSessionId() || ''): string {
@@ -253,11 +247,6 @@ export function useGroupStreamEvents(args: {
           nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
         }
       }
-      if (extractAutoInvitedNames(data).length) {
-        groupSuggestedAddAgentNames.value = []
-        emitAgentAdded()
-        loadGroupDetail()
-      }
       const suggestedNames = resolveSuggestedNamesFromPayload(data)
       if (suggestedNames.length) {
         groupSuggestedAddAgentNames.value = suggestedNames
@@ -275,11 +264,6 @@ export function useGroupStreamEvents(args: {
       groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
         ? String(endData.suggested_next_speaker)
         : null
-      if (extractAutoInvitedNames(endData).length) {
-        groupSuggestedAddAgentNames.value = []
-        emitAgentAdded()
-        loadGroupDetail()
-      }
       const suggestedNames = resolveSuggestedNamesFromPayload(endData)
       if (suggestedNames.length) {
         groupSuggestedAddAgentNames.value = suggestedNames
