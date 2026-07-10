@@ -120,7 +120,7 @@ def _get_tool_call_arguments(tool_call: dict) -> dict:
 
 
 def _get_mcp_input_schema(tool_name: str, tools: Sequence[ToolSpec]) -> dict | None:
-    """从 tools 列表中按 tool_name 取出 MCP 工具的 inputSchema，供 __arg1 等通用参数映射。"""
+    """从 tools 列表中按 tool_name 取出 MCP 工具 inputSchema，用于参数契约归一化。"""
     tool = _find_tool_by_name(tool_name, tools)
     return getattr(tool, "_mcp_input_schema", None) if tool is not None else None
 
@@ -391,7 +391,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         return text
 
     def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[ToolSpec]) -> dict:
-        """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
+        """与主 call_tool 一致：MCP 工具按 schema 做严格参数归一化。"""
         args = dict(arguments) if arguments else {}
         if tool_name.startswith("run_skill_script_"):
             return args

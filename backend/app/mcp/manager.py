@@ -739,7 +739,7 @@ class MCPToolManager:
         # 保存原始工具名和 session 引用
         original_tool_name = mcp_tool.name
         tool_name = _safe_mcp_model_tool_name(server_name, mcp_tool.name)
-        # 将 inputSchema 转为 dict 并保存，供 normalize_mcp_kwargs_for_call 做 __arg1 等通用映射
+        # 将 inputSchema 转为 dict 并保存，供 normalize_mcp_kwargs_for_call 判断单字段 schema。
         _input_schema = getattr(mcp_tool, "inputSchema", None)
         if hasattr(_input_schema, "model_dump"):
             _input_schema = _input_schema.model_dump()
@@ -853,7 +853,7 @@ class MCPToolManager:
                 "mcp_tool_name": original_tool_name,
             }
         )
-        # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
+        # 供 chat 层展示时复用同一套归一化逻辑。
         tool_spec._mcp_input_schema = _input_schema
         return tool_spec
     

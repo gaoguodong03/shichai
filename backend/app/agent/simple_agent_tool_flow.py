@@ -88,8 +88,8 @@ def workspace_write_call_key(tool_call: Any) -> str:
     if tool_name != "write_workspace_file":
         return ""
     args = _tool_call_args(tool_call)
-    path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
-    content = str(args.get("content") or args.get("__arg2") or "")
+    path = _normalize_workspace_path_for_compare(args.get("path"))
+    content = str(args.get("content") or "")
     if not path or not content:
         return ""
     return f"{tool_name}\0{path}\0{content}"
@@ -201,7 +201,7 @@ def read_file_should_synthesize_after_result(
         if tool_name != "read_workspace_file":
             continue
         args = _tool_call_args(call)
-        path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
+        path = _normalize_workspace_path_for_compare(args.get("path"))
         if not path:
             continue
         if not any(path == target or path.endswith(f"/{target}") for target in targets):
