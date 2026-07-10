@@ -223,6 +223,21 @@ def test_skill_import_does_not_keep_api_mcp_bundle_parsers():
     assert "def _parse_mcp_bundle_rows" not in api_text
 
 
+def test_opensandbox_file_operations_do_not_keep_command_channel_fallbacks():
+    """OpenSandbox file operations must fail loudly when the filesystem endpoint is unavailable."""
+    adapter_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "sandbox_adapter.py").read_text(encoding="utf-8")
+
+    for forbidden in [
+        "命令通道兜底",
+        "read_file fallback failed",
+        "write_file fallback failed",
+        "fallback write too large",
+        "base64.b64encode(data)",
+        "base64.b64decode",
+    ]:
+        assert forbidden not in adapter_text
+
+
 def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
     """Contract-critical modules follow the comment placement coding standard."""
     paths = [

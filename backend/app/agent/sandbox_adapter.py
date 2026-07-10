@@ -417,7 +417,7 @@ class OpenSandboxAdapter:
                     cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
                     if fs is None or not ok:
                         raise RuntimeError(
-                            "OpenSandbox execd endpoint 为空（host/port 缺失），FilesystemAdapter 不可用；已启用命令通道兜底。\n"
+                            "OpenSandbox execd endpoint 为空（host/port 缺失），FilesystemAdapter 不可用。\n"
                             "排查建议：\n"
                             "- 若用 docker compose 启动 opensandbox-server：确保容器能解析 host.docker.internal（Linux 常需 extra_hosts: host.docker.internal:host-gateway）。\n"
                             "- 检查 OpenSandbox 配置 docker.host_ip 是否设置为 host.docker.internal。\n"
@@ -588,140 +588,30 @@ class OpenSandboxAdapter:
                     raise RuntimeError("execute_command failed with unknown error")
 
                 async def read_file(self, sandbox_id: str, path: str) -> bytes:
-                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
-                    if fs is not None and ok:
-                        return await fs.read_bytes(path)
-                    # endpoint 为空时：用命令通道兜底读取（base64）
-                    py = (
-                        "import base64,sys\n"
-                        "p=sys.argv[1]\n"
-                        "data=open(p,'rb').read()\n"
-                        "sys.stdout.write(base64.b64encode(data).decode('ascii'))\n"
-                    )
-                    exe = await cmd.run(
-                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path]),
-                        opts=self._RunCommandOpts(
-                            background=False,
-                            working_directory="/",
-                            timeout=timedelta(milliseconds=120_000),
-                            envs={},
-                        ),
-                    )
-                    out = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])]).strip()
-                    if not out:
-                        err = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])]).strip()
-                        raise RuntimeError(err or "read_file fallback failed")
-                    import base64 as _b64
-                    return _b64.b64decode(out.encode("ascii"))
+                    _cmd, fs = await self._ensure_execd(sandbox_id)
+                    return await fs.read_bytes(path)
 
                 async def write_file(self, sandbox_id: str, path: str, data: bytes) -> Dict[str, Any]:
-                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
-                    if fs is not None and ok:
-                        await fs.write_file(path, data)
-                        return {"status": "ok", "path": path, "bytes": len(data)}
-                    # endpoint 为空时：用命令通道兜底写入（base64）
-                    import base64 as _b64
-                    b64 = _b64.b64encode(data).decode("ascii")
-                    # 避免命令行参数过大导致失败（主要用于文本工具；大文件应修复 endpoint）。
-                    if len(b64) > 200_000:
-                        raise RuntimeError("fallback write too large; OpenSandbox endpoint is required for large files")
-                    py = (
-                        "import base64,sys,os\n"
-                        "p=sys.argv[1]\n"
-                        "b=sys.argv[2]\n"
-                        "os.makedirs(os.path.dirname(p) or '.', exist_ok=True)\n"
-                        "open(p,'wb').write(base64.b64decode(b.encode('ascii')))\n"
-                    )
-                    exe = await cmd.run(
-                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path, b64]),
-                        opts=self._RunCommandOpts(
-                            background=False,
-                            working_directory="/",
-                            timeout=timedelta(milliseconds=120_000),
-                            envs={},
-                        ),
-                    )
-                    if getattr(exe, "exit_code", 0) not in (0, None):
-                        err = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])]).strip()
-                        raise RuntimeError(err or "write_file fallback failed")
+                    _cmd, fs = await self._ensure_execd(sandbox_id)
+                    await fs.write_file(path, data)
                     return {"status": "ok", "path": path, "bytes": len(data)}
 
                 async def list_files(self, sandbox_id: str, root: str) -> List[Dict[str, Any]]:
-                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
-                    if fs is not None and ok:
-                        # 先判定目录是否存在，避免 OpenSandbox 在不存在目录上 search 产生日志级错误。
-                        try:
-                            probe_py = "import os,sys; print('1' if os.path.isdir(sys.argv[1]) else '0')"
-                            probe = await cmd.run(
-                                " ".join(shlex.quote(str(x)) for x in ["python", "-c", probe_py, root]),
-                                opts=self._RunCommandOpts(
-                                    background=False,
-                                    working_directory="/",
-                                    timeout=timedelta(milliseconds=30_000),
-                                    envs={},
-                                ),
-                            )
-                            probe_out = "\n".join(
-                                [m.text for m in (getattr(getattr(probe, "logs", None), "stdout", None) or [])]
-                            ).strip()
-                            if probe_out != "1":
-                                return []
-                        except Exception:
-                            # 目录探测失败时继续走原有 search 流程，保持兼容。
-                            pass
-
-                        # Execd 文件系统 API 没有“递归 list”统一接口；这里用 search('*') 近似实现。
-                        try:
-                            from opensandbox.models.filesystem import SearchEntry
-
-                            items = await fs.search(SearchEntry(path=root, pattern="*", recursive=True))
-                            out: List[Dict[str, Any]] = []
-                            for it in items or []:
-                                out.append(
-                                    {
-                                        "path": str(getattr(it, "path", "")).replace("\\", "/"),
-                                        "size": getattr(it, "size", None),
-                                        "is_dir": getattr(it, "is_dir", False),
-                                    }
-                                )
-                            return out
-                        except Exception:
-                            return []
-                    # endpoint 为空时：用命令通道兜底递归列举
-                    py = (
-                        "import os,sys,json\n"
-                        "root=sys.argv[1]\n"
-                        "out=[]\n"
-                        "for dirpath, dirnames, filenames in os.walk(root):\n"
-                        "  for d in dirnames:\n"
-                        "    p=os.path.join(dirpath,d)\n"
-                        "    out.append({'path':p.replace('\\\\\\\\','/'), 'size': None, 'is_dir': True})\n"
-                        "  for f in filenames:\n"
-                        "    p=os.path.join(dirpath,f)\n"
-                        "    try:\n"
-                        "      sz=os.path.getsize(p)\n"
-                        "    except Exception:\n"
-                        "      sz=None\n"
-                        "    out.append({'path':p.replace('\\\\\\\\','/'), 'size': sz, 'is_dir': False})\n"
-                        "print(json.dumps(out, ensure_ascii=False))\n"
-                    )
-                    exe = await cmd.run(
-                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, root]),
-                        opts=self._RunCommandOpts(
-                            background=False,
-                            working_directory="/",
-                            timeout=timedelta(milliseconds=120_000),
-                            envs={},
-                        ),
-                    )
-                    raw = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])]).strip()
-                    if not raw:
-                        return []
+                    _cmd, fs = await self._ensure_execd(sandbox_id)
                     try:
-                        import json as _json
-                        data = _json.loads(raw)
-                        if isinstance(data, list):
-                            return [x for x in data if isinstance(x, dict)]
+                        from opensandbox.models.filesystem import SearchEntry
+
+                        items = await fs.search(SearchEntry(path=root, pattern="*", recursive=True))
+                        out: List[Dict[str, Any]] = []
+                        for it in items or []:
+                            out.append(
+                                {
+                                    "path": str(getattr(it, "path", "")).replace("\\", "/"),
+                                    "size": getattr(it, "size", None),
+                                    "is_dir": getattr(it, "is_dir", False),
+                                }
+                            )
+                        return out
                     except Exception:
                         return []
                     return []
