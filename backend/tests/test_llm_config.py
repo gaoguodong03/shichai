@@ -340,18 +340,49 @@ def test_get_llm_from_config_api_key_env_uses_user_env_var_store(monkeypatch):
     assert llm.api_key == "from-user-env"
 
 
-def test_get_llm_from_config_unknown_fallback():
-    """未知模型回退到 qwen3-max"""
+def test_resolve_llm_provider_entry_keeps_missing_model_reference():
+    """缺失模型引用是资源完整性问题，不静默回退到其他模型。"""
+    from app.agent.llm_client import resolve_llm_provider_entry
+
+    resolved_name, cfg = resolve_llm_provider_entry(
+        "unknown",
+        {
+            "qwen3-max": {
+                "base_url": "https://fallback/v1",
+                "model": "qwen",
+                "api_key_env": "QWEN_API_KEY",
+            },
+        },
+    )
+
+    assert resolved_name == "unknown"
+    assert cfg == {}
+
+
+def test_get_llm_from_config_rejects_missing_model_reference():
+    """运行时不能把缺失模型引用兜底成 qwen3-max。"""
     from app.agent.llm_client import get_llm_from_config
 
-    llm = get_llm_from_config("unknown", {
-        "qwen3-max": {
-            "base_url": "https://fallback/v1",
-            "model": "qwen",
-            "api_key_env": "QWEN_API_KEY",
-        },
-    })
-    assert llm.base_url == "https://fallback/v1"
+    with pytest.raises(ValueError, match="模型配置不存在：unknown"):
+        get_llm_from_config(
+            "unknown",
+            {
+                "qwen3-max": {
+                    "base_url": "https://fallback/v1",
+                    "model": "qwen",
+                    "api_key_env": "QWEN_API_KEY",
+                },
+            },
+        )
+
+
+def test_missing_llm_config_does_not_borrow_default_api_key(monkeypatch):
+    """缺失模型配置不能借默认 QWEN_API_KEY 伪装成可用配置。"""
+    from app.agent.llm_client import resolve_llm_api_key
+
+    monkeypatch.setenv("QWEN_API_KEY", "host-default-key")
+
+    assert resolve_llm_api_key({}) is None
 
 
 def test_get_llm_from_config_empty_uses_default():

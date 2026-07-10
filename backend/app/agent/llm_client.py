@@ -79,15 +79,14 @@ def resolve_llm_provider_entry(
     llm_name: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> tuple[str, Dict[str, Any]]:
-    """Resolve model name to its config row, falling back to qwen3-max defaults."""
+    """Resolve model name to its config row without changing missing references."""
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
-    llm_key = str(llm_name or "").strip()
+    llm_key = str(llm_name or "").strip() or "qwen3-max"
     providers_by_lower = {str(k).strip().lower(): v for k, v in providers.items()}
     resolved_name = llm_key
     cfg = providers.get(llm_key) or providers_by_lower.get(llm_key.lower())
     if not cfg:
-        resolved_name = "qwen3-max"
-        cfg = providers.get("qwen3-max") or providers_by_lower.get("qwen3-max") or {}
+        return resolved_name, {}
     return resolved_name, dict(cfg or {})
 
 
@@ -96,8 +95,8 @@ def resolve_llm_api_key(
     env_vars: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """Resolve API key without constructing an LLM client."""
-    api_key_env = str(cfg.get("api_key_env") or "QWEN_API_KEY").strip()
-    api_key = resolve_platform_env_value(api_key_env, env_vars)
+    api_key_env = str(cfg.get("api_key_env") or "").strip()
+    api_key = resolve_platform_env_value(api_key_env, env_vars) if api_key_env else None
     if not api_key:
         api_key = (cfg.get("api_key") or "").strip() or None
     return (str(api_key).strip() or None) if api_key else None
@@ -152,7 +151,7 @@ def get_llm_from_config(
     """
     resolved_name, cfg = resolve_llm_provider_entry(llm_name, providers_config)
     if not cfg:
-        return QwenLLM()
+        raise ValueError(f"模型配置不存在：{resolved_name}")
 
     api_key = resolve_llm_api_key(cfg, env_vars)
     base_url = cfg.get("base_url")
