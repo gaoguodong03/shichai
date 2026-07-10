@@ -270,6 +270,59 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_zero_member_session_uses_host_only_recommendation_branch(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-zero-host-only": {
+                "title": "0 专家",
+                "agent_names": [],
+                "host": {"name": "自定义主持"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-zero-host-only", [])
+
+    async def _scheduler_must_not_run(*_args, **_kwargs):
+        raise AssertionError("zero-member sessions must use the host-only recommendation branch")
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _scheduler_must_not_run)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-zero-host-only",
+            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions={"s-zero-host-only": {"agent_names": [], "host": {"name": "自定义主持"}}},
+            session_item={"agent_names": [], "host": {"name": "自定义主持"}},
+            app_settings={},
+            agent_map={
+                "写作专家": {"name": "写作专家", "description": "写作 文案 文章"},
+                "检索专家": {"name": "检索专家", "description": "资料检索"},
+            },
+            agent_names=[],
+            messages=[],
+            discussion_goal="帮我写文章",
+            user_text="帮我写文章",
+        )
+    ]
+
+    message_events = [event for event in events if event.startswith("event: message")]
+    end_events = [event for event in events if event.startswith("event: end")]
+    assert message_events
+    assert '"speaker": {"type": "host", "agent_name": "自定义主持"}' in message_events[-1]
+    assert end_events
+    assert '"phase": "recruiting"' in end_events[-1]
+    assert '"suggested_add_agent_names": ["写作专家"]' in end_events[-1]
+
+
+@pytest.mark.asyncio
 async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     calls = {}
     session_item = {}

@@ -19,8 +19,8 @@ from fastapi.responses import StreamingResponse
 from app.agent.messages import AIMessage, HumanMessage  # type: ignore
 from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
-from app.agent.group_chat_host_messages import _build_host_pause_message
-from app.agent.group_chat_host_runtime import _host_decide_by_agent, _request_skills_loader
+from app.agent.group_chat_host_messages import _build_host_pause_message, _build_host_recommendation_message
+from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_respond_and_recommend, _request_skills_loader
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_skill_session import apply_skill_result_to_orchestration_state, skill_result_from_content
 from app.agent.group_chat_streaming import iter_with_keepalive, stream_background_events
@@ -279,6 +279,42 @@ async def _run_contract_events(
     available_to_add = [item for item in agent_map.values() if str(item.get("name") or "").strip() not in agent_names]
     host_agent = _host_snapshot_to_agent(session_item)
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
+    if not agent_names:
+        content, picked = await _host_only_respond_and_recommend(
+            discussion_goal,
+            scheduler_recent_context(group_session_id, messages),
+            available_to_add,
+            "",
+            group_session_id,
+        )
+        suggested_add = _finalize_suggested_add_agent_names(
+            suggested=[str(item).strip() for item in (picked or []) if str(item).strip()],
+            agent_names=agent_names,
+            available_to_add=available_to_add,
+            user_text=user_text,
+        )
+        host_msg = _build_host_recommendation_message(
+            skill=str(host_agent.get("skill_directory") or ""),
+            content=content,
+            picked=suggested_add,
+            host_agent_name=host_name,
+        )
+        host_msg = frontend_history_message(host_msg)
+        messages.append(host_msg)
+        save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
+        session_item["updated_at"] = format_storage_timestamp()
+        save_session_definitions(session_definitions)
+        yield _sse("message", host_msg)
+        phase = "recruiting" if suggested_add else "awaiting_user"
+        end = SseEndEvent(
+            type="end",
+            run_id=run_id,
+            phase=phase,
+            waiting_for_user=True,
+            suggested_add_agent_names=suggested_add,
+        )
+        yield _sse("end", _end_event_payload(end))
+        return
     orchestration_state = load_group_orchestration_state(group_session_id)
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 

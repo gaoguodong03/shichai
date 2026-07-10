@@ -131,10 +131,11 @@ def _build_host_recommendation_message(
     skill: str,
     content: str,
     picked: Sequence[str],
+    host_agent_name: str = "",
 ) -> dict[str, Any]:
     """Build the no-expert host message."""
     _ = (skill, picked)
-    return _host_message_base(content=content or HOST_ZERO_EXPERT_RECOMMENDATION, host_agent_name="四九")
+    return _host_message_base(content=content or HOST_ZERO_EXPERT_RECOMMENDATION, host_agent_name=host_agent_name or "四九")
 
 
 def _build_host_fallback_message(*, skill: str, host_agent_name: str = "") -> dict[str, Any] | None:
