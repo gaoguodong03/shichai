@@ -232,7 +232,7 @@
 | `useResourceCollections.ts` | 资源集合加载和刷新。 |
 | `useBundleImports.ts`、`useZipResourceImports.ts` | 导入导出流程。 |
 | `frontend/src/features/resources/mcpConfigContract.ts` | MCP 配置导入导出契约。 |
-| `ApiSecretsSettingsView.vue` | 用户级环境变量设置。 |
+| `EnvVarsSettingsView.vue` | 用户级环境变量设置。 |
 | `SandboxSettingsView.vue` | 沙箱设置。 |
 
 规则：

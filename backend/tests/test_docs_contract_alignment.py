@@ -448,6 +448,31 @@ def test_module_boundary_doc_uses_current_resource_file_paths():
     assert (PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "mcpConfigContract.ts").exists()
 
 
+def test_frontend_settings_env_vars_do_not_use_secret_navigation_identity():
+    """Frontend settings navigation must use the env-vars contract, not the old secrets identity."""
+    frontend_files = {
+        "navigation": PROJECT_ROOT / "frontend" / "src" / "features" / "shell" / "mainNavigation.ts",
+        "router": PROJECT_ROOT / "frontend" / "src" / "router" / "index.ts",
+        "main_view": PROJECT_ROOT / "frontend" / "src" / "views" / "MainView.vue",
+        "mcp_add": PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "MCPAddView.vue",
+        "mcp_detail": PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "MCPDetailView.vue",
+        "module_doc": PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md",
+    }
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in frontend_files.values())
+
+    assert "env-vars" in combined
+    assert "环境变量" in frontend_files["navigation"].read_text(encoding="utf-8")
+    assert "EnvVarsSettingsView" in combined
+    assert "useEnvVars" in (
+        PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "MCPAddView.vue"
+    ).read_text(encoding="utf-8")
+    assert (PROJECT_ROOT / "frontend" / "src" / "features" / "settings" / "EnvVarsSettingsView.vue").exists()
+    assert (PROJECT_ROOT / "frontend" / "src" / "composables" / "useEnvVars.ts").exists()
+
+    for legacy in ["ApiSecretsSettingsView", "useApiSecrets", "'secrets'", "label: '密钥'", "填入密钥"]:
+        assert legacy not in combined
+
+
 def test_sandbox_tool_docs_use_current_workspace_rename_schema():
     """Sandbox tool authoring docs must match the current workspace rename parameter."""
     text = (PROJECT_ROOT / "docs" / "skills" / "sandbox-tool-interface.md").read_text(encoding="utf-8")

@@ -139,8 +139,8 @@
             <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="MINIMAX_API_KEY" />
             <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="${env:MINIMAX_API_KEY}" />
             <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
-              <option value="">填入密钥</option>
-              <option v-for="s in secretItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
+              <option value="">填入变量</option>
+              <option v-for="s in envVarItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
             </select>
             <button type="button" @click="removeEnvRow(row.id)" class="px-2 py-2 text-sm text-danger hover:opacity-80">删除</button>
           </div>
@@ -155,8 +155,8 @@
             <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Authorization" />
             <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Bearer ${env:API_TOKEN}" />
             <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
-              <option value="">填入密钥</option>
-              <option v-for="s in secretItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
+              <option value="">填入变量</option>
+              <option v-for="s in envVarItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
             </select>
             <button type="button" @click="removeHeaderRow(row.id)" class="px-2 py-2 text-sm text-danger hover:opacity-80">删除</button>
           </div>
@@ -196,14 +196,14 @@
 <script setup lang="ts">
 import { apiRequest } from '@/api/base'
 import { computed, ref, watch } from 'vue'
-import { useApiSecrets } from '@/composables/useApiSecrets'
+import { useEnvVars } from '@/composables/useEnvVars'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { buildMcpServerPayload, mapConfigRowsToMap, type McpServerDraft } from './mcpConfigContract'
 
 const props = defineProps<{ toolName: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
 
-const { secretItems, loadApiSecrets } = useApiSecrets()
+const { envVarItems, loadEnvVars } = useEnvVars()
 
 interface KeyValueRow {
   id: number
@@ -458,7 +458,7 @@ async function load(options: { silent?: boolean } = {}) {
   const showPageLoading = !options.silent && (!server.value || (server.value.name !== props.toolName && !saving.value))
   if (showPageLoading) loading.value = true
   try {
-    await loadApiSecrets()
+    await loadEnvVars()
     const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {

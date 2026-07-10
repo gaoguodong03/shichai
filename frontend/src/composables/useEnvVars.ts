@@ -3,20 +3,20 @@ import { ref, type Ref } from 'vue'
 
 export type EnvVarItem = { name: string; label: string; value_set: boolean }
 
-export function useApiSecrets() {
-  const secretItems: Ref<EnvVarItem[]> = ref([])
+export function useEnvVars() {
+  const envVarItems: Ref<EnvVarItem[]> = ref([])
 
-  async function loadApiSecrets() {
+  async function loadEnvVars() {
     try {
       const r = await apiRequest('/settings/env-vars')
       const j = await r.json()
       if (j?.status === 'ok' && j?.data?.items) {
-        secretItems.value = j.data.items
+        envVarItems.value = j.data.items
       } else {
-        secretItems.value = []
+        envVarItems.value = []
       }
     } catch {
-      secretItems.value = []
+      envVarItems.value = []
     }
   }
 
@@ -38,5 +38,5 @@ export function useApiSecrets() {
     return { headerName: 'Authorization', prefix: 'Bearer ', envRef: '' }
   }
 
-  return { secretItems, loadApiSecrets, parseEnvHeader }
+  return { envVarItems, loadEnvVars, parseEnvHeader }
 }

@@ -915,7 +915,7 @@
       <template v-if="currentModule === 'settings'">
         <AppSettingsView v-if="settingsSection === 'app'" />
         <ThemeSettingsView v-else-if="settingsSection === 'theme'" />
-        <ApiSecretsSettingsView v-else-if="settingsSection === 'secrets'" />
+        <EnvVarsSettingsView v-else-if="settingsSection === 'env-vars'" />
         <AccountSecuritySettingsView v-else-if="settingsSection === 'account-security'" />
         <SandboxSettingsView v-else-if="settingsSection === 'sandbox'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
@@ -1335,7 +1335,7 @@ import AppSettingsView from '@/features/settings/AppSettingsView.vue'
 import ThemeSettingsView from '@/features/settings/ThemeSettingsView.vue'
 import AccountSecuritySettingsView from '@/features/settings/AccountSecuritySettingsView.vue'
 import SandboxSettingsView from '@/features/settings/SandboxSettingsView.vue'
-import ApiSecretsSettingsView from '@/features/settings/ApiSecretsSettingsView.vue'
+import EnvVarsSettingsView from '@/features/settings/EnvVarsSettingsView.vue'
 import { appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import SessionMemberAvatars from '@/features/shell/SessionMemberAvatars.vue'

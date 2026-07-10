@@ -3,7 +3,7 @@ import type { RouteLocationNormalizedLoaded } from 'vue-router'
 
 export type ModuleId = 'workspace' | 'resource' | 'settings'
 export type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'
-export type SettingsCategoryId = 'app' | 'theme' | 'secrets' | 'account-security' | 'sandbox'
+export type SettingsCategoryId = 'app' | 'theme' | 'env-vars' | 'account-security' | 'sandbox'
 
 export const resourceChildren: { id: ResourceSubModule; label: string }[] = [
   { id: 'scenario', label: '场景' },
@@ -17,7 +17,7 @@ export const resourceChildren: { id: ResourceSubModule; label: string }[] = [
 export const settingsCategories: { id: SettingsCategoryId; label: string }[] = [
   { id: 'app', label: '全局' },
   { id: 'theme', label: '配色' },
-  { id: 'secrets', label: '密钥' },
+  { id: 'env-vars', label: '环境变量' },
   { id: 'account-security', label: '账号' },
   { id: 'sandbox', label: '沙箱' },
 ]
@@ -46,7 +46,7 @@ export function useMainRouteState(route: RouteLocationNormalizedLoaded) {
 
   const settingsSection = computed<SettingsCategoryId>(() => {
     const section = String(route.params.section || 'app')
-    return section === 'theme' || section === 'secrets' || section === 'account-security' || section === 'sandbox'
+    return section === 'theme' || section === 'env-vars' || section === 'account-security' || section === 'sandbox'
       ? section
       : 'app'
   })

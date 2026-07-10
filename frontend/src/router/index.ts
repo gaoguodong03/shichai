@@ -4,7 +4,7 @@ import LoginView from '@/features/auth/LoginView.vue'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const resourceSections = new Set(['scenario', 'agent', 'skill', 'mcp', 'llm', 'files'])
-const settingsSections = new Set(['app', 'theme', 'secrets', 'account-security', 'sandbox'])
+const settingsSections = new Set(['app', 'theme', 'env-vars', 'account-security', 'sandbox'])
 
 function normalizeSectionRoute(to: RouteLocationNormalized) {
   if (to.path.startsWith('/resources')) {
