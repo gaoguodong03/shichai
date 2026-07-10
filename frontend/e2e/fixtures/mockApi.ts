@@ -379,14 +379,13 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const answer = '自动化测试回复：需求已收到。'
       if (session) {
         session.agent_names = session.agent_names?.length ? session.agent_names : ['问答专家']
+        const messageBody: E2eMessage['message'] = { content: body.message || '' }
+        if (body.attachments?.length) messageBody.attachments = body.attachments
+        if (body.target_agent_name) messageBody.target_agent_name = body.target_agent_name
         session.messages.push({
           message_id: `user-${session.messages.length + 1}`,
           speaker: { type: 'user' },
-          message: {
-            content: body.message || '',
-            attachments: body.attachments || [],
-            target_agent_name: body.target_agent_name || null,
-          },
+          message: messageBody,
           client_message_id: body.client_message_id,
           created_at: now,
         })

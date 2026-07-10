@@ -152,6 +152,10 @@ def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallba
     assert "client_message_id: body.client_message_id," in persisted_user_message.group(0)
     assert "body.client_message_id ||" not in persisted_user_message.group(0)
     assert "client-${Date.now()}" not in persisted_user_message.group(0)
+    assert "attachments: body.attachments || []" not in persisted_user_message.group(0)
+    assert "target_agent_name: body.target_agent_name || null" not in persisted_user_message.group(0)
+    assert "if (body.attachments?.length) messageBody.attachments = body.attachments" in chat_handler.group(1)
+    assert "if (body.target_agent_name) messageBody.target_agent_name = body.target_agent_name" in chat_handler.group(1)
 
 
 def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
