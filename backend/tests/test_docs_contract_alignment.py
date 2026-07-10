@@ -203,6 +203,17 @@ def test_skill_bundle_import_reference_rewrites_have_core_module_boundary():
     assert "_remap_frontmatter_mcp_refs(" not in api_text
 
 
+def test_mcp_bundle_packaging_has_core_module_boundary():
+    """MCP bundle ZIP packaging and parsing belongs in core, not API routes."""
+    api_text = (PROJECT_ROOT / "backend" / "app" / "api" / "settings_mcp.py").read_text(encoding="utf-8")
+    module_text = (PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py").read_text(encoding="utf-8")
+
+    assert "def build_single_mcp_bundle_zip_bytes" in module_text
+    assert "def read_mcp_bundle_rows" in module_text
+    assert "def _build_single_mcp_bundle_zip_bytes" not in api_text
+    assert "def _read_mcp_bundle_rows" not in api_text
+
+
 def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
     """Contract-critical modules follow the comment placement coding standard."""
     paths = [

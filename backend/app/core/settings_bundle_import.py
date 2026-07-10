@@ -1,8 +1,12 @@
 """设置导入 bundle 时的冲突检测、引用校验与引用更新。"""
 from __future__ import annotations
 
+import io
+import json
 import shutil
 import uuid
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -11,14 +15,72 @@ import yaml
 from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row
 from app.core.scenario_bundle import (
+    MANIFEST_NAME,
+    TOOLS_DIR,
     bundle_skills_root,
+    extract_scenario_bundle_dir,
     list_skill_directories_in_bundle_skills_dir,
+    sanitize_mcp_servers_for_bundle,
     strip_agent_row_for_disk,
+    _read_resource_rows,
+    _resource_dir_name,
 )
 
 
 def normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().casefold()
+
+
+def build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
+    """Build the ZIP payload for exporting one MCP tool resource."""
+    safe_rows = sanitize_mcp_servers_for_bundle([server])
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        root_name = str((safe_rows[0] if safe_rows else {}).get("name") or "").strip()
+        manifest = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "bundle_type": "tool",
+            "root_resources": [{"type": "tool", "name": root_name}],
+            "resource_counts": {
+                "scenarios": 0,
+                "agents": 0,
+                "skills": 0,
+                "tools": len(safe_rows),
+                "models": 0,
+            },
+        }
+        zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        for row in safe_rows:
+            tool_dir = _resource_dir_name(row.get("name"), "tool")
+            zf.writestr(f"{TOOLS_DIR}/{tool_dir}/tool.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
+    return buf.getvalue()
+
+
+def read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
+    """Read MCP tool rows from a tool ZIP bundle and raise ValueError for invalid input."""
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+    except zipfile.BadZipFile as exc:
+        raise ValueError("不是有效的 ZIP 文件") from exc
+    except ValueError as exc:
+        raise ValueError(str(exc) or "不是有效的 ZIP 文件") from exc
+    try:
+        manifest_path = tmp / MANIFEST_NAME
+        if not manifest_path.is_file():
+            raise ValueError("ZIP 中缺少 bundle.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or manifest.get("bundle_type") != "tool":
+            raise ValueError("工具资源包类型无效")
+        rows = _read_resource_rows(tmp / TOOLS_DIR, "tool.json")
+        if not rows:
+            raise ValueError("分享包中没有可导入的工具配置")
+        return rows
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("工具资源包格式错误") from exc
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _new_skill_directory_name(used_directory_names: Set[str]) -> str:

@@ -5,9 +5,6 @@ import asyncio
 import io
 import json
 import time
-import zipfile
-from datetime import datetime, timezone
-from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
@@ -19,7 +16,7 @@ from app.api.request_models import StrictRequestModel
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
 from app.core.name_based_resources import normalize_tool_row
-from app.core.scenario_bundle import MANIFEST_NAME, TOOLS_DIR, _resource_dir_name, _read_resource_rows, sanitize_mcp_servers_for_bundle
+from app.core.settings_bundle_import import build_single_mcp_bundle_zip_bytes, read_mcp_bundle_rows
 from app.core.user_context import get_current_user_context, get_current_username
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
@@ -130,30 +127,6 @@ def _reject_legacy_runtime_fields(server: Dict[str, Any]) -> None:
         )
 
 
-def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
-    safe_rows = sanitize_mcp_servers_for_bundle([server])
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        root_name = str((safe_rows[0] if safe_rows else {}).get("name") or "").strip()
-        manifest = {
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "bundle_type": "tool",
-            "root_resources": [{"type": "tool", "name": root_name}],
-            "resource_counts": {
-                "scenarios": 0,
-                "agents": 0,
-                "skills": 0,
-                "tools": len(safe_rows),
-                "models": 0,
-            },
-        }
-        zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        for row in safe_rows:
-            tool_dir = _resource_dir_name(row.get("name"), "tool")
-            zf.writestr(f"{TOOLS_DIR}/{tool_dir}/tool.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
-    return buf.getvalue()
-
-
 def _content_disposition_attachment(filename: str) -> str:
     filename = str(filename or "mcp-export.zip")
     try:
@@ -164,35 +137,12 @@ def _content_disposition_attachment(filename: str) -> str:
         return f"attachment; filename=\"mcp-export.zip\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
-def _read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
+def _mcp_bundle_rows_or_400(raw: bytes) -> List[Dict[str, Any]]:
+    """Convert core MCP bundle validation errors to the settings API error shape."""
     try:
-        from app.core.scenario_bundle import extract_scenario_bundle_dir
-
-        tmp = extract_scenario_bundle_dir(raw)
-    except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=400, detail="不是有效的 ZIP 文件") from exc
+        return read_mcp_bundle_rows(raw)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc) or "不是有效的 ZIP 文件") from exc
-    try:
-        manifest_path = tmp / MANIFEST_NAME
-        if not manifest_path.is_file():
-            raise HTTPException(status_code=400, detail="ZIP 中缺少 bundle.json")
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict) or manifest.get("bundle_type") != "tool":
-            raise HTTPException(status_code=400, detail="工具资源包类型无效")
-        rows = _read_resource_rows(tmp / TOOLS_DIR, "tool.json")
-        if not rows:
-            raise HTTPException(status_code=400, detail="分享包中没有可导入的工具配置")
-        return rows
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="工具资源包格式错误") from exc
-    finally:
-        if "tmp" in locals():
-            import shutil
-
-            shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(exc) or "工具资源包格式错误") from exc
 
 @router.get("/settings/mcp")
 async def get_mcp_servers():
@@ -216,7 +166,7 @@ async def export_mcp_server_zip(tool_name: str):
     hit = next((x for x in load_mcp_config() if str(x.get("name") or "").strip() == name), None)
     if not hit:
         raise HTTPException(status_code=404, detail="Tool not found")
-    raw = _build_single_mcp_bundle_zip_bytes(dict(hit))
+    raw = build_single_mcp_bundle_zip_bytes(dict(hit))
     return StreamingResponse(
         io.BytesIO(raw),
         media_type="application/zip",
@@ -228,7 +178,7 @@ async def export_mcp_server_zip(tool_name: str):
 async def import_mcp_server_zip(request: Request, file: UploadFile = File(...), dry_run: bool = Form(False)):
     await reject_legacy_import_strategy_fields(request)
     raw = await file.read()
-    rows = _read_mcp_bundle_rows(raw)
+    rows = _mcp_bundle_rows_or_400(raw)
     for row in rows:
         _reject_legacy_runtime_fields(row)
     rows = [normalize_tool_row(row) for row in rows]
