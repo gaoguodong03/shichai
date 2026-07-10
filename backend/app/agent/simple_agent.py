@@ -6,9 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from app.agent.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from app.agent.messages import AIMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
-from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
@@ -47,6 +46,11 @@ from app.agent.simple_agent_tool_flow import (
     post_tool_synthesis_should_use_bound_client as _post_tool_synthesis_should_use_bound_client,
     remember_successful_workspace_writes as _remember_successful_workspace_writes,
 )
+from app.agent.simple_agent_text_tool_protocol import (
+    append_text_tool_protocol_retry_or_failure as _append_text_tool_protocol_retry_or_failure,
+    last_message_is_text_tool_protocol_retry as _last_message_is_text_tool_protocol_retry,
+    text_tool_protocol_failure_message as _text_tool_protocol_failure_message,
+)
 from app.agent.simple_agent_tool_ids import (
     _missing_tool_response_messages,
     _normalize_ai_tool_call_ids,
@@ -56,56 +60,6 @@ from app.agent.simple_agent_tool_ids import (
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
-
-
-_TEXT_TOOL_PROTOCOL_RETRY_LIMIT = 1
-_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION = render_platform_prompt("agent.text_tool_protocol.retry.v1", {})
-_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT = render_platform_prompt("agent.text_tool_protocol.failure.v1", {})
-
-
-def _text_tool_protocol_failure_message() -> AIMessage:
-    return AIMessage(content=_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT)
-
-
-def _last_message_is_text_tool_protocol_retry(messages: list[BaseMessage]) -> bool:
-    if not messages:
-        return False
-    last = messages[-1]
-    return isinstance(last, HumanMessage) and _extract_text_content(last) == _TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION
-
-
-def _append_text_tool_protocol_retry_or_failure(
-    *,
-    response: BaseMessage,
-    messages: list[BaseMessage],
-    tool_attempt_debug: list[dict[str, Any]],
-    retry_count: int,
-) -> tuple[int, BaseMessage, bool]:
-    content_preview = _extract_text_content(response).strip()[:240]
-    if retry_count < _TEXT_TOOL_PROTOCOL_RETRY_LIMIT:
-        next_retry_count = retry_count + 1
-        retry_message = HumanMessage(content=_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION)
-        messages.append(retry_message)
-        tool_attempt_debug.append(
-            {
-                "source": "text_tool_call_protocol_retry",
-                "matched": True,
-                "retry_count": next_retry_count,
-                "content_preview": content_preview,
-            }
-        )
-        return next_retry_count, retry_message, True
-    failure_message = _text_tool_protocol_failure_message()
-    messages.append(failure_message)
-    tool_attempt_debug.append(
-        {
-            "source": "text_tool_call_protocol_failed",
-            "matched": True,
-            "retry_count": retry_count,
-            "content_preview": content_preview,
-        }
-    )
-    return retry_count, failure_message, False
 
 
 @dataclass

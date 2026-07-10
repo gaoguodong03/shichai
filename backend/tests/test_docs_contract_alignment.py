@@ -145,3 +145,26 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
         "def _post_tool_synthesis_should_use_bound_client",
     ]:
         assert old_private_definition not in agent_text
+
+
+def test_simple_agent_text_tool_protocol_has_independent_module_boundary():
+    """Text-tool protocol retry/failure handling belongs outside the SimpleAgent loop file."""
+    protocol_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_text_tool_protocol.py"
+    agent_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py"
+
+    assert protocol_module.exists()
+    protocol_text = protocol_module.read_text(encoding="utf-8")
+    agent_text = agent_module.read_text(encoding="utf-8")
+
+    for name in [
+        "def append_text_tool_protocol_retry_or_failure",
+        "def last_message_is_text_tool_protocol_retry",
+        "def text_tool_protocol_failure_message",
+    ]:
+        assert name in protocol_text
+    for old_private_definition in [
+        "def _append_text_tool_protocol_retry_or_failure",
+        "def _last_message_is_text_tool_protocol_retry",
+        "def _text_tool_protocol_failure_message",
+    ]:
+        assert old_private_definition not in agent_text
