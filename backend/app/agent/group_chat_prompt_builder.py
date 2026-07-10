@@ -20,10 +20,6 @@ class PromptBundle:
     debug: Dict[str, Any]
 
 
-def _section(title: str, content: str) -> str:
-    return f"【{title}】\n{content}"
-
-
 def _has_any_section(text: str, section_names: tuple[str, ...]) -> bool:
     return any(f"【{name}】" in text for name in section_names)
 
@@ -58,14 +54,20 @@ def build_expert_turn_prompt(
             host_next_action=task_text,
         ).strip()
         if task_text and task_text not in user_content:
-            user_content = _section(
-                "主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）",
-                task_text,
+            user_content = render_platform_prompt(
+                "expert.turn.host_instruction_section.v1",
+                {"host_instruction": task_text},
             ) + "\n\n" + user_content
         if not _has_any_section(user_content, ("本轮用户输入",)):
-            user_content += "\n\n" + _section("本轮用户输入", current_user_input)
+            user_content += "\n\n" + render_platform_prompt(
+                "expert.turn.user_input_section.v1",
+                {"current_user_input": current_user_input},
+            )
         if not _has_any_section(user_content, ("最近讨论", "历史对话（供参考）", "最近几轮讨论内容")):
-            user_content += "\n\n" + _section("最近讨论", context_text)
+            user_content += "\n\n" + render_platform_prompt(
+                "expert.turn.recent_context_section.v1",
+                {"recent_context": context_text},
+            )
     else:
         user_content = render_platform_prompt(
             "expert.turn.user_content.v1",

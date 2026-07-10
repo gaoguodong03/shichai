@@ -110,6 +110,24 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_expert_turn_missing_sections_use_platform_prompt_registry():
+    builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）",
+        "【本轮用户输入】\\n{current_user_input}",
+        "【最近讨论】\\n{recent_context}",
+    ]:
+        assert phrase not in builder_text
+
+    for prompt_id in [
+        "expert.turn.host_instruction_section.v1",
+        "expert.turn.user_input_section.v1",
+        "expert.turn.recent_context_section.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
     files = [
         ROOT / "backend/app/agent/platform_prompts.py",
