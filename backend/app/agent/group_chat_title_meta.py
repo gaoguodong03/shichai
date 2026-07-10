@@ -24,7 +24,7 @@ from app.api.group_chat_state import (
 )
 from app.agent.platform_prompts import render_platform_prompt
 from app.api.settings_app import load_app_settings
-from app.api.settings_secrets import load_api_secret_values
+from app.api.settings_env_vars import load_env_var_values
 logger = logging.getLogger(__name__)
 
 
@@ -110,8 +110,8 @@ def _schedule_group_title_refresh(
         try:
             app_settings = load_app_settings()
             llm_name = app_settings.get("default_llm", "qwen3-max")
-            secrets = load_api_secret_values()
-            llm = get_llm_from_config(llm_name, app_settings.get("llm_providers"), secrets)
+            env_vars = load_env_var_values()
+            llm = get_llm_from_config(llm_name, app_settings.get("llm_providers"), env_vars)
             ai_title = await _ai_title_from_recent_user_messages(
                 llm,
                 messages_snapshot,

@@ -24,26 +24,27 @@ def _runtime_tool_name(display_name: str) -> str:
     return f"http_api_{safe}"
 
 
-def _subst_placeholders(value: str, secrets: Dict[str, str]) -> str:
-    def repl_vault(match: re.Match[str]) -> str:
-        return secrets.get(match.group(1), "")
+def _subst_placeholders(value: str, env_vars: Dict[str, str]) -> str:
+    def repl_platform_env(match: re.Match[str]) -> str:
+        name = match.group(1)
+        return env_vars.get(name, "") or os.environ.get(name, "")
 
     def repl_env(match: re.Match[str]) -> str:
         name = match.group(1)
-        return os.environ.get(name) or secrets.get(name, "")
+        return os.environ.get(name) or env_vars.get(name, "")
 
-    out = re.sub(r"\$\{vault:([A-Za-z0-9_-]+)\}", repl_vault, value)
+    out = re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", repl_platform_env, value)
     out = re.sub(r"\$\{(\w+)\}", repl_env, out)
     return out
 
 
-def _subst_jsonish(value: Any, secrets: Dict[str, str]) -> Any:
+def _subst_jsonish(value: Any, env_vars: Dict[str, str]) -> Any:
     if isinstance(value, str):
-        return _subst_placeholders(value, secrets)
+        return _subst_placeholders(value, env_vars)
     if isinstance(value, list):
-        return [_subst_jsonish(item, secrets) for item in value]
+        return [_subst_jsonish(item, env_vars) for item in value]
     if isinstance(value, dict):
-        return {str(k): _subst_jsonish(v, secrets) for k, v in value.items()}
+        return {str(k): _subst_jsonish(v, env_vars) for k, v in value.items()}
     return value
 
 
@@ -76,21 +77,21 @@ def _append_query(url: str, query: Dict[str, Any]) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(pairs), parts.fragment))
 
 
-def create_http_api_tool(row: Dict[str, Any], secrets: Dict[str, str] | None = None) -> ToolSpec:
+def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = None) -> ToolSpec:
     name = str((row or {}).get("name") or "").strip()
     cfg = (row or {}).get("config") if isinstance((row or {}).get("config"), dict) else {}
-    secrets = secrets or {}
+    env_vars = env_vars or {}
 
     def _execute(query: Dict[str, Any] | None = None, body: Any = None, headers: Dict[str, Any] | None = None) -> str:
-        merged_query = _subst_jsonish(_merge_dict(cfg.get("query"), query), secrets)
-        merged_headers = _subst_jsonish(_merge_dict(cfg.get("header"), headers), secrets)
+        merged_query = _subst_jsonish(_merge_dict(cfg.get("query"), query), env_vars)
+        merged_headers = _subst_jsonish(_merge_dict(cfg.get("header"), headers), env_vars)
         configured_body = cfg.get("body")
         payload = configured_body if body is None else body
-        payload = _subst_jsonish(payload, secrets)
+        payload = _subst_jsonish(payload, env_vars)
         if not isinstance(payload, str):
             payload = json.dumps(payload, ensure_ascii=False)
         url = _append_query(
-            _append_path(_subst_placeholders(str(cfg.get("base_url") or ""), secrets), str(cfg.get("path") or "")),
+            _append_path(_subst_placeholders(str(cfg.get("base_url") or ""), env_vars), str(cfg.get("path") or "")),
             merged_query,
         )
         return _call_api_impl(

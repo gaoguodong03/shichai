@@ -33,8 +33,8 @@ def models_resources_dir() -> Path:
     return require_user_context().models_dir.resolve()
 
 
-def vault_secrets_path() -> Path:
-    return (require_user_context().settings_dir / "secrets.enc.json").resolve()
+def env_vars_path() -> Path:
+    return (require_user_context().settings_dir / "env.enc.json").resolve()
 
 
 def sandbox_requirements_path() -> Path:

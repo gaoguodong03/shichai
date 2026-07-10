@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from app.agent.tool_spec import tools_to_openai_tools
+from app.api.settings_env_vars import resolve_platform_env_value
 
 logger = logging.getLogger(__name__)
 
@@ -92,18 +93,13 @@ def resolve_llm_provider_entry(
 
 def resolve_llm_api_key(
     cfg: Dict[str, Any],
-    api_secrets: Optional[Dict[str, str]] = None,
+    env_vars: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """Resolve API key without constructing an LLM client."""
-    api_key = None
-    ref = (cfg.get("api_key_ref") or "").strip()
-    if ref and api_secrets and ref in api_secrets:
-        api_key = api_secrets[ref]
+    api_key_env = str(cfg.get("api_key_env") or "QWEN_API_KEY").strip()
+    api_key = resolve_platform_env_value(api_key_env, env_vars)
     if not api_key:
         api_key = (cfg.get("api_key") or "").strip() or None
-    if not api_key:
-        api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
-        api_key = os.getenv(api_key_env)
     return (str(api_key).strip() or None) if api_key else None
 
 
@@ -148,17 +144,17 @@ def is_llm_credential_error_message(text: str) -> bool:
 def get_llm_from_config(
     llm_name: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
-    api_secrets: Optional[Dict[str, str]] = None,
+    env_vars: Optional[Dict[str, str]] = None,
 ) -> "QwenLLM":
     """
     根据 llm_name 从配置新建 LLM 客户端。
-    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
+    解析顺序：平台内用户级环境变量 > 宿主机环境变量 > 配置中的内联 api_key。
     """
     resolved_name, cfg = resolve_llm_provider_entry(llm_name, providers_config)
     if not cfg:
         return QwenLLM()
 
-    api_key = resolve_llm_api_key(cfg, api_secrets)
+    api_key = resolve_llm_api_key(cfg, env_vars)
     base_url = cfg.get("base_url")
     model = cfg.get("model")
     return QwenLLM(

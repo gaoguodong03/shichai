@@ -11,9 +11,9 @@ from app.api.sandbox_settings import (
     SandboxSettingsBody,
 )
 from app.api.settings_app import AppSettingsBody, HostProfileBody
+from app.api.settings_env_vars import EnvVarCreate, EnvVarUpdate
 from app.api.settings_mcp import MCPServerCreate, MCPServerUpdate, MCPToolCallBody, MCPTransport, MCPSandboxCallBody
 from app.api.settings_presets import SessionPresetItem, SessionPresetsBody
-from app.api.settings_secrets import ApiSecretCreate, ApiSecretUpdate
 from app.api.settings_skill_frontmatter import SkillCreate, SkillUpdate
 from app.api.settings_skill_parts import PartDirCreate, PartFileCreate, PartFileUpdate
 
@@ -44,8 +44,8 @@ from app.api.settings_skill_parts import PartDirCreate, PartFileCreate, PartFile
         (MCPSandboxCallBody, {"arguments": {"q": "x"}}),
         (SessionPresetItem, {"name": "写作", "agent_names": ["写作专家"]}),
         (SessionPresetsBody, {"presets": [{"name": "写作", "agent_names": ["写作专家"]}]}),
-        (ApiSecretCreate, {"id": "QWEN_API_KEY", "api_key": "sk"}),
-        (ApiSecretUpdate, {"label": "Qwen"}),
+        (EnvVarCreate, {"name": "QWEN_API_KEY", "value": "sk"}),
+        (EnvVarUpdate, {"label": "Qwen"}),
         (SkillCreate, {"name": "写作 Skill"}),
         (SkillUpdate, {"description": "desc"}),
         (PartFileCreate, {"path": "references/a.md"}),

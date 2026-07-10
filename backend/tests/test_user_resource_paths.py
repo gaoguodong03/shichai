@@ -40,7 +40,7 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         scenarios_resources_dir,
         skills_dir_path,
         tools_resources_dir,
-        vault_secrets_path,
+        env_vars_path,
         app_settings_path,
         sandbox_requirements_path,
     )
@@ -55,77 +55,78 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         assert tools_resources_dir() == root / "resources" / "tools"
         assert models_resources_dir() == root / "resources" / "models"
         assert app_settings_path() == root / "settings" / "app.json"
-        assert vault_secrets_path() == root / "settings" / "secrets.enc.json"
+        assert env_vars_path() == root / "settings" / "env.enc.json"
         assert sandbox_requirements_path() == root / "settings" / "sandbox" / "requirements.txt"
     finally:
         reset_current_user_identity(token)
 
 
-def test_api_secret_values_use_current_user_vault(monkeypatch, tmp_path):
+def test_env_var_values_use_current_user_env_store(monkeypatch, tmp_path):
     import json
 
-    from app.api.settings_secrets import load_api_secret_values
+    from app.api.settings_env_vars import load_env_var_values
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    user_settings = tmp_path / "users" / "user-secret-owner" / "settings"
+    user_settings = tmp_path / "users" / "user-env-owner" / "settings"
     user_settings.mkdir(parents=True)
-    (user_settings / "secrets.enc.json").write_text(
-        json.dumps({"items": {"jeniya": {"label": "Jeniya", "api_key": "from-user-vault"}}}),
+    (user_settings / "env.enc.json").write_text(
+        json.dumps({"items": {"JENIYA_API_KEY": {"label": "Jeniya", "value": "from-user-env", "sensitive": True}}}),
         encoding="utf-8",
     )
 
-    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    token = set_current_user_identity(user_id="user-env-owner", username="owner@example.com")
     try:
-        assert load_api_secret_values() == {"jeniya": "from-user-vault"}
+        assert load_env_var_values() == {"JENIYA_API_KEY": "from-user-env"}
     finally:
         reset_current_user_identity(token)
 
 
-def test_api_secret_values_ignore_legacy_config_file(monkeypatch, tmp_path):
+def test_env_var_values_ignore_legacy_secret_files(monkeypatch, tmp_path):
     import json
 
-    from app.api.settings_secrets import load_api_secret_values
+    from app.api.settings_env_vars import load_env_var_values
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    user_config = tmp_path / "users" / "user-secret-owner" / "config"
+    user_config = tmp_path / "users" / "user-env-owner" / "settings"
     user_config.mkdir(parents=True)
-    (user_config / "api_secrets.json").write_text(
-        json.dumps({"items": {"legacy": {"label": "Legacy", "api_key": "from-legacy-config"}}}),
+    (user_config / ("secrets" + ".enc.json")).write_text(
+        json.dumps({"items": {"legacy": {"label": "Legacy", "api_key": "from-legacy-secret"}}}),
         encoding="utf-8",
     )
 
-    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    token = set_current_user_identity(user_id="user-env-owner", username="owner@example.com")
     try:
-        assert load_api_secret_values() == {}
+        assert load_env_var_values() == {}
     finally:
         reset_current_user_identity(token)
 
 
-def test_create_api_secret_writes_current_user_vault_only(monkeypatch, tmp_path):
+def test_create_env_var_writes_current_user_env_store_only(monkeypatch, tmp_path):
     import asyncio
     import json
 
-    from app.api.settings_secrets import ApiSecretCreate, create_api_secret
+    from app.api.settings_env_vars import EnvVarCreate, create_env_var
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    token = set_current_user_identity(user_id="user-env-owner", username="owner@example.com")
     try:
         asyncio.run(
-            create_api_secret(
-                ApiSecretCreate(id="jeniya", label="Jeniya", api_key="from-user-vault")
+            create_env_var(
+                EnvVarCreate(name="JENIYA_API_KEY", label="Jeniya", value="from-user-env")
             )
         )
 
-        user_root = tmp_path / "users" / "user-secret-owner"
-        vault_path = user_root / "settings" / "secrets.enc.json"
-        config_path = user_root / "config" / "api_secrets.json"
-        assert vault_path.is_file()
-        assert not config_path.exists()
-        data = json.loads(vault_path.read_text(encoding="utf-8"))
-        assert data["items"]["jeniya"]["api_key"] == "from-user-vault"
+        user_root = tmp_path / "users" / "user-env-owner"
+        env_path = user_root / "settings" / "env.enc.json"
+        secret_path = user_root / "settings" / ("secrets" + ".enc.json")
+        assert env_path.is_file()
+        assert not secret_path.exists()
+        data = json.loads(env_path.read_text(encoding="utf-8"))
+        assert data["items"]["JENIYA_API_KEY"]["value"] == "from-user-env"
+        assert data["items"]["JENIYA_API_KEY"]["sensitive"] is True
     finally:
         reset_current_user_identity(token)
 
@@ -359,7 +360,7 @@ def test_save_app_settings_stores_llm_providers_as_model_resources(monkeypatch, 
                     "自定义模型": {
                         "base_url": "https://example.test/v1",
                         "model": "custom-chat",
-                        "api_key_ref": "custom-key",
+                        "api_key_env": "CUSTOM_API_KEY",
                     }
                 },
             }
@@ -374,7 +375,7 @@ def test_save_app_settings_stores_llm_providers_as_model_resources(monkeypatch, 
         model_data = json.loads(model_file.read_text(encoding="utf-8"))
         assert model_data["name"] == "自定义模型"
         assert model_data["base_url"] == "https://example.test/v1"
-        assert model_data["api_key_ref"] == "custom-key"
+        assert model_data["api_key_env"] == "CUSTOM_API_KEY"
         assert load_app_settings()["llm_providers"]["自定义模型"]["model"] == "custom-chat"
     finally:
         reset_current_user_identity(token)

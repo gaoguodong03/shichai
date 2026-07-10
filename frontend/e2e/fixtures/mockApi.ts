@@ -96,7 +96,7 @@ export type E2eState = {
   skills: Skill[]
   mcpServers: McpServer[]
   scenarios: ScenarioPreset[]
-  secrets: Array<{ id: string; label: string; key_set: boolean }>
+  envVars: Array<{ name: string; label: string; value_set: boolean }>
   files: Record<string, WorkspaceFile[]>
   fileContent: Record<string, string>
   appSettings: Record<string, unknown>
@@ -172,7 +172,7 @@ export function createE2eState(): E2eState {
         updated_at: now,
       },
     ],
-    secrets: [{ id: 'qwen-main', label: 'Qwen 主密钥', key_set: true }],
+    envVars: [{ name: 'QWEN_API_KEY', label: 'Qwen 主变量', value_set: true }],
     files: {
       'session-existing:': [
         { name: 'docs', path: 'docs', is_dir: true, updated_at: now },
@@ -201,8 +201,7 @@ export function createE2eState(): E2eState {
           temperature: 0.7,
           top_p: 0.8,
           max_tokens: 2000,
-          api_key_set: true,
-          api_key_id: 'qwen-main',
+          api_key_env: 'QWEN_API_KEY',
           enable_thinking: false,
         },
       },
@@ -649,20 +648,20 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path === '/settings/host-profile/reset' && method === 'POST') {
       return ok(route, state.hostProfile)
     }
-    if (path === '/settings/api-secrets' && method === 'GET') {
-      return ok(route, { items: state.secrets })
+    if (path === '/settings/env-vars' && method === 'GET') {
+      return ok(route, { items: state.envVars })
     }
-    if (path === '/settings/api-secrets' && method === 'POST') {
-      const body = readBody<{ id?: string; label?: string }>(route)
-      const id = body.id || `secret-${state.secrets.length + 1}`
-      state.secrets.unshift({ id, label: body.label || id, key_set: true })
-      return ok(route, { id })
+    if (path === '/settings/env-vars' && method === 'POST') {
+      const body = readBody<{ name?: string; label?: string }>(route)
+      const name = body.name || `ENV_VAR_${state.envVars.length + 1}`
+      state.envVars.unshift({ name, label: body.label || name, value_set: true })
+      return ok(route, { name })
     }
-    const secretMatch = path.match(/^\/settings\/api-secrets\/([^/]+)$/)
-    if (secretMatch && method === 'PUT') {
-      const secret = state.secrets.find((s) => s.id === decodeURIComponent(secretMatch[1]))
-      if (secret) Object.assign(secret, readBody(route), { key_set: true })
-      return ok(route, secret || {})
+    const envVarMatch = path.match(/^\/settings\/env-vars\/([^/]+)$/)
+    if (envVarMatch && method === 'PUT') {
+      const item = state.envVars.find((s) => s.name === decodeURIComponent(envVarMatch[1]))
+      if (item) Object.assign(item, readBody(route), { value_set: true })
+      return ok(route, item || {})
     }
     if (path === '/settings/sandbox' && method === 'GET') {
       return ok(route, state.sandboxSettings)

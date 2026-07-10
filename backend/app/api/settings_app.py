@@ -311,10 +311,6 @@ def save_app_settings(data: Dict[str, Any]):
                 base["api_key"] = old.get("api_key")
             if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
                 base.pop("api_key", None)
-            if "api_key_ref" not in meta and "api_key_ref" in old:
-                base["api_key_ref"] = old.get("api_key_ref")
-            if isinstance(meta.get("api_key_ref"), str) and not (meta.get("api_key_ref") or "").strip():
-                base.pop("api_key_ref", None)
             merged[str(pid)] = _sanitize_llm_provider_row(base)
         deleted_defaults = sorted(k for k in _DEFAULT_LLM_PROVIDERS if k not in merged)
         if deleted_defaults:

@@ -107,7 +107,7 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
                 "command": "python",
                 "args": ["app/mcp/stdio/audio_asr.py"],
                 "env": {
-                    "QWEN_AUDIO_API_KEY": "${vault:asr}",
+                    "QWEN_AUDIO_API_KEY": "${env:QWEN_AUDIO_API_KEY}",
                     "QWEN_AUDIO_BASE_URL": "http://10.129.50.230/v1",
                     "QWEN_AUDIO_MODEL": "qwen3-asr-1.7b",
                 },
@@ -125,7 +125,7 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     with zipfile.ZipFile(BytesIO(exported.content)) as zf:
         rows = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
     assert "enabled" not in rows[0]
-    assert "${vault:asr}" in rows[0]["server_config"]
+    assert "${env:QWEN_AUDIO_API_KEY}" in rows[0]["server_config"]
     assert "qwen3-asr-1.7b" in rows[0]["server_config"]
 
     deleted = client.delete(f"/api/settings/mcp/{server_id}", headers=headers)
@@ -142,7 +142,7 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     listed = client.get("/api/settings/mcp", headers=headers)
     assert listed.status_code == 200
     restored = next(x for x in listed.json()["data"]["servers"] if x["name"] == server_id)
-    assert "${vault:asr}" in restored["server_config"]
+    assert "${env:QWEN_AUDIO_API_KEY}" in restored["server_config"]
 
 
 def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend_flow_client: TestClient):
@@ -492,7 +492,6 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert "api_key" not in manifest["provider"]
     assert "api_key_env" not in manifest["provider"]
-    assert "api_key_ref" not in manifest["provider"]
 
     preview_llm = client.post(
         "/api/settings/llm-providers/import-bundle",
@@ -540,19 +539,19 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert host_profile.status_code == 200
     assert host_profile.json()["data"]["name"] == "测试主持人"
 
-    secret = client.post(
-        "/api/settings/api-secrets",
-        json={"id": "TEST_KEY", "label": "测试密钥", "api_key": "sk-test"},
+    env_var = client.post(
+        "/api/settings/env-vars",
+        json={"name": "TEST_KEY", "label": "测试变量", "value": "sk-test"},
         headers=headers,
     )
-    assert secret.status_code == 200
-    secret_update = client.put(
-        "/api/settings/api-secrets/TEST_KEY",
-        json={"label": "测试密钥2"},
+    assert env_var.status_code == 200
+    env_var_update = client.put(
+        "/api/settings/env-vars/TEST_KEY",
+        json={"label": "测试变量2"},
         headers=headers,
     )
-    assert secret_update.status_code == 200
-    assert secret_update.json()["data"]["label"] == "测试密钥2"
+    assert env_var_update.status_code == 200
+    assert env_var_update.json()["data"]["label"] == "测试变量2"
 
     agent_profile = client.post(
         "/api/agents",
@@ -690,4 +689,4 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert client.delete(f"/api/settings/mcp/{mcp_id}", headers=headers).status_code == 200
     assert client.delete(f"/api/settings/skills/{skill_id}", headers=headers).status_code == 200
     assert client.delete("/api/agents/前端流程专家", headers=headers).status_code == 200
-    assert client.delete("/api/settings/api-secrets/TEST_KEY", headers=headers).status_code == 200
+    assert client.delete("/api/settings/env-vars/TEST_KEY", headers=headers).status_code == 200

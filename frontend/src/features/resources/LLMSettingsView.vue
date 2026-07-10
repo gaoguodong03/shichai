@@ -108,25 +108,19 @@
 
           <div>
 
-            <label class="block text-sm font-medium text-primary mb-1">API Key</label>
+            <label class="block text-sm font-medium text-primary mb-1">环境变量名</label>
 
-            <select
+            <input
 
-              v-model="edit.api_key_ref"
+              v-model="edit.api_key_env"
 
-              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              type="text"
 
-            >
+              placeholder="QWEN_API_KEY"
 
-              <option value="">（不选密钥，使用环境变量）</option>
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
 
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-
-                {{ secretOptionLabel(s) }}
-
-              </option>
-
-            </select>
+            />
 
           </div>
 
@@ -374,8 +368,6 @@ const form = ref<{
 
       api_key_env?: string
 
-      api_key_ref?: string
-
       api_key_set?: boolean
 
       [key: string]: unknown
@@ -387,8 +379,6 @@ const form = ref<{
 }>({ default_llm: 'qwen3-max', llm_providers: {} })
 
 
-
-const secretItems = ref<{ id: string; label: string; key_set: boolean }[]>([])
 
 type BoolChoice = '' | 'true' | 'false'
 type ModelParams = {
@@ -432,8 +422,6 @@ const edit = ref({
   model: '',
 
   api_key_env: '',
-
-  api_key_ref: '',
 
   params: emptyParams(),
 
@@ -552,38 +540,6 @@ const isNew = computed(() => effectiveLlmName.value === '__new__')
 
 const defaultLlmLabel = computed(() => (form.value.default_llm || '').trim())
 
-/** 与密钥管理侧栏一致：显示名 +（标识 id） */
-function secretOptionLabel(s: { id: string; label: string; key_set: boolean }) {
-  const name = (s.label || '').trim() || s.id
-  const suffix = s.key_set ? '' : '（未配置密钥）'
-  if (name === s.id) return `${s.id}${suffix}`
-  return `${name}（${s.id}）${suffix}`
-}
-
-async function loadSecrets() {
-
-  try {
-
-    const r = await apiRequest('/settings/api-secrets')
-
-    const j = await r.json()
-
-    if (j?.status === 'ok' && j?.data?.items) {
-
-      secretItems.value = j.data.items
-
-    }
-
-  } catch {
-
-    secretItems.value = []
-
-  }
-
-}
-
-
-
 function applyProviderToEdit(llmName: string) {
   const meta = form.value.llm_providers[llmName]
   if (!meta) return
@@ -598,7 +554,6 @@ function applyProviderToEdit(llmName: string) {
     base_url: meta.base_url ?? '',
     model: meta.model ?? '',
     api_key_env: meta.api_key_env ?? '',
-    api_key_ref: (meta.api_key_ref || '').trim(),
     params,
   }
 }
@@ -612,7 +567,6 @@ async function syncEditForProvider(llmName: string | null) {
       base_url: 'https://jeniya.top/v1',
       model: '',
       api_key_env: 'JENIYA_API_KEY',
-      api_key_ref: '',
       params: emptyParams(),
     }
     return
@@ -640,7 +594,6 @@ async function load(options: { silent?: boolean } = {}) {
       }
     }
 
-    await loadSecrets()
   } finally {
     if (showLoading) loading.value = false
   }
@@ -756,8 +709,6 @@ async function saveProvider() {
 
 
 
-  const refVal = (edit.value.api_key_ref || '').trim()
-
   const advanced = buildAdvancedConfig()
 
   if (advanced === null) return
@@ -785,8 +736,6 @@ async function saveProvider() {
       api_key_env: (edit.value.api_key_env || '').trim() || undefined,
 
     }
-
-    if (refVal) row.api_key_ref = refVal
 
     form.value.llm_providers = {
 
@@ -827,16 +776,6 @@ async function saveProvider() {
     model: (edit.value.model || '').trim() || undefined,
 
     api_key_env: (edit.value.api_key_env || '').trim() || undefined,
-
-  }
-
-  if (refVal) {
-
-    nextRow.api_key_ref = refVal
-
-  } else {
-
-    nextRow.api_key_ref = ''
 
   }
 

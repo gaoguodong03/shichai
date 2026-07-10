@@ -95,7 +95,7 @@ def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
                 "type": "stdio",
                 "env": {
                     "PLAIN_API_KEY": "sk-live-secret",
-                    "VAULT_API_KEY": "${vault:api-key}",
+                    "ENV_API_KEY": "${env:SCENARIO_API_KEY}",
                     "MODEL": "qwen3-asr-1.7b",
                 },
             },
@@ -110,7 +110,7 @@ def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
             server_config = __import__("json").loads(mcp[0]["server_config"])
             env = server_config["mcpServers"]["M"]["env"]
             assert env["PLAIN_API_KEY"] == ""
-            assert env["VAULT_API_KEY"] == "${vault:api-key}"
+            assert env["ENV_API_KEY"] == "${env:SCENARIO_API_KEY}"
             assert env["MODEL"] == "qwen3-asr-1.7b"
             assert "sk-live-secret" not in raw.decode("latin-1")
         finally:
@@ -127,11 +127,11 @@ def test_scenario_bundle_sanitizes_mcp_url_headers_and_nested_secrets():
             "name": "Remote",
             "transport": {
                 "type": "http",
-                "base_url": "https://mcp.example.test/mcp?apiKey=plain-secret&mode=web&token=${vault:remote-token}",
+                "base_url": "https://mcp.example.test/mcp?apiKey=plain-secret&mode=web&token=${env:REMOTE_TOKEN}",
                 "headers": {
                     "Authorization": "Bearer plain-secret",
                     "X-Trace": "keep",
-                    "X-Api-Key": "${vault:header-key}",
+                    "X-Api-Key": "${env:HEADER_KEY}",
                 },
                 "nested": {
                     "callback": "https://callback.example.test/run?access_token=plain-token&ok=1",
@@ -148,10 +148,10 @@ def test_scenario_bundle_sanitizes_mcp_url_headers_and_nested_secrets():
             _man, _p, _agents, mcp = read_bundle_manifest_and_lists(ext)
             server_config = __import__("json").loads(mcp[0]["server_config"])
             transport = server_config["mcpServers"]["Remote"]
-            assert transport["base_url"] == "https://mcp.example.test/mcp?apiKey=&mode=web&token=${vault:remote-token}"
+            assert transport["base_url"] == "https://mcp.example.test/mcp?apiKey=&mode=web&token=${env:REMOTE_TOKEN}"
             assert transport["headers"]["Authorization"] == ""
             assert transport["headers"]["X-Trace"] == "keep"
-            assert transport["headers"]["X-Api-Key"] == "${vault:header-key}"
+            assert transport["headers"]["X-Api-Key"] == "${env:HEADER_KEY}"
             assert transport["nested"]["callback"] == "https://callback.example.test/run?access_token=&ok=1"
             assert transport["nested"]["authType"] == "bearer"
             assert "plain-secret" not in raw.decode("latin-1")

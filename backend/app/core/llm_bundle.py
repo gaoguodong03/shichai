@@ -16,10 +16,11 @@ def sanitize_llm_provider_for_bundle(provider: Dict[str, Any]) -> Dict[str, Any]
     """Return an export-safe LLM provider row without secrets or key binding metadata."""
     copied = json.loads(json.dumps(provider, ensure_ascii=False))
     if isinstance(copied, dict):
-        copied.pop("api_key", None)
-        copied.pop("api_key_env", None)
-        copied.pop("api_key_ref", None)
-        copied.pop("label", None)
+        for key in list(copied):
+            if key in {"api_key", "api_key_env", "api_key_set", "label"}:
+                copied.pop(key, None)
+            elif key.startswith("api_key_") and key.endswith("ref"):
+                copied.pop(key, None)
     return copied if isinstance(copied, dict) else {}
 
 

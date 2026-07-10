@@ -2,7 +2,7 @@
 """General image generation MCP server.
 
 Local stdio MCP for generating images from text prompts. The API key is
-provided through stdio transport env, typically ``JENIYA_API_KEY=${vault:id}``.
+provided through stdio transport env, typically ``JENIYA_API_KEY=${env:JENIYA_API_KEY}``.
 """
 from __future__ import annotations
 

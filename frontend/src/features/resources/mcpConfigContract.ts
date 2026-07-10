@@ -18,8 +18,7 @@ const SENSITIVE_QUERY_KEY_PATTERN =
   /(api[-_ ]?key|access[-_ ]?token|personal[-_ ]?access[-_ ]?token|token|secret|password|authorization|auth)/i
 const SANITIZABLE_URL_PROTOCOLS = new Set(['http:', 'https:', 'ws:', 'wss:'])
 const AUTH_CONTROL_FIELD_NAMES = new Set(['auth', 'authtype', 'authmode', 'authorizationurl', 'authurl'])
-const VAULT_REF_PATTERN = /\$\{vault:[^}]+\}/
-const ENV_REF_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/
+const ENV_REF_PATTERN = /\$\{env:[A-Za-z_][A-Za-z0-9_]*\}|\$\{[A-Za-z_][A-Za-z0-9_]*\}/
 
 function parseJsonInput(rawJson: string | unknown): unknown {
   if (typeof rawJson === 'string') return JSON.parse(rawJson)
@@ -42,7 +41,7 @@ function hasOwn(value: Record<string, unknown>, key: string): boolean {
 }
 
 function hasConfigReference(value: unknown): boolean {
-  return typeof value === 'string' && (VAULT_REF_PATTERN.test(value) || ENV_REF_PATTERN.test(value))
+  return typeof value === 'string' && ENV_REF_PATTERN.test(value)
 }
 
 function normalizeFieldName(fieldName: unknown): string {
@@ -271,14 +270,14 @@ export function parseImportedMcpServers(rawJson: string | unknown): McpServerDra
 function applyMapOptions(
   values: unknown,
   overrides: Record<string, unknown> = {},
-  vaultRefs: Record<string, unknown> = {},
+  envRefs: Record<string, unknown> = {},
 ): Record<string, string> {
   const result: Record<string, string> = {}
   if (isPlainObject(values)) {
     for (const [key, value] of Object.entries(values)) result[key] = String(value)
   }
   for (const [key, value] of Object.entries(overrides ?? {})) result[key] = String(value)
-  for (const [key, vaultName] of Object.entries(vaultRefs ?? {})) result[key] = `\${vault:${vaultName}}`
+  for (const [key, envName] of Object.entries(envRefs ?? {})) result[key] = `\${env:${envName}}`
   return result
 }
 
@@ -288,20 +287,20 @@ function appendUnique(target: string[], values: string[]): void {
   }
 }
 
-function getMapOptionKeys(fieldName: string): { overrideKeys: string[]; vaultRefKeys: string[] } {
+function getMapOptionKeys(fieldName: string): { overrideKeys: string[]; envRefKeys: string[] } {
   const overrideKeys = [`${fieldName}Overrides`]
-  const vaultRefKeys = [`${fieldName}VaultRefs`]
-  if (fieldName === 'env') appendUnique(vaultRefKeys, ['vaultRefs'])
+  const envRefKeys = [`${fieldName}EnvRefs`]
+  if (fieldName === 'env') appendUnique(envRefKeys, ['envRefs'])
   if (fieldName === 'headers') {
     appendUnique(overrideKeys, ['headerOverrides'])
-    appendUnique(vaultRefKeys, ['headerVaultRefs'])
+    appendUnique(envRefKeys, ['headerEnvRefs'])
   }
   if (fieldName.endsWith('s')) {
     const singularFieldName = fieldName.slice(0, -1)
     appendUnique(overrideKeys, [`${singularFieldName}Overrides`])
-    appendUnique(vaultRefKeys, [`${singularFieldName}VaultRefs`])
+    appendUnique(envRefKeys, [`${singularFieldName}EnvRefs`])
   }
-  return { overrideKeys, vaultRefKeys }
+  return { overrideKeys, envRefKeys }
 }
 
 function getFirstProvidedOption(options: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
@@ -312,12 +311,12 @@ function getFirstProvidedOption(options: Record<string, unknown>, keys: string[]
 }
 
 function inferKnownMapFieldNameFromOptionKey(optionKey: string): string | null {
-  if (optionKey === 'vaultRefs' || optionKey === 'envOverrides' || optionKey === 'envVaultRefs') return 'env'
+  if (optionKey === 'envRefs' || optionKey === 'envOverrides' || optionKey === 'envEnvRefs') return 'env'
   if (
     optionKey === 'headersOverrides' ||
-    optionKey === 'headersVaultRefs' ||
+    optionKey === 'headersEnvRefs' ||
     optionKey === 'headerOverrides' ||
-    optionKey === 'headerVaultRefs'
+    optionKey === 'headerEnvRefs'
   ) {
     return 'headers'
   }
@@ -337,13 +336,13 @@ export function buildMcpServerPayload(
   }
 
   for (const key of mapFieldNames) {
-    const { overrideKeys, vaultRefKeys } = getMapOptionKeys(key)
+    const { overrideKeys, envRefKeys } = getMapOptionKeys(key)
     const overrides = getFirstProvidedOption(options, overrideKeys)
-    const vaultRefs = getFirstProvidedOption(options, vaultRefKeys)
+    const envRefs = getFirstProvidedOption(options, envRefKeys)
     const val = transport[key]
     const isPrimitive = typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean'
     if (!isPrimitive && (isPlainObject(val) || val === undefined || val === null)) {
-      if (isPlainObject(val) || overrides || vaultRefs) transport[key] = applyMapOptions(val, overrides, vaultRefs)
+      if (isPlainObject(val) || overrides || envRefs) transport[key] = applyMapOptions(val, overrides, envRefs)
     }
   }
 

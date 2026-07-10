@@ -1,14 +1,14 @@
 import { apiRequest } from '@/api/base'
 import { ref, type Ref } from 'vue'
 
-export type ApiSecretItem = { id: string; label: string; key_set: boolean }
+export type EnvVarItem = { name: string; label: string; value_set: boolean }
 
 export function useApiSecrets() {
-  const secretItems: Ref<ApiSecretItem[]> = ref([])
+  const secretItems: Ref<EnvVarItem[]> = ref([])
 
   async function loadApiSecrets() {
     try {
-      const r = await apiRequest('/settings/api-secrets')
+      const r = await apiRequest('/settings/env-vars')
       const j = await r.json()
       if (j?.status === 'ok' && j?.data?.items) {
         secretItems.value = j.data.items
@@ -20,23 +20,23 @@ export function useApiSecrets() {
     }
   }
 
-  /** 解析 transport.headers 中形如 prefix${vault:id} 的项 */
-  function parseVaultHeader(headers?: Record<string, string>): {
+  /** 解析 transport.headers 中形如 prefix${env:NAME} 的项 */
+  function parseEnvHeader(headers?: Record<string, string>): {
     headerName: string
     prefix: string
-    vaultRef: string
+    envRef: string
   } {
     if (!headers || typeof headers !== 'object') {
-      return { headerName: 'Authorization', prefix: 'Bearer ', vaultRef: '' }
+      return { headerName: 'Authorization', prefix: 'Bearer ', envRef: '' }
     }
     for (const [hn, val] of Object.entries(headers)) {
-      const m = /^([\s\S]*?)\$\{vault:([^}]+)\}\s*$/.exec(val)
+      const m = /^([\s\S]*?)\$\{env:([^}]+)\}\s*$/.exec(val)
       if (m) {
-        return { headerName: hn, prefix: m[1], vaultRef: m[2] }
+        return { headerName: hn, prefix: m[1], envRef: m[2] }
       }
     }
-    return { headerName: 'Authorization', prefix: 'Bearer ', vaultRef: '' }
+    return { headerName: 'Authorization', prefix: 'Bearer ', envRef: '' }
   }
 
-  return { secretItems, loadApiSecrets, parseVaultHeader }
+  return { secretItems, loadApiSecrets, parseEnvHeader }
 }

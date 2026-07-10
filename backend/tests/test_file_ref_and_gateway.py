@@ -147,8 +147,8 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
 
     env = mcp_manager._build_stdio_child_env(
         username="user-runtime",
-        raw_env={"JENIYA_API_KEY": "${vault:image_key}"},
-        secrets={"image_key": "sk-test"},
+        raw_env={"JENIYA_API_KEY": "${env:JENIYA_API_KEY}"},
+        env_vars={"JENIYA_API_KEY": "sk-test"},
     )
 
     assert env["EXISTING_ENV"] == "keep"
@@ -294,12 +294,12 @@ async def test_build_tools_blocks_call_api_when_declared_mcp_is_unavailable(monk
                 "transport": {
                     "type": "http",
                     "base_url": "https://mcp.exa.ai/mcp",
-                    "headers": {"Authorization": "${vault:exa}"},
+                    "headers": {"Authorization": "${env:EXA_API_KEY}"},
                 },
             }
         ],
     )
-    monkeypatch.setattr(tools_for_skill, "load_api_secret_values", lambda: {})
+    monkeypatch.setattr(tools_for_skill, "load_env_var_values", lambda: {})
     monkeypatch.setattr(tools_for_skill, "ensure_user_mcp_config_loaded", lambda _username: DummyManager())
     monkeypatch.setattr(tools_for_skill, "skill_has_skill_md", lambda _sid: False)
 
@@ -318,7 +318,7 @@ async def test_build_tools_blocks_call_api_when_declared_mcp_is_unavailable(monk
     assert "mcp_configuration_status" in names
     diagnostic_tool = next(tool for tool in tools if getattr(tool, "name", "") == "mcp_configuration_status")
     diagnostic = await diagnostic_tool.acall()
-    assert "vault:exa" in diagnostic
+    assert "env:EXA_API_KEY" in diagnostic
     assert "Exa 搜索" in diagnostic
 
 
@@ -350,12 +350,12 @@ async def test_build_tools_keeps_safe_named_mcp_tools_for_declared_server(monkey
                 "transport": {
                     "type": "http",
                     "base_url": "https://mcp.exa.ai/mcp",
-                    "headers": {"Authorization": "${vault:exa}"},
+                    "headers": {"Authorization": "${env:EXA_API_KEY}"},
                 },
             }
         ],
     )
-    monkeypatch.setattr(tools_for_skill, "load_api_secret_values", lambda: {"exa": "set"})
+    monkeypatch.setattr(tools_for_skill, "load_env_var_values", lambda: {"EXA_API_KEY": "set"})
 
     async def fake_ensure_user_mcp_config_loaded(_username):
         return DummyManager()

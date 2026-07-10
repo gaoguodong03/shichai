@@ -2,7 +2,7 @@
 """Audio transcription MCP server.
 
 Local stdio MCP for transcribing audio files under ``backend/data``. API keys are
-provided through stdio transport env, typically ``QWEN_AUDIO_API_KEY=${vault:id}``.
+provided through stdio transport env, typically ``QWEN_AUDIO_API_KEY=${env:QWEN_AUDIO_API_KEY}``.
 """
 from __future__ import annotations
 

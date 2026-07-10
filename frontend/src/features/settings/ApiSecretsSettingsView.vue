@@ -10,25 +10,25 @@
           @click="selectNew"
         >
           <span class="text-base leading-none">＋</span>
-          <span>新建密钥</span>
+          <span>新建变量</span>
         </button>
         <div class="flex-1 min-h-0 overflow-y-auto themed-scrollbar space-y-1 pt-1">
           <div v-if="loading" class="text-xs text-muted px-2 py-2">加载中...</div>
           <template v-else>
             <button
               v-for="s in items"
-              :key="s.id"
+              :key="s.name"
               type="button"
-              @click="selectedId = s.id"
+              @click="selectedId = s.name"
               :class="[
                 'w-full text-left px-2.5 py-2 rounded-lg text-sm transition-colors',
-                selectedId === s.id
+                selectedId === s.name
                   ? 'bg-accent-subtle text-accent-subtle-text'
                   : 'hover:bg-list-hover text-list-hover-text',
               ]"
             >
-              <div class="truncate font-medium">{{ s.label || s.id }}</div>
-              <div class="truncate text-[11px] text-muted mt-0.5 font-mono">{{ s.id }}</div>
+              <div class="truncate font-medium">{{ s.label || s.name }}</div>
+              <div class="truncate text-[11px] text-muted mt-0.5 font-mono">{{ s.name }}</div>
             </button>
             <p v-if="!items.length" class="text-xs text-muted px-2 py-2">暂无条目</p>
           </template>
@@ -37,9 +37,9 @@
 
       <div class="flex-1 min-w-0 overflow-y-auto themed-scrollbar">
         <div class="mb-4">
-          <h2 class="text-2xl font-semibold text-primary mb-1">密钥管理</h2>
+          <h2 class="text-2xl font-semibold text-primary mb-1">环境变量</h2>
           <p class="text-sm text-muted">
-            在此保存 API Key；在「资源中心 → 配置模型」中可为每个提供方选择对应密钥。
+            保存平台内用户级变量；模型、MCP 和 HTTP API 通过变量名引用。
           </p>
         </div>
 
@@ -47,24 +47,24 @@
           v-if="!selectedId"
           class="text-sm text-muted py-12 text-center border border-dashed border-border-light rounded-xl"
         >
-          请从左侧选择一条密钥，或点击「新建密钥」。
+          请从左侧选择一条变量，或点击「新建变量」。
         </div>
 
         <form
           v-else-if="selectedId === '__new__'"
           class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6"
-          @submit.prevent="createSecret"
+          @submit.prevent="createEnvVar"
         >
           <div>
             <label class="block text-sm font-medium text-primary mb-1">标识</label>
             <input
-              v-model="draftNew.id"
+              v-model="draftNew.name"
               type="text"
               required
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
               placeholder="例如：QWEN_API_KEY"
             />
-            <p class="text-xs text-muted mt-1">字母、数字、连字符、下划线，可与 .env 变量名一致（区分大小写），新建后不可修改。</p>
+            <p class="text-xs text-muted mt-1">大写字母、数字和下划线，不能以数字开头；新建后不可修改。</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-primary mb-1">显示名称（可选）</label>
@@ -72,13 +72,13 @@
               v-model="draftNew.label"
               type="text"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="例如：Jeniya 主密钥"
+              placeholder="例如：Jeniya 主变量"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">API Key</label>
+            <label class="block text-sm font-medium text-primary mb-1">变量值</label>
             <input
-              v-model="draftNew.api_key"
+              v-model="draftNew.value"
               type="password"
               autocomplete="new-password"
               required
@@ -107,7 +107,7 @@
         <form
           v-else
           class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6"
-          @submit.prevent="updateSecret"
+          @submit.prevent="updateEnvVar"
         >
           <div>
             <label class="block text-sm font-medium text-primary mb-1">标识</label>
@@ -127,15 +127,15 @@
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">更新 API Key（可选）</label>
+            <label class="block text-sm font-medium text-primary mb-1">更新变量值（可选）</label>
             <input
-              v-model="draftEdit.api_key"
+              v-model="draftEdit.value"
               type="password"
               autocomplete="new-password"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
               placeholder="留空则不修改"
             />
-            <p v-if="currentKeySet" class="text-xs text-muted mt-1">当前已保存密钥。</p>
+            <p v-if="currentValueSet" class="text-xs text-muted mt-1">当前已保存变量值。</p>
           </div>
           <div class="flex items-center justify-start gap-2 flex-wrap pt-3">
             <button
@@ -148,7 +148,7 @@
             <button
               type="button"
               class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
-              @click="removeSecret"
+              @click="removeEnvVar"
             >
               删除
             </button>
@@ -164,22 +164,22 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
-type Item = { id: string; label: string; key_set: boolean }
+type Item = { name: string; label: string; value_set: boolean }
 
 const loading = ref(true)
 const saving = ref(false)
 const items = ref<Item[]>([])
 const selectedId = ref<string | null>(null)
 
-const draftNew = ref({ id: '', label: '', api_key: '' })
-const draftEdit = ref({ label: '', api_key: '' })
+const draftNew = ref({ name: '', label: '', value: '' })
+const draftEdit = ref({ label: '', value: '' })
 
-const currentKeySet = ref(false)
+const currentValueSet = ref(false)
 
 async function load() {
   loading.value = true
   try {
-    const r = await apiRequest('/settings/api-secrets')
+    const r = await apiRequest('/settings/env-vars')
     const j = await r.json()
     if (j?.status === 'ok' && j?.data?.items) {
       items.value = j.data.items as Item[]
@@ -193,26 +193,26 @@ async function load() {
 
 function selectNew() {
   selectedId.value = '__new__'
-  draftNew.value = { id: '', label: '', api_key: '' }
+  draftNew.value = { name: '', label: '', value: '' }
 }
 
-async function createSecret() {
+async function createEnvVar() {
   saving.value = true
   try {
-    const r = await apiRequest('/settings/api-secrets', {
+    const r = await apiRequest('/settings/env-vars', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: (draftNew.value.id || '').trim(),
+        name: (draftNew.value.name || '').trim(),
         label: (draftNew.value.label || '').trim() || undefined,
-        api_key: draftNew.value.api_key,
+        value: draftNew.value.value,
       }),
     })
     const j = await r.json()
-    if (j?.status === 'ok' && j?.data?.id) {
+    if (j?.status === 'ok' && j?.data?.name) {
       await load()
-      selectedId.value = j.data.id as string
-      draftNew.value = { id: '', label: '', api_key: '' }
+      selectedId.value = j.data.name as string
+      draftNew.value = { name: '', label: '', value: '' }
     } else {
       await appAlert({ title: '新建失败', message: (j as { detail?: string }).detail || '新建失败', variant: 'danger' })
     }
@@ -221,17 +221,17 @@ async function createSecret() {
   }
 }
 
-async function updateSecret() {
-  const id = selectedId.value
-  if (!id || id === '__new__') return
+async function updateEnvVar() {
+  const name = selectedId.value
+  if (!name || name === '__new__') return
   saving.value = true
   try {
-    const body: { label?: string; api_key?: string } = {
+    const body: { label?: string; value?: string } = {
       label: (draftEdit.value.label || '').trim(),
     }
-    const nk = (draftEdit.value.api_key || '').trim()
-    if (nk) body.api_key = nk
-    const r = await apiRequest(`/settings/api-secrets/${encodeURIComponent(id)}`, {
+    const value = (draftEdit.value.value || '').trim()
+    if (value) body.value = value
+    const r = await apiRequest(`/settings/env-vars/${encodeURIComponent(name)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -239,7 +239,7 @@ async function updateSecret() {
     const j = await r.json()
     if (j?.status === 'ok') {
       await load()
-      draftEdit.value.api_key = ''
+      draftEdit.value.value = ''
     } else {
       await appAlert({ title: '保存失败', message: (j as { detail?: string }).detail || '保存失败', variant: 'danger' })
     }
@@ -248,19 +248,19 @@ async function updateSecret() {
   }
 }
 
-async function removeSecret() {
-  const id = selectedId.value
-  if (!id || id === '__new__') return
+async function removeEnvVar() {
+  const name = selectedId.value
+  if (!name || name === '__new__') return
   const ok = await appConfirm({
-    title: '删除密钥',
-    message: `确定删除密钥「${id}」？引用该密钥的模型配置将需在编辑中重新选择。`,
+    title: '删除环境变量',
+    message: `确定删除环境变量「${name}」？引用该变量的资源会在运行时提示缺失。`,
     variant: 'danger',
     confirmText: '删除',
   })
   if (!ok) return
   saving.value = true
   try {
-    const r = await apiRequest(`/settings/api-secrets/${encodeURIComponent(id)}`, {
+    const r = await apiRequest(`/settings/env-vars/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     })
     const j = await r.json()
@@ -279,9 +279,9 @@ watch(
   () => selectedId.value,
   (sid) => {
     if (!sid || sid === '__new__') return
-    const row = items.value.find((x) => x.id === sid)
-    draftEdit.value = { label: row?.label || sid, api_key: '' }
-    currentKeySet.value = !!row?.key_set
+    const row = items.value.find((x) => x.name === sid)
+    draftEdit.value = { label: row?.label || sid, value: '' }
+    currentValueSet.value = !!row?.value_set
   },
 )
 
@@ -290,10 +290,10 @@ watch(
   () => {
     const sid = selectedId.value
     if (!sid || sid === '__new__') return
-    const row = items.value.find((x) => x.id === sid)
+    const row = items.value.find((x) => x.name === sid)
     if (row) {
       draftEdit.value.label = row.label || sid
-      currentKeySet.value = row.key_set
+      currentValueSet.value = row.value_set
     }
   },
   { deep: true },

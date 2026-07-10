@@ -34,8 +34,7 @@ _SENSITIVE_CONFIG_TOKENS = {
     "secret",
     "token",
 }
-_VAULT_REF_RE = re.compile(r"\$\{vault:[^}]+\}")
-_ENV_REF_RE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_ENV_REF_RE = re.compile(r"\$\{env:[A-Za-z_][A-Za-z0-9_]*\}|\$\{[A-Za-z_][A-Za-z0-9_]*\}")
 _SANITIZABLE_URL_SCHEMES = {"http", "https", "ws", "wss"}
 _PLACEHOLDER_VALUE_TOKENS = {
     "api_key",
@@ -80,12 +79,8 @@ def _is_sensitive_config_key(raw_key: Any) -> bool:
     return any(compact.endswith(suffix) for suffix in ("apikey", "token", "secret", "password", "passwd"))
 
 
-def _contains_vault_ref(value: Any) -> bool:
-    return isinstance(value, str) and bool(_VAULT_REF_RE.search(value))
-
-
 def _contains_config_ref(value: Any) -> bool:
-    return isinstance(value, str) and bool(_VAULT_REF_RE.search(value) or _ENV_REF_RE.search(value))
+    return isinstance(value, str) and bool(_ENV_REF_RE.search(value))
 
 
 def _sanitize_secret_mapping(raw: Any) -> Any:

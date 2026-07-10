@@ -23,6 +23,10 @@ const {
   sanitizeMcpServerForExport,
 } = await import(`${compiledPath}?t=${Date.now()}`)
 
+function transportFromPayload(payload, name) {
+  return JSON.parse(payload.server_config).mcpServers[name]
+}
+
 const minimaxDesktopJson = JSON.stringify({
   mcpServers: {
     MiniMax: {
@@ -66,26 +70,26 @@ test('parseImportedMcpServers parses a Claude Desktop / mcp.so stdio server', ()
   ])
 })
 
-test('buildMcpServerPayload attaches env vault refs and default output paths', () => {
+test('buildMcpServerPayload attaches env refs and default output paths', () => {
   const [draft] = parseImportedMcpServers(minimaxDesktopJson)
   const payload = buildMcpServerPayload(draft, {
-    envVaultRefs: {
-      MINIMAX_API_KEY: 'minimax',
+    envRefs: {
+      MINIMAX_API_KEY: 'MINIMAX_API_KEY',
     },
     envOverrides: {
       MINIMAX_MCP_BASE_PATH: 'backend/data/users/current/resources/tools/MiniMax/output',
     },
   })
 
-  assert.deepEqual(payload.transport.env, {
-    MINIMAX_API_KEY: '${vault:minimax}',
+  assert.deepEqual(transportFromPayload(payload, 'MiniMax').env, {
+    MINIMAX_API_KEY: '${env:MINIMAX_API_KEY}',
     MINIMAX_MCP_BASE_PATH: 'backend/data/users/current/resources/tools/MiniMax/output',
     MINIMAX_API_HOST: 'https://api.minimaxi.chat',
     MINIMAX_API_RESOURCE_MODE: 'url',
   })
 })
 
-test('buildMcpServerPayload supports HTTP headers vault refs', () => {
+test('buildMcpServerPayload supports HTTP header env refs', () => {
   const payload = buildMcpServerPayload({
     name: 'Header MCP',
     transport: {
@@ -97,56 +101,56 @@ test('buildMcpServerPayload supports HTTP headers vault refs', () => {
     },
     metadata: {},
   }, {
-    headersVaultRefs: {
-      Authorization: 'search-token',
+    headersEnvRefs: {
+      Authorization: 'SEARCH_TOKEN',
     },
   })
 
-  assert.deepEqual(payload.transport.headers, {
+  assert.deepEqual(transportFromPayload(payload, 'Header MCP').headers, {
     'X-Client': 'desktop',
-    Authorization: '${vault:search-token}',
+    Authorization: '${env:SEARCH_TOKEN}',
   })
 })
 
-test('sanitizeMcpServerForExport clears plaintext secrets but keeps vault refs', () => {
+test('sanitizeMcpServerForExport clears plaintext secrets but keeps env refs', () => {
   const sanitized = sanitizeMcpServerForExport({
     name: 'Remote',
     transport: {
       type: 'http',
-      base_url: 'https://mcp.example.test/mcp?apiKey=plain-secret&mode=web&token=${vault:token}&exaApiKey=${EXA_API_KEY}',
+      base_url: 'https://mcp.example.test/mcp?apiKey=plain-secret&mode=web&token=${env:REMOTE_TOKEN}&exaApiKey=${EXA_API_KEY}',
       headers: {
         Authorization: 'Bearer plain-secret',
         'X-Trace': 'keep',
       },
       env: {
-        API_KEY: '${vault:api-key}',
+        API_KEY: '${env:API_KEY}',
         CLIENT_SECRET: 'plain-secret',
       },
     },
   })
 
-  assert.equal(sanitized.transport.base_url, 'https://mcp.example.test/mcp?apiKey=&mode=web&token=${vault:token}&exaApiKey=${EXA_API_KEY}')
+  assert.equal(sanitized.transport.base_url, 'https://mcp.example.test/mcp?apiKey=&mode=web&token=${env:REMOTE_TOKEN}&exaApiKey=${EXA_API_KEY}')
   assert.deepEqual(sanitized.transport.headers, {
     Authorization: '',
     'X-Trace': 'keep',
   })
   assert.deepEqual(sanitized.transport.env, {
-    API_KEY: '${vault:api-key}',
+    API_KEY: '${env:API_KEY}',
     CLIENT_SECRET: '',
   })
 })
 
 test('mapConfigRowsToMap defaults valued header rows without changing env rows', () => {
   assert.deepEqual(mapConfigRowsToMap([
-    { key: '', value: '${vault:amap}' },
+    { key: '', value: '${env:AMAP_API_KEY}' },
   ], {
     defaultKeyForValuedRow: 'Authorization',
   }), {
-    Authorization: '${vault:amap}',
+    Authorization: '${env:AMAP_API_KEY}',
   })
 
   assert.equal(mapConfigRowsToMap([
-    { key: '', value: '${vault:amap}' },
+    { key: '', value: '${env:AMAP_API_KEY}' },
   ]), undefined)
 
   assert.equal(mapConfigRowsToMap([

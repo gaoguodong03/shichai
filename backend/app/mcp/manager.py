@@ -304,40 +304,41 @@ async def execute_mcp_call(
         return False, None, f"MCP tool call failed: server={server_name} tool={tool_name} {detail}"
 
 
-def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) -> str:
-    """${vault:标识} 显式引用密钥库；${VAR} 优先环境变量，未设置时再尝试同标识的密钥库条目（与 .env 中 EXA_API_KEY 等写法兼容）。"""
-    secrets = secrets or {}
+def _subst_mcp_placeholders(val: str, env_vars: Optional[Dict[str, str]] = None) -> str:
+    """Replace platform env placeholders in MCP transport configuration."""
+    env_vars = env_vars or {}
     s = str(val)
 
-    def repl_vault(m: re.Match) -> str:
-        return secrets.get(m.group(1), "")
+    def repl_platform_env(m: re.Match) -> str:
+        name = m.group(1)
+        return env_vars.get(name, "") or os.environ.get(name, "")
 
     def repl_env(m: re.Match) -> str:
         name = m.group(1)
         v = os.environ.get(name, "")
         if v:
             return v
-        return secrets.get(name, "")
+        return env_vars.get(name, "")
 
-    s = re.sub(r"\$\{vault:([A-Za-z0-9_-]+)\}", repl_vault, s)
+    s = re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", repl_platform_env, s)
     s = re.sub(r"\$\{(\w+)\}", repl_env, s)
     return s
 
 
-def _missing_mcp_placeholders(val: Any, secrets: Optional[Dict[str, str]] = None) -> List[str]:
+def _missing_mcp_placeholders(val: Any, env_vars: Optional[Dict[str, str]] = None) -> List[str]:
     """Return unresolved placeholder names before substituting them into transport config."""
-    secrets = secrets or {}
+    env_vars = env_vars or {}
     s = str(val or "")
     missing: List[str] = []
 
-    for match in re.finditer(r"\$\{vault:([A-Za-z0-9_-]+)\}", s):
+    for match in re.finditer(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", s):
         name = match.group(1)
-        if not secrets.get(name):
-            missing.append(f"vault:{name}")
+        if not env_vars.get(name) and not os.environ.get(name):
+            missing.append(f"env:{name}")
 
     for match in re.finditer(r"\$\{(\w+)\}", s):
         name = match.group(1)
-        if not os.environ.get(name) and not secrets.get(name):
+        if not os.environ.get(name) and not env_vars.get(name):
             missing.append(name)
 
     return missing
@@ -347,7 +348,7 @@ def _build_stdio_child_env(
     *,
     username: Optional[str],
     raw_env: Optional[Dict[str, Any]],
-    secrets: Optional[Dict[str, str]] = None,
+    env_vars: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, str]]:
     """Build stdio MCP child env, including the stable user identity.
 
@@ -361,7 +362,7 @@ def _build_stdio_child_env(
 
     env: Dict[str, str] = {k: str(v) for k, v in os.environ.items()}
     if isinstance(raw_env, dict):
-        env.update({str(k): _subst_mcp_placeholders(str(v), secrets) for k, v in raw_env.items()})
+        env.update({str(k): _subst_mcp_placeholders(str(v), env_vars) for k, v in raw_env.items()})
 
     uname = (username or "").strip()
     if uname:
@@ -534,14 +535,14 @@ class MCPToolManager:
             failure_log_context = _mcp_connection_log_context(server_name, config, transport=transport)
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
-            secrets: Dict[str, str] = {}
+            env_vars: Dict[str, str] = {}
             if self._username:
                 try:
-                    from app.api.settings_secrets import load_api_secret_values_for_user
+                    from app.api.settings_env_vars import load_env_var_values_for_user
 
-                    secrets = load_api_secret_values_for_user(self._username)
+                    env_vars = load_env_var_values_for_user(self._username)
                 except Exception:
-                    secrets = {}
+                    env_vars = {}
 
             if transport_type == "stdio":
                 if stdio_client is None:
@@ -558,7 +559,7 @@ class MCPToolManager:
                 raw_env = transport.get("env")
                 # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
                 # 同时注入稳定用户身份；stdio 子进程没有请求 ContextVar。
-                env = _build_stdio_child_env(username=self._username, raw_env=raw_env, secrets=secrets)
+                env = _build_stdio_child_env(username=self._username, raw_env=raw_env, env_vars=env_vars)
                 params = StdioServerParameters(
                     command=command,
                     args=args,
@@ -606,9 +607,9 @@ class MCPToolManager:
                 raw_url = (transport.get("url") or transport.get("base_url") or "").strip()
                 raw_headers = dict(transport.get("headers") or {})
                 missing_placeholders: List[str] = []
-                missing_placeholders.extend(_missing_mcp_placeholders(raw_url, secrets))
+                missing_placeholders.extend(_missing_mcp_placeholders(raw_url, env_vars))
                 for header_value in raw_headers.values():
-                    missing_placeholders.extend(_missing_mcp_placeholders(header_value, secrets))
+                    missing_placeholders.extend(_missing_mcp_placeholders(header_value, env_vars))
                 if missing_placeholders:
                     missing_label = ",".join(sorted(set(missing_placeholders)))
                     logger.error(
@@ -619,11 +620,11 @@ class MCPToolManager:
                     return False
 
                 url = raw_url
-                url = _subst_mcp_placeholders(url, secrets)  # ${vault:...} 密钥库；${VAR} 环境变量
+                url = _subst_mcp_placeholders(url, env_vars)
                 if not url:
                     logger.error(f"MCP Server {server_name}: HTTP 传输缺少 url 或 base_url")
                     return False
-                headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
+                headers = {k: _subst_mcp_placeholders(str(v), env_vars) for k, v in raw_headers.items()}
                 auth = headers.get("Authorization")
                 if isinstance(auth, str) and auth.startswith("Bearer") and not auth.startswith("Bearer "):
                     token = auth[len("Bearer"):].strip()

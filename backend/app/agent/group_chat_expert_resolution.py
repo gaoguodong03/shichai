@@ -9,7 +9,7 @@ from app.agent.llm_client import (
     resolve_llm_api_key,
     resolve_llm_provider_entry,
 )
-from app.api.settings_secrets import load_api_secret_values
+from app.api.settings_env_vars import load_env_var_values
 
 
 def _pick_resolved_host_skill(skill_directories: List[str]) -> str:
@@ -41,8 +41,8 @@ def _llm_credential_notice_for_agent(
 ) -> Optional[str]:
     """Return a host-facing notice when the resolved provider has no API key."""
     llm_name, cfg = _resolve_llm_config_for_agent(agent_profile, app_settings)
-    secrets = load_api_secret_values()
-    if resolve_llm_api_key(cfg, secrets):
+    env_vars = load_env_var_values()
+    if resolve_llm_api_key(cfg, env_vars):
         return None
     return build_llm_credential_notice(llm_name, cfg)
 
@@ -50,8 +50,8 @@ def _llm_credential_notice_for_agent(
 def _get_llm_for_agent(agent_profile: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
     """Create the LLM configured for an Agent, falling back to the app default provider."""
     llm_name, _cfg = _resolve_llm_config_for_agent(agent_profile, app_settings)
-    secrets = load_api_secret_values()
-    return get_llm_from_config(llm_name, app_settings.get("llm_providers"), secrets)
+    env_vars = load_env_var_values()
+    return get_llm_from_config(llm_name, app_settings.get("llm_providers"), env_vars)
 
 
 def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:

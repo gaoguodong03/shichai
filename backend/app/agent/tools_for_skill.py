@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from app.api.settings_mcp import load_mcp_config
 from app.api.settings_skill_store import get_mcp_servers_for_skill
-from app.api.settings_secrets import load_api_secret_values
+from app.api.settings_env_vars import load_env_var_values
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 from app.mcp.manager import (
@@ -315,7 +315,7 @@ def _filter_builtin_workspace_tools(all_builtin: List, agent_profile: Dict[str, 
 def _mcp_configuration_issues(
     tool_server_names: List[str],
     configured_rows: Dict[str, Dict[str, Any]],
-    secrets: Dict[str, str],
+    env_vars: Dict[str, str],
 ) -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
     for server_name in tool_server_names:
@@ -335,12 +335,12 @@ def _mcp_configuration_issues(
         missing: List[str] = []
         if transport_type == "stdio":
             for value in (transport.get("env") or {}).values():
-                missing.extend(_missing_mcp_placeholders(value, secrets))
+                missing.extend(_missing_mcp_placeholders(value, env_vars))
         elif transport_type in ("http", "streamable_http", "sse"):
             raw_url = str(transport.get("url") or transport.get("base_url") or "")
-            missing.extend(_missing_mcp_placeholders(raw_url, secrets))
+            missing.extend(_missing_mcp_placeholders(raw_url, env_vars))
             for value in (transport.get("headers") or {}).values():
-                missing.extend(_missing_mcp_placeholders(value, secrets))
+                missing.extend(_missing_mcp_placeholders(value, env_vars))
         if missing:
             missing = sorted(set(missing))
             issues.append(
@@ -424,10 +424,10 @@ async def build_tools_for_group_chat(
         if str((configured_rows.get(name) or {}).get("type") or "mcp") == "mcp"
     ]
     try:
-        secrets = load_api_secret_values()
+        env_vars = load_env_var_values()
     except Exception:
-        secrets = {}
-    mcp_config_issues = _mcp_configuration_issues(tool_server_names, configured_rows, secrets)
+        env_vars = {}
+    mcp_config_issues = _mcp_configuration_issues(tool_server_names, configured_rows, env_vars)
 
     mgr = None
     all_tools = []
@@ -465,7 +465,7 @@ async def build_tools_for_group_chat(
     extras: List = [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
     if http_api_rows:
         for row in http_api_rows:
-            tool = create_http_api_tool(row, secrets=secrets)
+            tool = create_http_api_tool(row, env_vars=env_vars)
             if getattr(tool, "name", "") not in tool_names:
                 extras.append(tool)
                 tool_names.add(getattr(tool, "name", ""))

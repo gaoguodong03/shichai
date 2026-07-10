@@ -119,13 +119,13 @@ def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
                 "type": "POST",
                 "base_url": "https://api.example.com",
                 "path": "/v1/search",
-                "header": {"Authorization": "Bearer ${vault:exa}"},
+                "header": {"Authorization": "Bearer ${env:EXA_API_KEY}"},
                 "query": {"source": "local"},
                 "body": {"q": "default"},
                 "timeout_seconds": 12,
             },
         },
-        secrets={"exa": "secret-token"},
+        env_vars={"EXA_API_KEY": "secret-token"},
     )
 
     out = tool.invoke({"query": {"q": "codex"}, "body": {"q": "override"}})

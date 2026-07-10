@@ -178,7 +178,6 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
         "model": "example-chat",
         "api_key": "plain-secret",
         "api_key_env": "EXAMPLE_API_KEY",
-        "api_key_ref": "vault-example",
         "api_key_set": True,
         "label": "Example Chat",
         "temperature": 0.2,
@@ -196,7 +195,6 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert "plain-secret" not in manifest_text
     assert "api_key" not in manifest_provider
     assert "api_key_env" not in manifest_provider
-    assert "api_key_ref" not in manifest_provider
     assert "label" not in manifest_provider
 
     bundle_dir = extract_scenario_bundle_dir(raw)
@@ -212,9 +210,8 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert bundled["model"] == "example-chat"
     assert "api_key" not in bundled
     assert "api_key_env" not in bundled
-    assert "api_key_ref" not in bundled
     assert "label" not in bundled
-    assert bundled["api_key_set"] is True
+    assert "api_key_set" not in bundled
     assert bundled["temperature"] == 0.2
     assert bundled["max_tokens"] == 128
     assert bundled["top_p"] == 0.9
@@ -238,15 +235,15 @@ def test_get_llm_from_config_qwen():
     assert llm.api_key == "test-key"
 
 
-def test_resolve_llm_api_key_prefers_vault_ref():
+def test_resolve_llm_api_key_prefers_user_env_var_store(monkeypatch):
     from app.agent.llm_client import resolve_llm_api_key
 
+    monkeypatch.setenv("JENIYA_API_KEY", "from-host-env")
     cfg = {
         "api_key_env": "JENIYA_API_KEY",
         "api_key": "inline-should-not-win",
-        "api_key_ref": "vault-a",
     }
-    assert resolve_llm_api_key(cfg, {"vault-a": "from-vault"}) == "from-vault"
+    assert resolve_llm_api_key(cfg, {"JENIYA_API_KEY": "from-user-env"}) == "from-user-env"
 
 
 def test_build_llm_credential_notice_mentions_model():
@@ -317,10 +314,11 @@ def test_get_llm_from_config_provider_id_is_case_insensitive():
     assert llm.api_key == "test-jeniya-key"
 
 
-def test_get_llm_from_config_api_key_ref():
-    """api_key_ref 优先于环境变量与内联 api_key"""
+def test_get_llm_from_config_api_key_env_uses_user_env_var_store(monkeypatch):
+    """api_key_env 优先读取平台内用户级环境变量，其次才读宿主机环境变量。"""
     from app.agent.llm_client import get_llm_from_config
 
+    monkeypatch.setenv("JENIYA_API_KEY", "from-host-env")
     llm = get_llm_from_config(
         "jeniya",
         {
@@ -329,12 +327,11 @@ def test_get_llm_from_config_api_key_ref():
                 "model": "gpt-4o",
                 "api_key_env": "JENIYA_API_KEY",
                 "api_key": "inline-should-not-win",
-                "api_key_ref": "vault-a",
             },
         },
-        api_secrets={"vault-a": "from-vault"},
+        env_vars={"JENIYA_API_KEY": "from-user-env"},
     )
-    assert llm.api_key == "from-vault"
+    assert llm.api_key == "from-user-env"
 
 
 def test_get_llm_from_config_unknown_fallback():
