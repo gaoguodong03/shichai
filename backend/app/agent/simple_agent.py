@@ -34,7 +34,6 @@ from app.agent.simple_agent_messages import (
 )
 from app.agent.simple_agent_tool_errors import (
     _final_response_or_tool_fallback,
-    _normalize_workspace_path_for_compare,
     _terminal_tool_failure_message,
     _tool_error_direct_final_message,
 )
@@ -44,7 +43,9 @@ from app.agent.simple_agent_tool_flow import (
     has_workspace_mutating_tool_call as _has_workspace_mutating_tool_call,
     is_run_skill_script_workflow_step as _is_run_skill_script_workflow_step,
     post_tool_synthesis_should_use_bound_client as _post_tool_synthesis_should_use_bound_client,
+    read_file_should_synthesize_after_result as _read_file_should_synthesize_after_result,
     remember_successful_workspace_writes as _remember_successful_workspace_writes,
+    tool_should_stop_after_result as _tool_should_stop_after_result,
 )
 from app.agent.simple_agent_text_tool_protocol import (
     append_text_tool_protocol_retry_or_failure as _append_text_tool_protocol_retry_or_failure,
@@ -55,7 +56,6 @@ from app.agent.simple_agent_tool_ids import (
     _missing_tool_response_messages,
     _normalize_ai_tool_call_ids,
     _normalize_tool_message_ids,
-    _tool_call_args,
 )
 from app.agent.tool_spec import ToolSpec
 
@@ -80,67 +80,6 @@ class SimpleAgent:
     stop_after_tool_names: tuple[str, ...] = ()
     synthesize_after_tools: bool = True
     synthesize_after_read_file_paths: tuple[str, ...] = ()
-
-    def _tool_should_stop_after_result(self, tool_out: dict[str, Any], tool_attempt_debug: list[dict[str, Any]]) -> bool:
-        stop_names = {str(x or "").strip() for x in (self.stop_after_tool_names or ()) if str(x or "").strip()}
-        if not stop_names:
-            return False
-        calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-        if not isinstance(calls, list):
-            return False
-        for call in calls:
-            if not isinstance(call, dict):
-                continue
-            tool_name = str(call.get("tool") or call.get("name") or "").strip()
-            if tool_name in stop_names:
-                tool_attempt_debug.append(
-                    {
-                        "source": "stop_after_tool_result",
-                        "matched": True,
-                        "tool": tool_name,
-                    }
-                )
-                return True
-        return False
-
-    def _read_file_should_synthesize_after_result(
-        self,
-        tool_out: dict[str, Any],
-        tool_attempt_debug: list[dict[str, Any]],
-    ) -> bool:
-        targets = {
-            _normalize_workspace_path_for_compare(path)
-            for path in (self.synthesize_after_read_file_paths or ())
-            if _normalize_workspace_path_for_compare(path)
-        }
-        if not targets:
-            return False
-        calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-        if not isinstance(calls, list):
-            return False
-        for call in calls:
-            if not isinstance(call, dict):
-                continue
-            tool_name = str(call.get("tool") or call.get("name") or "").strip()
-            if tool_name != "read_workspace_file":
-                continue
-            args = _tool_call_args(call)
-            path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
-            if not path:
-                continue
-            if not any(path == target or path.endswith(f"/{target}") for target in targets):
-                continue
-            logger.info("SimpleAgent: synthesize_after_read_workspace_file tool=%s path=%s", tool_name, path)
-            tool_attempt_debug.append(
-                {
-                    "source": "synthesize_after_read_workspace_file",
-                    "matched": True,
-                    "tool": tool_name,
-                    "path": path,
-                }
-            )
-            return True
-        return False
 
     async def _execute_tool_response(
         self,
@@ -585,9 +524,9 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": final_message}
                     break
-                if self._tool_should_stop_after_result(tool_out, tool_attempt_debug):
+                if _tool_should_stop_after_result(tool_out, self.stop_after_tool_names, tool_attempt_debug):
                     break
-                if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
+                if _read_file_should_synthesize_after_result(tool_out, self.synthesize_after_read_file_paths, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
                     final_message = await self._call_model(client, messages, step=step + 2)
                     if _looks_like_text_tool_call_protocol(final_message):
@@ -1085,9 +1024,9 @@ class SimpleAgent:
                         }
                     )
                     break
-                if self._tool_should_stop_after_result(tool_out, tool_attempt_debug):
+                if _tool_should_stop_after_result(tool_out, self.stop_after_tool_names, tool_attempt_debug):
                     break
-                if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
+                if _read_file_should_synthesize_after_result(tool_out, self.synthesize_after_read_file_paths, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
                     final_message = await self._call_model(client, messages, step=step + 2)
                     if _looks_like_text_tool_call_protocol(final_message):

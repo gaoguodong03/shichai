@@ -153,6 +153,8 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
         "def remember_successful_workspace_writes",
         "def all_workspace_write_calls_already_succeeded",
         "def post_tool_synthesis_should_use_bound_client",
+        "def tool_should_stop_after_result",
+        "def read_file_should_synthesize_after_result",
     ]:
         assert name in flow_text
     for old_private_definition in [
@@ -161,6 +163,8 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
         "def _remember_successful_workspace_writes",
         "def _all_workspace_write_calls_already_succeeded",
         "def _post_tool_synthesis_should_use_bound_client",
+        "def _tool_should_stop_after_result",
+        "def _read_file_should_synthesize_after_result",
     ]:
         assert old_private_definition not in agent_text
 

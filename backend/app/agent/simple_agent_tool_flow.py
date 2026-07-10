@@ -6,6 +6,7 @@ post-tool output. It does not call the model or execute tools.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.agent.simple_agent_finalization import _json_loads_maybe
@@ -20,6 +21,7 @@ WORKSPACE_MUTATING_TOOL_NAMES = {
     "edit_workspace_file",
     "rename_workspace_file",
 }
+logger = logging.getLogger(__name__)
 
 
 def iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[str, Any]]:
@@ -146,3 +148,72 @@ def post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> boo
         if not tool_name.startswith("run_skill_script"):
             return True
     return not saw_call
+
+
+def tool_should_stop_after_result(
+    tool_out: dict[str, Any],
+    stop_after_tool_names: tuple[str, ...],
+    tool_attempt_debug: list[dict[str, Any]],
+) -> bool:
+    """Return whether configured stop-after tool names were just executed."""
+    stop_names = {str(x or "").strip() for x in (stop_after_tool_names or ()) if str(x or "").strip()}
+    if not stop_names:
+        return False
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list):
+        return False
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        tool_name = str(call.get("tool") or call.get("name") or "").strip()
+        if tool_name in stop_names:
+            tool_attempt_debug.append(
+                {
+                    "source": "stop_after_tool_result",
+                    "matched": True,
+                    "tool": tool_name,
+                }
+            )
+            return True
+    return False
+
+
+def read_file_should_synthesize_after_result(
+    tool_out: dict[str, Any],
+    synthesize_after_read_file_paths: tuple[str, ...],
+    tool_attempt_debug: list[dict[str, Any]],
+) -> bool:
+    """Return whether a read_workspace_file result should trigger synthesis."""
+    targets = {
+        _normalize_workspace_path_for_compare(path)
+        for path in (synthesize_after_read_file_paths or ())
+        if _normalize_workspace_path_for_compare(path)
+    }
+    if not targets:
+        return False
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list):
+        return False
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        tool_name = str(call.get("tool") or call.get("name") or "").strip()
+        if tool_name != "read_workspace_file":
+            continue
+        args = _tool_call_args(call)
+        path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
+        if not path:
+            continue
+        if not any(path == target or path.endswith(f"/{target}") for target in targets):
+            continue
+        logger.info("SimpleAgent: synthesize_after_read_workspace_file tool=%s path=%s", tool_name, path)
+        tool_attempt_debug.append(
+            {
+                "source": "synthesize_after_read_workspace_file",
+                "matched": True,
+                "tool": tool_name,
+                "path": path,
+            }
+        )
+        return True
+    return False
