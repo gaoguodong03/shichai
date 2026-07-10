@@ -20,7 +20,6 @@ from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.skill_tool_result_records import (
     _missing_tool_result_record,
     _tool_mcp_identity,
-    _tool_name_looks_like_bound_mcp,
     _tool_result_record_from_exception,
     _tool_result_record_from_raw,
 )
@@ -85,7 +84,7 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         {
             getattr(t, "name", "")
             for t in tools
-            if _tool_mcp_identity(t)[0] or _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))
+            if any(_tool_mcp_identity(t))
         }
     )
     mcp_tool_rules = (
@@ -545,22 +544,28 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     "available_tools": [t.name for t in state["tools"]][:30],
                 })
                 if tool_name == "read_workspace_file":
-                    missing_result = _missing_tool_result_record(
-                        tool_name=tool_name,
-                        arguments=arguments if "arguments" in locals() else {},
-                        tool_call_id=tool_call_id,
-                        available_tools=[t.name for t in state["tools"]],
-                    )
-                    tool_result_records.append(missing_result)
+                    try:
+                        missing_result = _missing_tool_result_record(
+                            tool_name=tool_name,
+                            arguments=arguments if "arguments" in locals() else {},
+                            tool_call_id=tool_call_id,
+                            available_tools=[t.name for t in state["tools"]],
+                        )
+                        tool_result_records.append(missing_result)
+                    except ValueError:
+                        logger.warning("skip_unknown_source_tool_record tool=%s", tool_name)
                     tool_results.append(ToolMessage(content=_read_workspace_unavailable_message(), tool_call_id=tool_call_id))
                 else:
-                    missing_result = _missing_tool_result_record(
-                        tool_name=tool_name,
-                        arguments=arguments if "arguments" in locals() else {},
-                        tool_call_id=tool_call_id,
-                        available_tools=[t.name for t in state["tools"]],
-                    )
-                    tool_result_records.append(missing_result)
+                    try:
+                        missing_result = _missing_tool_result_record(
+                            tool_name=tool_name,
+                            arguments=arguments if "arguments" in locals() else {},
+                            tool_call_id=tool_call_id,
+                            available_tools=[t.name for t in state["tools"]],
+                        )
+                        tool_result_records.append(missing_result)
+                    except ValueError:
+                        logger.warning("skip_unknown_source_tool_record tool=%s", tool_name)
                     tool_results.append(
                         ToolMessage(
                             content=_tool_missing_message(tool_name, [t.name for t in state["tools"]]),

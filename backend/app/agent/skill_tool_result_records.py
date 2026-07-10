@@ -6,6 +6,16 @@ from typing import Any
 from app.agent.tool_trace_contracts import ToolResultRecord
 
 
+_WORKSPACE_TOOL_NAMES = {
+    "read_workspace_file",
+    "write_workspace_file",
+    "edit_workspace_file",
+    "rename_workspace_file",
+    "mkdir_workspace",
+    "list_workspace_directory",
+}
+
+
 def _tool_mcp_identity(tool: object) -> tuple[str, str]:
     metadata = getattr(tool, "metadata", None)
     if not isinstance(metadata, dict):
@@ -16,39 +26,18 @@ def _tool_mcp_identity(tool: object) -> tuple[str, str]:
     )
 
 
-def _tool_name_looks_like_bound_mcp(name: str) -> bool:
-    n = (name or "").strip()
-    if "_" not in n or n.startswith("run_skill_script_"):
-        return False
-    if n.startswith("filesystem_"):
-        return False
-    return n not in {
-        "read_workspace_file",
-        "write_workspace_file",
-        "edit_workspace_file",
-        "rename_workspace_file",
-        "mkdir_workspace",
-        "list_workspace_directory",
-        "call_api",
-    }
-
-
 def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
     server_name, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
-    if server_name or provider_tool or _tool_name_looks_like_bound_mcp(tool_name):
+    if server_name or provider_tool:
         return "mcp"
-    if str(tool_name or "").startswith("run_skill_script_"):
+    name = str(tool_name or "").strip()
+    if name.startswith("run_skill_script_"):
         return "script"
-    if str(tool_name or "") in {
-        "read_workspace_file",
-        "write_workspace_file",
-        "edit_workspace_file",
-        "rename_workspace_file",
-        "mkdir_workspace",
-        "list_workspace_directory",
-    }:
+    if name in _WORKSPACE_TOOL_NAMES:
         return "workspace"
-    return "api"
+    if name.startswith("http_api_"):
+        return "api"
+    raise ValueError(f"tool source is missing for {name or 'tool'}")
 
 
 def _stable_tool_call_name(tool_name: str, tool: object | None = None) -> str:

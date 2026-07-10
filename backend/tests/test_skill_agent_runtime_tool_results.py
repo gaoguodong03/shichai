@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.agent.skill_agent_runtime import (
     _missing_tool_result_record,
     _tool_result_record_from_exception,
@@ -52,6 +54,17 @@ def test_mcp_tool_result_keeps_provider_identity_without_wrapper_name():
     assert result["tool_call"]["name"] == "linkup-fetch"
     assert result["tool_call"]["provider"] == "linkup"
     assert result["tool_call"]["provider_tool"] == "linkup-fetch"
+
+
+def test_mcp_like_tool_name_without_metadata_is_not_guessed_as_mcp():
+    with pytest.raises(ValueError):
+        _tool_result_record_from_raw(
+            tool_name="mcp_Server_tool",
+            tool=SimpleNamespace(name="mcp_Server_tool", metadata={}),
+            arguments={},
+            tool_call_id="call-missing-source",
+            raw_result="ok",
+        )
 
 
 def test_plain_text_tool_output_does_not_infer_status_from_legacy_error_prefix():
