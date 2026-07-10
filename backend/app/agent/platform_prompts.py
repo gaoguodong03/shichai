@@ -326,7 +326,6 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
         "skill.execution.extra_instructions.v1",
         """
 {workspace_tool_rules}
-{call_api_rules}
 {audio_asr_rules}
 {script_tool_rules}
 {mcp_tool_rules}
@@ -395,14 +394,6 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
         "skill.execution.workspace_material_rule.v1",
         """
 对网页采集、资料检索、素材整理任务，采集到多条独立素材时，不要把所有素材写进一个文件；应为每一条独立素材分开调用 `write_workspace_file`，保存为 `materials/<序号>-<简短标题>.md` 等工作区相对路径，再在最终答复汇总文件清单。
-        """,
-    ),
-    "skill.execution.call_api_rules.v1": _prompt(
-        "skill.execution.call_api_rules.v1",
-        """
-## 外部 HTTP（call_api）
-
-当需要获取公开网页或 HTTP API 的响应时，使用 `call_api`。参数为 `url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。
         """,
     ),
     "skill.execution.audio_asr_rules.v1": _prompt(

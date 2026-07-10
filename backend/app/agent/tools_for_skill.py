@@ -2,7 +2,7 @@
 
 build_tools_for_group_chat：按「本轮解析出的 Skill」在 SKILL.md frontmatter 中声明的工具名称决定可加载的 MCP（未声明则不调 MCP）；
 工具完全由当前 Skill frontmatter 声明决定；不再用专家资源字段二次收紧。
-内置工作区工具与 call_api 是运行时自带能力，不作为专家资源字段保存。
+内置工作区工具是平台默认能力；HTTP API 必须由当前 Skill allowed-tools 声明。
 run_skill_script_<directory_name> → wrap。
 """
 from pathlib import Path
@@ -29,7 +29,6 @@ from app.agent.workspace_visibility import (
     is_internal_system_workspace_path,
     normalize_public_workspace_path,
 )
-from app.tools.call_api import call_api
 from app.tools.http_api_tool import create_http_api_tool
 from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
@@ -402,7 +401,7 @@ async def build_tools_for_group_chat(
     按「本轮生效的 Skill」组装群聊 MCP 工具。
     - 仅允许 get_mcp_servers_for_skill(resolved_skill) 中的工具（仅 SKILL.md frontmatter 声明）；
     - 不再合并专家上全部 skills 的工具，也不从专家资源字段额外收紧；
-    - 内置工作区工具与 call_api 是运行时自带能力；
+    - 内置工作区工具是平台默认能力；HTTP API 只按当前 Skill allowed-tools 注入；
     - 为 agent_profile["skills"] 中每个 skill 注入 run_skill_script_<directory_name>（磁盘上存在 SKILL 时）。
     """
     rid = str(resolved_skill or "").strip() or "default"
@@ -471,8 +470,6 @@ async def build_tools_for_group_chat(
                 tool_names.add(getattr(tool, "name", ""))
     if mcp_config_issues:
         extras.append(_create_mcp_configuration_status_tool(mcp_config_issues))
-    else:
-        extras.append(call_api)
     tools = tools + extras
     tool_names = {getattr(t, "name", "") for t in tools}
     # 为 Agent 的每个技能注入 run_skill_script，名称带目录名避免覆盖，方便图标生成等用脚本而非 MCP 文件工具

@@ -102,6 +102,16 @@ def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
     assert not (ROOT / "backend/app/agent/file_ref_resolver.py").exists()
 
 
+def test_backend_prompts_do_not_teach_generic_call_api_tool():
+    runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
+    prompt_text = (ROOT / "backend/app/agent/platform_prompts.py").read_text(encoding="utf-8")
+
+    assert "call_api_rules" not in runtime_text
+    assert "skill.execution.call_api_rules.v1" not in PLATFORM_PROMPTS
+    assert "## 外部 HTTP（call_api）" not in prompt_text
+    assert "使用 `call_api`" not in prompt_text
+
+
 def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
     runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
 

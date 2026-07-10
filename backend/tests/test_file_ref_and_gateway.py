@@ -375,6 +375,7 @@ async def test_build_tools_keeps_safe_named_mcp_tools_for_declared_server(monkey
 
     names = {getattr(tool, "name", "") for tool in tools}
     assert "Exa_web_search_exa_a1b2c3d4" in names
+    assert "call_api" not in names
 
 
 @pytest.mark.asyncio

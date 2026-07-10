@@ -40,7 +40,7 @@ def _find_tool_by_name(tool_name: str, tools: Sequence[ToolSpec]) -> ToolSpec | 
 
 
 def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
-    """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
+    """随实际绑定工具生成多步、工作区、脚本和 MCP 说明，避免未绑定能力误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
     script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
     preface = ""
@@ -75,7 +75,6 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
                 "material_rule": render_platform_prompt("skill.execution.workspace_material_rule.v1", {}) if "write_workspace_file" in names else "",
             },
         )
-    call_api_rules = render_platform_prompt("skill.execution.call_api_rules.v1", {}) if "call_api" in names else ""
     audio_asr_rules = render_platform_prompt("skill.execution.audio_asr_rules.v1", {}) if "audio-asr_transcribe_audio_file" in names else ""
     script_tool_rules = (
         render_platform_prompt("skill.execution.script_tool_rules.v1", {"script_tool_names": "\n".join(f"- `{n}`" for n in script_names)})
@@ -98,7 +97,6 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         "skill.execution.extra_instructions.v1",
         {
             "workspace_tool_rules": workspace_tool_rules,
-            "call_api_rules": call_api_rules,
             "audio_asr_rules": audio_asr_rules,
             "script_tool_rules": script_tool_rules,
             "mcp_tool_rules": mcp_tool_rules,
