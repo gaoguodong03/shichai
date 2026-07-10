@@ -1,6 +1,5 @@
 """为 filesystem MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 {session_id}/workspace/ 下。"""
 import os
-import json
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,25 +31,12 @@ def _path_arg_keys() -> List[str]:
 def _normalize_path_for_session(path: str, session_id: str) -> str:
     """确保 path 落在 {session_id}/workspace/ 下，并返回 MCP 可解析的路径（相对 backend）。
 
-    兼容一些旧模板 / LLM 误用的调用方式，例如把
-        '{"__arg1": "错误文字.md"}'
-    整个 JSON 字符串塞到 path 里。
-    此时应先解析 JSON，提取其中的 path 或 __arg1，再做 workspace 前缀拼接。
+    path 必须是工具 schema 中的命名参数值，不能是 JSON 包装字符串。
     """
     raw = (path or "").strip()
-    # 若 path 看起来是 JSON，尝试从中提取真正的路径字段
     if raw.startswith("{") and raw.endswith("}"):
-        try:
-            data = json.loads(raw)
-            extracted = str(data.get("path") or data.get("__arg1") or "").strip()
-            if extracted:
-                path = extracted
-            else:
-                path = raw
-        except Exception:
-            path = raw
-    else:
-        path = raw
+        raise ValueError("path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。")
+    path = raw
 
     rel_prefix = _agent_outputs_rel_prefix()
     path = path.lstrip("/")
@@ -95,7 +81,8 @@ def wrap_filesystem_tool_for_session(tool: ToolSpec, session_id: str) -> ToolSpe
         return tool
 
     async def wrapped_func(*args: Any, **kwargs: Any) -> str:
-        # 兼容模型/旧包装器可能用 *args 或 **kwargs 传参
+        if args:
+            return "错误：filesystem 工具必须按 schema 传 path 参数，不接受位置参数。"
         peek = ""
         if kwargs:
             for key in _path_arg_keys():
@@ -103,8 +90,6 @@ def wrap_filesystem_tool_for_session(tool: ToolSpec, session_id: str) -> ToolSpe
                 if isinstance(v, str) and v.strip():
                     peek = v.strip()
                     break
-        elif args and isinstance(args[0], str):
-            peek = str(args[0]).strip()
         if peek and looks_like_url_or_remote_path(peek):
             return (
                 "错误：path 不能为网页链接，请使用当前会话工作区内的相对路径"
@@ -112,12 +97,6 @@ def wrap_filesystem_tool_for_session(tool: ToolSpec, session_id: str) -> ToolSpe
             )
         if kwargs:
             kwargs = _ensure_path_in_session(kwargs, session_id)
-        elif args and isinstance(args[0], dict):
-            kwargs = _ensure_path_in_session(dict(args[0]), session_id)
-            args = ()
-        elif args and isinstance(args[0], str):
-            kwargs = _ensure_path_in_session({"path": args[0]}, session_id)
-            args = ()
         result = orig_func(*args, **kwargs)
         if asyncio.iscoroutine(result):
             return await result

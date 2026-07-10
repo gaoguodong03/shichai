@@ -254,3 +254,18 @@ def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
         "skill.execution.read_workspace_unavailable.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_image_generation_default_user_prompt_uses_platform_prompt_registry():
+    """Image tool default user prompt text belongs in the shared prompt registry."""
+    tool_text = (ROOT / "backend/app/tools/chatanywhere_image_cli_lib.py").read_text(encoding="utf-8")
+
+    assert "请生成尺寸约为" not in tool_text
+    assert "image_generation.default_user_prompt.v1" in PLATFORM_PROMPTS
+
+    rendered = render_platform_prompt(
+        "image_generation.default_user_prompt.v1",
+        {"description": "河南烩面", "pic_size": "1024x1792"},
+    )
+
+    assert rendered == "河南烩面\n\n请生成尺寸约为 1024x1792 的图片，输出图像内容。"

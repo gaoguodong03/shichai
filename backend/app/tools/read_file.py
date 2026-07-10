@@ -1,5 +1,4 @@
 """读取引用文件工具 - 经 OpenSandbox 挂载的工作区路径读取（不经宿主直读）。"""
-import json
 from pydantic import BaseModel, Field
 
 from app.agent.tool_spec import ToolSpec
@@ -27,12 +26,8 @@ def _normalize_path(path_or_input) -> str:
     s = str(path_or_input).strip()
     if not s:
         return ""
-    if s.startswith("{"):
-        try:
-            data = json.loads(s)
-            return str(data.get("path") or data.get("__arg1") or "")
-        except json.JSONDecodeError:
-            pass
+    if s.startswith("{") and s.endswith("}"):
+        raise ValueError("path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。")
     return s
 
 
@@ -81,7 +76,10 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
     """新建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
 
     async def _read_file(path: str = "", **kwargs) -> str:
-        raw = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))
+        try:
+            raw = _normalize_path(path) or _normalize_path(kwargs.get("path"))
+        except ValueError as exc:
+            return f"错误：{exc}"
         rel, err = _workspace_relative_for_session(session_id=session_id or "", path=raw)
         if err:
             return err

@@ -97,17 +97,8 @@ def test_format_non_json_html_plaintext_fallback(monkeypatch):
     assert "标题 正文内容" in out
 
 
-def test_call_api_accepts_json_string_as_url_object(monkeypatch):
+def test_call_api_rejects_json_string_as_url_object(monkeypatch):
     from app.tools import call_api as mod
-
-    class _Resp:
-        status_code = 201
-        headers = {"content-type": "application/json"}
-        text = '{"created":true}'
-
-        @staticmethod
-        def json():
-            return {"created": True}
 
     class _Client:
         def __init__(self, timeout):
@@ -120,11 +111,7 @@ def test_call_api_accepts_json_string_as_url_object(monkeypatch):
             return False
 
         def request(self, method, url, content=None, headers=None):
-            assert method == "PUT"
-            assert url == "https://example.com/obj"
-            assert headers == {"X-A": "1"}
-            assert json.loads(content) == {"k": "v"}
-            return _Resp()
+            raise AssertionError("JSON object passed as url must be rejected before request")
 
     monkeypatch.setattr(mod.httpx, "Client", _Client)
     packed = json.dumps(
@@ -132,7 +119,10 @@ def test_call_api_accepts_json_string_as_url_object(monkeypatch):
         ensure_ascii=False,
     )
     out = _run_call_api(mod, url=packed)
-    assert "状态码: 201" in out
+    assert "url 不能是 JSON 对象字符串" in out
+
+    text = Path(mod.__file__).read_text(encoding="utf-8")
+    assert "兼容错误用法" not in text
 
 
 def test_call_api_does_not_write_cursor_debug_log(monkeypatch):

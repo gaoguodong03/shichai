@@ -39,6 +39,7 @@
   "skill.execution.workspace_material_rule.v1": "对网页采集、资料检索、素材整理任务，采集到多条独立素材时，不要把所有素材写进一个文件；应为每一条独立素材分开调用 `write_workspace_file`，保存为 `materials/<序号>-<简短标题>.md` 等工作区相对路径，再在最终答复汇总文件清单。",
   "skill.execution.audio_asr_rules.v1": "## 音频转写路径规则\n\n调用 `audio-asr_transcribe_audio_file` 时，path 必须来自本轮结构化附件中的工作区相对路径，或用户明确写出的工作区相对路径（例如 `meeting.mp3`）。运行时会在工具执行前把显式 path 转换成 `backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、`sessions/<session_id>/workspace/` 等内部路径。",
   "audio_asr.default_transcription.v1": "请将这段音频逐字转写为文本。只输出转写内容，不要编造。",
+  "image_generation.default_user_prompt.v1": "{description}\n\n请生成尺寸约为 {pic_size} 的图片，输出图像内容。",
   "skill.execution.script_tool_rules.v1": "## 技能脚本工具\n\n用结构化工具调用执行当前技能脚本。脚本入口由平台从 `scripts/manifest.json` 读取；你只填写工具 schema 中列出的业务参数，不传脚本路径、命令行数组或宿主机路径。\n\n{script_tool_names}",
   "skill.execution.mcp_tool_rules.v1": "## 本技能绑定的 MCP 工具\n\n以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，必须优先使用这些 MCP 工具完成步骤，不要用无关工具替代或仅靠猜测。参数以该工具 schema 为准，不要把所有参数塞进 `__arg1`，除非该工具本身只接受单字符串参数。\n\n{mcp_tool_names}",
   "skill.execution.script_done_instruction.v1": "{prefix}请基于上方工具返回中面向用户可见的结果摘要生成最终答复。脚本结果已经由平台解析并记录；不要尝试读取内部运行字段或 scripts/<脚本名>，也不要再次调用同一个脚本和相同参数。",

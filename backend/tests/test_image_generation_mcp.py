@@ -252,6 +252,7 @@ def test_chatanywhere_image_posts_with_jeniya_authorization_only(monkeypatch: py
 
         def post(self, *args, **kwargs):
             seen["headers"] = kwargs.get("headers")
+            seen["body"] = kwargs.get("json")
             return httpx.Response(
                 200,
                 json={
@@ -279,6 +280,9 @@ def test_chatanywhere_image_posts_with_jeniya_authorization_only(monkeypatch: py
 
     assert result == "data:image/png;base64,ZmFrZQ=="
     assert seen["headers"] == {"Authorization": "Bearer key"}
+    assert seen["body"]["contents"][0]["parts"][0]["text"] == (
+        "河南烩面\n\n请生成尺寸约为 1024x1792 的图片，输出图像内容。"
+    )
 
 
 def test_chatanywhere_image_reports_remote_disconnect_after_retries(monkeypatch: pytest.MonkeyPatch):

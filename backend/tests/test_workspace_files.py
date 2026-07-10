@@ -2,6 +2,7 @@
 import asyncio
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -459,6 +460,31 @@ def test_read_file_pseudo_field_error_does_not_teach_raw_tool_stream_fields():
 
     assert "工具返回字段" in out
     assert "stdout/stderr/returncode" not in out
+
+
+def test_read_workspace_file_rejects_json_wrapped_path_argument():
+    from app.tools.read_file import create_read_file_tool
+
+    tool = create_read_file_tool("sess-r")
+    out = asyncio.run(tool.acall(path='{"__arg1": "notes/a.md"}'))
+
+    assert "path 不能是 JSON 包装字符串" in out
+
+    source = Path("backend/app/tools/read_file.py").read_text(encoding="utf-8")
+    assert "__arg1" not in source
+
+
+def test_write_workspace_file_rejects_json_wrapped_path_argument():
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    tool = create_write_workspace_file_tool("sess-w")
+    out = asyncio.run(tool.acall(path='{"__arg1": "notes/a.md"}', content="正文"))
+
+    assert "path 不能是 JSON 包装字符串" in out
+
+    source = Path("backend/app/tools/write_workspace_file.py").read_text(encoding="utf-8")
+    assert "__arg1" not in source
+    assert "__arg2" not in source
 
 
 def test_read_file_reads_current_layout_workspace_relative_path(temp_user_data_root, monkeypatch):

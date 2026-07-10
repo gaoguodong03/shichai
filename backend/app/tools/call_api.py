@@ -184,35 +184,9 @@ def _call_api_impl(
     """
     if not url or not url.strip():
         return "错误：未提供 url。"
-    # 原始入参字符串，便于日志排查
-    raw_url_param = url.strip()
-
-    # 兼容错误用法：有时上游会把 {"url": "...", "method": "..."} 整个 JSON 当成 url 传进来
-    # 这里尝试解析这种情况，提取真正的 url / method / headers / body
-    try:
-        if raw_url_param.startswith("{") and raw_url_param.endswith("}"):
-            maybe_obj = json.loads(raw_url_param)
-            if isinstance(maybe_obj, dict) and "url" in maybe_obj:
-                # 提取真正 URL
-                url = str(maybe_obj.get("url", "")).strip()
-                # 若 JSON 内同时给了 method / headers / body，则在未显式传参时补用它们
-                if "method" in maybe_obj and (not method or method == "GET"):
-                    method = str(maybe_obj["method"]).strip().upper() or "GET"
-                if "headers" in maybe_obj and not headers_json:
-                    try:
-                        headers_json = json.dumps(maybe_obj["headers"], ensure_ascii=False)
-                    except Exception:
-                        pass
-                if "body" in maybe_obj and not body:
-                    body_val = maybe_obj["body"]
-                    body = json.dumps(body_val, ensure_ascii=False) if not isinstance(body_val, str) else body_val
-            else:
-                url = raw_url_param
-        else:
-            url = raw_url_param
-    except Exception:
-        # 解析失败则退回原始字符串
-        url = raw_url_param
+    url = url.strip()
+    if url.startswith("{") and url.endswith("}"):
+        return "错误：url 不能是 JSON 对象字符串；请按工具 schema 分别传 url、method、headers_json 和 body。"
 
     # 若 url 未带协议，自动补 https://（避免模型只填域名导致 httpx 报错）
     if url and not url.startswith("http://") and not url.startswith("https://"):

@@ -737,6 +737,52 @@ def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
         shutil.rmtree(local_user_root, ignore_errors=True)
 
 
+def test_filesystem_wrapper_rejects_json_string_path_argument(monkeypatch):
+    from app.tools.filesystem_session_wrapper import _normalize_path_for_session
+
+    backend_root = Path(__file__).resolve().parents[1]
+    local_user_root = backend_root / ".tmp-test-user-data"
+    try:
+        local_user_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(local_user_root))
+        monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+        with pytest.raises(ValueError, match="JSON"):
+            _normalize_path_for_session('{"__arg1": "notes/a.md"}', "sess-a")
+
+        wrapper_text = (backend_root / "app/tools/filesystem_session_wrapper.py").read_text(encoding="utf-8")
+        assert "旧模板" not in wrapper_text
+        assert "__arg1" not in wrapper_text
+    finally:
+        shutil.rmtree(local_user_root, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_filesystem_wrapper_rejects_positional_path_arguments(monkeypatch):
+    from app.agent.tool_spec import ToolSpec
+    from app.tools.filesystem_session_wrapper import wrap_filesystem_tool_for_session
+
+    backend_root = Path(__file__).resolve().parents[1]
+    local_user_root = backend_root / ".tmp-test-user-data"
+    try:
+        local_user_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(local_user_root))
+        monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+        def filesystem_read_file(path: str) -> str:
+            return path
+
+        tool = wrap_filesystem_tool_for_session(
+            ToolSpec.from_function(name="filesystem_read_file", description="", func=filesystem_read_file),
+            "sess-a",
+        )
+
+        out = await tool.func("notes/a.md")
+        assert "必须按 schema 传 path 参数" in out
+    finally:
+        shutil.rmtree(local_user_root, ignore_errors=True)
+
+
 def test_filesystem_wrapper_test_data_is_removed():
     backend_root = Path(__file__).resolve().parents[1]
     assert not (backend_root / ".tmp-test-user-data").exists()

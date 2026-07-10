@@ -10,10 +10,13 @@ from pathlib import Path
 
 import httpx
 
+from app.agent.platform_prompts import render_platform_prompt
+
 _DEFAULT_BASE = "https://jeniya.top"
 _DEFAULT_MODEL = "gemini-3.1-flash-image-preview"
 _DEFAULT_MAX_ATTEMPTS = 2
 _MAX_ATTEMPTS_CAP = 5
+_DEFAULT_USER_PROMPT_ID = "image_generation.default_user_prompt.v1"
 
 
 def _api_url() -> str:
@@ -63,16 +66,18 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
         return str(e)
 
     headers = {"Authorization": api_key}
+    user_prompt = render_platform_prompt(
+        _DEFAULT_USER_PROMPT_ID,
+        {
+            "description": description,
+            "pic_size": pic_size,
+        },
+    )
     body = {
         "contents": [
             {
                 "parts": [
-                    {
-                        "text": (
-                            f"{description}\n\n"
-                            f"请生成尺寸约为 {pic_size} 的图片，输出图像内容。"
-                        )
-                    }
+                    {"text": user_prompt}
                 ]
             }
         ],

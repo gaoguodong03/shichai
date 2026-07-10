@@ -42,27 +42,17 @@ class WriteWorkspaceFileInput(BaseModel):
 def _normalize_path(path_or_input) -> str:
     if path_or_input is None:
         return ""
-    if isinstance(path_or_input, dict):
-        return str(path_or_input.get("path") or path_or_input.get("__arg1") or "").strip()
     s = str(path_or_input).strip()
     if not s:
         return ""
-    if s.startswith("{"):
-        try:
-            data = json.loads(s)
-            return str(data.get("path") or data.get("__arg1") or "")
-        except json.JSONDecodeError:
-            pass
+    if s.startswith("{") and s.endswith("}"):
+        raise ValueError("path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。")
     return s
 
 
-def _normalize_content(content_or_input, **kwargs) -> str:
+def _normalize_content(content_or_input) -> str:
     if content_or_input is not None and str(content_or_input).strip():
         return str(content_or_input)
-    for key in ("content", "__arg2", "text", "body"):
-        val = kwargs.get(key)
-        if val is not None and str(val).strip():
-            return str(val)
     return ""
 
 
@@ -102,9 +92,12 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
 
     async def _write_to_workspace_file(path: str, content: str = "", overwrite: bool = False, **kwargs) -> str:
-        path_value = _normalize_path(path) or _normalize_path(kwargs.get("path")) or _normalize_path(kwargs.get("__arg1")) or ""
-        content_value = _normalize_content(content, **kwargs)
-        allow_overwrite = _normalize_bool(overwrite) or _normalize_bool(kwargs.get("overwrite"))
+        try:
+            path_value = _normalize_path(path) or _normalize_path(kwargs.get("path")) or ""
+        except ValueError as exc:
+            return f"错误：{exc}"
+        content_value = _normalize_content(content)
+        allow_overwrite = _normalize_bool(overwrite)
         path_value = path_value.strip()
         if not path_value:
             return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report-2026070422145700.md）。"
