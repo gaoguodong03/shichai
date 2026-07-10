@@ -440,12 +440,42 @@ def test_module_boundary_doc_uses_current_resource_file_paths():
     """Module boundary docs must cite current filenames, not removed secret/resource paths."""
     text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
 
+    removed_secret_module = "settings_" + "secrets.py"
     assert "settings_env_vars.py" in text
-    assert "settings_secrets.py" not in text
+    assert removed_secret_module not in text
     assert "frontend/src/features/resources/mcpConfigContract.ts" in text
     assert "frontend/src/features/settings/mcpConfigContract.ts" not in text
     assert (PROJECT_ROOT / "backend" / "app" / "api" / "settings_env_vars.py").exists()
     assert (PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "mcpConfigContract.ts").exists()
+
+
+def test_code_and_tests_do_not_carry_legacy_secret_contract_literals():
+    """Code and tests must not carry removed secret/vault contract literals."""
+    forbidden = [
+        "api_key" + "_ref",
+        "api-" + "secrets",
+        "settings/" + "secrets.enc.json",
+        "${" + "vault:",
+        "settings_" + "secrets.py",
+    ]
+    roots = [
+        PROJECT_ROOT / "backend" / "app",
+        PROJECT_ROOT / "backend" / "tests",
+        PROJECT_ROOT / "frontend" / "src",
+        PROJECT_ROOT / "frontend" / "e2e",
+    ]
+    offenders = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in {".py", ".ts", ".tsx", ".vue"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for token in forbidden:
+                if token in text:
+                    offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{token}")
+    assert offenders == []
 
 
 def test_frontend_settings_env_vars_do_not_use_secret_navigation_identity():
