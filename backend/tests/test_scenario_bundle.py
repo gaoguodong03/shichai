@@ -1,9 +1,11 @@
 import shutil
 import tempfile
+import json
+import zipfile
+import io
 from pathlib import Path
 
 from app.core.scenario_bundle import (
-    BUNDLE_VERSION,
     build_scenario_bundle_zip_bytes,
     extract_scenario_bundle_dir,
     merge_agent_instances_for_bundle,
@@ -69,10 +71,22 @@ def test_roundtrip_zip_manifest():
     skills_root = Path(tempfile.mkdtemp())
     try:
         raw = build_scenario_bundle_zip_bytes(preset, experts, mcps, skills_root, [])
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            names = set(zf.namelist())
+            assert "bundle.json" in names
+            assert "scenario_bundle.json" not in names
+            assert "agents.json" not in names
+            assert "mcp_servers.json" not in names
+            manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+            assert manifest["bundle_type"] == "scenario"
+            assert "bundle_version" not in manifest
+            assert "resources/scenarios/P/scenario.json" in names
+            assert "resources/agents/E/agent.json" in names
+            assert "resources/tools/M/tool.json" in names
         ext = extract_scenario_bundle_dir(raw)
         try:
             man, p, agents, mcp = read_bundle_manifest_and_lists(ext)
-            assert man.get("bundle_version") == BUNDLE_VERSION
+            assert man["bundle_type"] == "scenario"
             assert p["name"] == "P"
             assert "id" not in p
             assert len(agents) == 1

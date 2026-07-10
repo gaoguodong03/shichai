@@ -40,8 +40,10 @@ from app.core.settings_bundle_import import (
     upsert_rows_by_name as _upsert_rows_by_name,
 )
 from app.core.scenario_bundle import (
+    bundle_skills_root,
     extract_scenario_bundle_dir,
     list_skill_directories_in_bundle_skills_dir,
+    read_bundle_tool_rows,
 )
 from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
 from app.core.security import user_context_dependency
@@ -252,7 +254,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             root_name = str(root_fm.get("name") or "skill").strip() or "skill"
             sid0 = _slugify(root_name)
             normalized = tmp / "__normalized_skill_bundle"
-            src = normalized / "skills" / sid0
+            src = normalized / "resources" / "skills" / sid0
             src.mkdir(parents=True, exist_ok=True)
             for child in tmp.iterdir():
                 if child.name in {"__normalized_skill_bundle", "mcp_servers.json"}:
@@ -265,7 +267,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             bundle_dir_for_refs = normalized
         else:
             sid0 = directory_names[0]
-            src = tmp / "skills" / sid0
+            src = bundle_skills_root(tmp) / sid0
             bundle_dir_for_refs = tmp
         fm, body = _read_skill_file(src)
         incoming_name = str(fm.get("name") or sid0).strip() or sid0
@@ -309,18 +311,17 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         target_directory = existing_same_name_directories[0] if existing_same_name_directories else _next_available_directory_name(base, _slugify(incoming_name))
         dest = base / target_directory
-        copied_skill = not existing_same_name_directories
-        if copied_skill:
-            shutil.copytree(src, dest)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
         fm2, body2 = _read_skill_file(dest)
         mcp_name_map = _mcp_name_map_for_import(mcp_rows_to_import)
-        if copied_skill:
-            fm2 = _remap_frontmatter_mcp_refs(fm2, tool_name_map, mcp_name_map)
-            fm2["name"] = str(fm2.get("name") or incoming_name)
-            fm2["description"] = str(fm2.get("description") or "")
-            _sanitize_skill_frontmatter_for_write(fm2)
-            _write_skill_file(dest, fm2, body2)
-            _refresh_skills_loader()
+        fm2 = _remap_frontmatter_mcp_refs(fm2, tool_name_map, mcp_name_map)
+        fm2["name"] = str(fm2.get("name") or incoming_name)
+        fm2["description"] = str(fm2.get("description") or "")
+        _sanitize_skill_frontmatter_for_write(fm2)
+        _write_skill_file(dest, fm2, body2)
+        _refresh_skills_loader()
         existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
         imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
         mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
@@ -345,7 +346,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             "name": str(fm2.get("name") or target_directory),
             "summary": {
                 "overwritten_directory_names": existing_same_name_directories,
-                "kept_directory_names": existing_same_name_directories,
+                "kept_directory_names": [],
                 "missing_references": missing_references,
                 "tool_name_map": tool_name_map,
                 "mcp_added": mcp_added,
@@ -412,12 +413,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             raise HTTPException(status_code=400, detail="专家分享包无效")
         directory_names_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
         skill_display_names = _bundle_skill_display_name_map(tmp, directory_names_in_zip)
-        mcp_path = tmp / "mcp_servers.json"
-        mcp_bundle: List[Dict[str, Any]] = []
-        if mcp_path.is_file():
-            raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
-            if isinstance(raw_m, list):
-                mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
+        mcp_bundle = read_bundle_tool_rows(tmp)
         user_skills = _agent_skills_dir()
         directory_name_map, _skill_copy_pairs, overwritten_directory_names = _skill_name_identity_import_plan(
             tmp,
@@ -465,7 +461,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             load_mcp_config(),
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
-        imported_skills, kept_skills, directory_name_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
+        imported_skills, overwritten_skills, directory_name_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
         tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         for sid in imported_skills:
@@ -490,24 +486,31 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
         skipped_by_name = False
-        kept_agent_names: List[str] = same_name_agent_names[:]
-        final_name: str | None = same_name_agent_names[0] if same_name_agent_names else None
-        if final_name:
-            pass
-        else:
-            final_name = str(norm.get("name") or "").strip()
-            instances = _upsert_rows_by_name(instances, [norm], "name")
+        final_name = str(norm.get("name") or "").strip()
+        remapped_norm = dict(norm)
+        remapped_skills: List[Any] = []
+        for item in remapped_norm.get("skills") or []:
+            if isinstance(item, dict):
+                row = dict(item)
+                directory_name = str(row.get("directory_name") or "").strip()
+                if directory_name and directory_name in directory_name_map:
+                    row["directory_name"] = directory_name_map[directory_name]
+                remapped_skills.append(row)
+            elif isinstance(item, str) and item.strip():
+                remapped_skills.append(directory_name_map.get(item.strip(), item.strip()))
+        remapped_norm["skills"] = remapped_skills
+        instances = _upsert_rows_by_name(instances, [remapped_norm], "name")
         save_agent_instances(instances)
         return {
             "object_type": "expert",
             "summary": {
                 "imported_agent_name": final_name,
                 "skipped_by_name": skipped_by_name,
-                "overwritten_agent_names": [],
-                "kept_agent_names": kept_agent_names,
+                "overwritten_agent_names": same_name_agent_names,
+                "kept_agent_names": [],
                 "skills_imported": imported_skills,
-                "skills_overwritten": [],
-                "skills_kept": kept_skills,
+                "skills_overwritten": overwritten_skills,
+                "skills_kept": [],
                 "skills_skipped": [],
                 "skill_map": directory_name_map,
                 "tool_map": tool_name_map,
@@ -710,10 +713,19 @@ async def import_skill_zip(
             if existing_same_name_directories:
                 directory_name = existing_same_name_directories[0]
                 skill_dir = base / directory_name
+                if skill_dir.exists():
+                    shutil.rmtree(skill_dir)
+                shutil.copytree(src_dir, skill_dir)
                 fm, body = _read_skill_file(skill_dir)
-                final_name = (str(fm.get("name") or "").strip() or directory_name)
+                final_name = (str(fm.get("name") or "").strip() or incoming_name or directory_name)
                 final_desc = str(fm.get("description") or "")
                 tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+                fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
+                fm["name"] = final_name
+                fm["description"] = final_desc
+                _sanitize_skill_frontmatter_for_write(fm)
+                _write_skill_file(skill_dir, fm, body)
+                _refresh_skills_loader()
                 existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
                 imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
                 mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
@@ -733,9 +745,10 @@ async def import_skill_zip(
                         "path": str(skill_dir),
                         "allowed_tools": _normalized_allowed_tools_dict(fm),
                         "skipped_by_name": False,
-                        "kept_by_name": True,
-                        "overwritten_directory_names": [],
-                        "kept_directory_names": existing_same_name_directories,
+                        "kept_by_name": False,
+                        "overwritten_by_name": True,
+                        "overwritten_directory_names": existing_same_name_directories,
+                        "kept_directory_names": [],
                         "mcp_added": mcp_added,
                         "mcp_skipped": mcp_skipped,
                         "mcp_updated": mcp_updated,

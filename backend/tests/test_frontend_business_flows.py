@@ -204,7 +204,11 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     exported_expert = client.get("/api/agents/带技能工具的专家/export-bundle", headers=headers)
     assert exported_expert.status_code == 200
     with zipfile.ZipFile(BytesIO(exported_expert.content)) as zf:
-        expert_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+        expert_tools = [
+            json.loads(zf.read(name).decode("utf-8"))
+            for name in zf.namelist()
+            if name.startswith("resources/tools/") and name.endswith("/tool.json")
+        ]
     assert [row["name"] for row in expert_tools] == [tool_id]
     assert "sk-live-secret" not in exported_expert.content.decode("latin-1")
 

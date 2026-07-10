@@ -1,4 +1,4 @@
-"""专家包（ZIP）：expert_bundle.json + skills/ + 可选 mcp_servers.json。"""
+"""Expert resource bundle ZIP helpers."""
 from __future__ import annotations
 
 import io
@@ -10,10 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
 
-EXPERT_BUNDLE_VERSION = 1
-EXPERT_MANIFEST_NAME = "expert_bundle.json"
-MCP_NAME = "mcp_servers.json"
-SKILLS_PREFIX = "skills/"
+EXPERT_MANIFEST_NAME = "bundle.json"
 
 
 def merge_single_expert_into_instances(
@@ -22,10 +19,7 @@ def merge_single_expert_into_instances(
     *,
     name_conflict: str,
 ) -> Tuple[List[Dict[str, Any]], str | None, bool, List[str]]:
-    """
-    合并单条专家。name_conflict: skip | overwrite。
-    返回 (新列表, 最终 name, 是否因同名未写入, 被覆盖的旧 name 列表)。
-    """
+    """Merge one expert by current name identity; same-name rows are overwritten."""
     from app.core.scenario_bundle import strip_agent_row_for_disk
 
     order: List[str] = []
@@ -46,11 +40,8 @@ def merge_single_expert_into_instances(
         for name, row in by_name.items()
         if str(row.get("name") or "").strip().lower() == incoming_name_key and incoming_name_key
     ]
-    if same_names and name_conflict == "skip":
-        return [by_name[name] for name in order if name in by_name], None, True, []
-
     overwritten_agent_names: List[str] = []
-    if same_names and name_conflict == "overwrite":
+    if same_names:
         overwritten_agent_names.extend(same_names)
         for name in same_names:
             by_name.pop(name, None)
@@ -68,13 +59,25 @@ def merge_single_expert_into_instances(
 def read_expert_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     path = bundle_dir / EXPERT_MANIFEST_NAME
     if not path.is_file():
-        raise ValueError("missing_expert_bundle_json")
+        raise ValueError("missing_bundle_json")
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("invalid_manifest")
-    expert = manifest.get("expert")
-    if not isinstance(expert, dict):
-        raise ValueError("missing_expert_in_manifest")
+    if manifest.get("bundle_type") != "agent":
+        raise ValueError("invalid_bundle_type")
+    agents_root = bundle_dir / "resources" / "agents"
+    expert = None
+    if agents_root.is_dir():
+        for child in sorted(agents_root.iterdir(), key=lambda path: path.name):
+            path = child / "agent.json"
+            if not path.is_file():
+                continue
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                expert = raw
+                break
+    if expert is None:
+        raise ValueError("missing_expert_resource")
     return manifest, expert
 
 
@@ -86,19 +89,30 @@ def build_expert_bundle_zip_bytes(
 ) -> bytes:
     from app.core.scenario_bundle import strip_agent_row_for_disk
     from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
+    from app.core.scenario_bundle import _resource_dir_name
 
     buf = io.BytesIO()
     clean = strip_agent_row_for_disk(dict(expert_row))
+    safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
     manifest = {
-        "bundle_version": EXPERT_BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "expert": strip_resource_ids(clean),
+        "bundle_type": "agent",
+        "root_resources": [{"type": "agent", "name": str(clean.get("name") or "").strip()}],
+        "resource_counts": {
+            "scenarios": 0,
+            "agents": 1,
+            "skills": len(skill_directories),
+            "tools": len(safe_mcp_rows),
+            "models": 0,
+        },
     }
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(EXPERT_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
-        if safe_mcp_rows:
-            zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
+        agent_dir = _resource_dir_name(clean.get("name"), "agent")
+        zf.writestr(f"resources/agents/{agent_dir}/agent.json", json.dumps(strip_resource_ids(clean), ensure_ascii=False, indent=2) + "\n")
+        for row in safe_mcp_rows:
+            tool_dir = _resource_dir_name(row.get("name"), "tool")
+            zf.writestr(f"resources/tools/{tool_dir}/tool.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
         for sid in sorted(skill_directories):
             sdir = (skills_root / sid).resolve()
@@ -117,6 +131,6 @@ def build_expert_bundle_zip_bytes(
                     rel = fp.relative_to(sdir)
                 except ValueError:
                     continue
-                arc = f"{SKILLS_PREFIX}{sid}/{rel.as_posix()}"
+                arc = f"resources/skills/{sid}/{rel.as_posix()}"
                 zf.write(fp, arc)
     return buf.getvalue()

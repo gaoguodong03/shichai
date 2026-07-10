@@ -1,4 +1,4 @@
-"""场景包（ZIP）：内含场景预设、专家快照、技能目录、可选 MCP 列表，用于一键分享与导入。"""
+"""Resource bundle ZIP helpers for scenario, expert, tool, and Skill exports."""
 from __future__ import annotations
 
 import io
@@ -15,11 +15,12 @@ from urllib.parse import unquote_plus, urlsplit
 from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
 
-BUNDLE_VERSION = 1
-MANIFEST_NAME = "scenario_bundle.json"
-AGENTS_BUNDLE_FILE_NAME = "agents.json"
-MCP_NAME = "mcp_servers.json"
-SKILLS_PREFIX = "skills/"
+MANIFEST_NAME = "bundle.json"
+RESOURCES_DIR = "resources"
+SCENARIOS_DIR = f"{RESOURCES_DIR}/scenarios"
+AGENTS_DIR = f"{RESOURCES_DIR}/agents"
+TOOLS_DIR = f"{RESOURCES_DIR}/tools"
+SKILLS_DIR = f"{RESOURCES_DIR}/skills"
 
 
 _SENSITIVE_CONFIG_TOKENS = {
@@ -58,6 +59,18 @@ _PLACEHOLDER_VALUE_TOKENS = {
     "changeme",
     "todo",
 }
+
+
+def _resource_dir_name(value: Any, fallback: str) -> str:
+    """Create a ZIP-safe resource directory name from the current name contract."""
+    text = str(value or fallback or "resource").strip() or "resource"
+    cleaned = text.replace("\\", "-").replace("/", "-").replace("..", "-").strip(" .")
+    return cleaned or "resource"
+
+
+def bundle_skills_root(bundle_dir: Path) -> Path:
+    """Return the current resource-bundle Skill root."""
+    return bundle_dir / RESOURCES_DIR / "skills"
 
 
 def _zip_parts_safe(parts: List[str]) -> bool:
@@ -250,16 +263,30 @@ def build_scenario_bundle_zip_bytes(
 ) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        preset = strip_resource_ids(preset_row)
+        safe_experts = [strip_resource_ids(row) for row in expert_rows]
+        safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
         manifest = {
-            "bundle_version": BUNDLE_VERSION,
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "preset": strip_resource_ids(preset_row),
+            "bundle_type": "scenario",
+            "root_resources": [{"type": "scenario", "name": str(preset.get("name") or "").strip()}],
+            "resource_counts": {
+                "scenarios": 1,
+                "agents": len(safe_experts),
+                "skills": len(skill_directories),
+                "tools": len(safe_mcp_rows),
+                "models": 0,
+            },
         }
         zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        zf.writestr(AGENTS_BUNDLE_FILE_NAME, json.dumps(strip_resource_ids(expert_rows), ensure_ascii=False, indent=2) + "\n")
-        safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
-        if safe_mcp_rows:
-            zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
+        scenario_dir = _resource_dir_name(preset.get("name"), "scenario")
+        zf.writestr(f"{SCENARIOS_DIR}/{scenario_dir}/scenario.json", json.dumps(preset, ensure_ascii=False, indent=2) + "\n")
+        for row in safe_experts:
+            agent_dir = _resource_dir_name(row.get("name"), "agent")
+            zf.writestr(f"{AGENTS_DIR}/{agent_dir}/agent.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
+        for row in safe_mcp_rows:
+            tool_dir = _resource_dir_name(row.get("name"), "tool")
+            zf.writestr(f"{TOOLS_DIR}/{tool_dir}/tool.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
         for sid in sorted(skill_directories):
             sdir = (skills_root / sid).resolve()
@@ -278,7 +305,7 @@ def build_scenario_bundle_zip_bytes(
                     rel = fp.relative_to(sdir)
                 except ValueError:
                     continue
-                arc = f"{SKILLS_PREFIX}{sid}/{rel.as_posix()}"
+                arc = f"{SKILLS_DIR}/{sid}/{rel.as_posix()}"
                 zf.write(fp, arc)
     return buf.getvalue()
 
@@ -317,33 +344,47 @@ def read_bundle_manifest_and_lists(
 ) -> Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
     man_path = bundle_dir / MANIFEST_NAME
     if not man_path.is_file():
-        raise ValueError("missing_scenario_bundle_json")
+        raise ValueError("missing_bundle_json")
     manifest = json.loads(man_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("invalid_manifest")
-    preset = manifest.get("preset")
-    if not isinstance(preset, dict):
-        raise ValueError("missing_preset_in_manifest")
+    if manifest.get("bundle_type") != "scenario":
+        raise ValueError("invalid_bundle_type")
 
-    agent_list: List[Dict[str, Any]] = []
-    agent_path = bundle_dir / AGENTS_BUNDLE_FILE_NAME
-    if agent_path.is_file():
-        raw = json.loads(agent_path.read_text(encoding="utf-8"))
-        if isinstance(raw, list):
-            agent_list = [x for x in raw if isinstance(x, dict)]
+    scenario_list = _read_resource_rows(bundle_dir / RESOURCES_DIR / "scenarios", "scenario.json")
+    if not scenario_list:
+        raise ValueError("missing_scenario_resource")
+    preset = scenario_list[0]
 
-    mcp_list: List[Dict[str, Any]] = []
-    mcp_path = bundle_dir / MCP_NAME
-    if mcp_path.is_file():
-        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
-        if isinstance(raw, list):
-            mcp_list = [x for x in raw if isinstance(x, dict)]
+    agent_list = _read_resource_rows(bundle_dir / RESOURCES_DIR / "agents", "agent.json")
+    mcp_list = _read_resource_rows(bundle_dir / RESOURCES_DIR / "tools", "tool.json")
 
     return manifest, preset, agent_list, mcp_list
 
 
+def _read_resource_rows(root: Path, filename: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if not root.is_dir():
+        return rows
+    for child in sorted(root.iterdir(), key=lambda path: path.name):
+        if not child.is_dir():
+            continue
+        path = child / filename
+        if not path.is_file():
+            continue
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            rows.append(raw)
+    return rows
+
+
+def read_bundle_tool_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
+    """Read current-contract tool rows from a resource bundle."""
+    return _read_resource_rows(bundle_dir / RESOURCES_DIR / "tools", "tool.json")
+
+
 def list_skill_directories_in_bundle_skills_dir(bundle_dir: Path) -> List[str]:
-    root = bundle_dir / "skills"
+    root = bundle_skills_root(bundle_dir)
     if not root.is_dir():
         return []
     out: List[str] = []
@@ -367,7 +408,7 @@ def copy_bundle_skills_to_user(
     """将 bundle_dir/skills/<id>/ 复制到用户技能目录，目录名即 skill_directory。"""
     imported: List[str] = []
     skipped: List[str] = []
-    skills_root = bundle_dir / "skills"
+    skills_root = bundle_skills_root(bundle_dir)
     if not skills_root.is_dir():
         return imported, skipped
     user_skills_dir.mkdir(parents=True, exist_ok=True)

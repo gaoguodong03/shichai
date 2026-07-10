@@ -240,15 +240,14 @@ def _agent_name_identity_import_plan(
         name_key = _normalized_name_key(incoming.get("name"))
         if not incoming_name or not name_key:
             continue
-        if name_key in existing_names:
-            name_map[incoming_name] = incoming_name
-            kept_existing_names.append(incoming_name)
-            continue
         copied = strip_agent_row_for_disk(dict(incoming))
         name_map[incoming_name] = incoming_name
+        if name_key in existing_names:
+            rows_to_import.append(copied)
+            continue
         rows_to_import.append(copied)
         existing_names.add(name_key)
-    return name_map, rows_to_import, list(dict.fromkeys(kept_existing_names))
+    return name_map, rows_to_import, []
 
 
 def _agent_name_conflicts(
@@ -274,9 +273,43 @@ def _agent_name_conflicts(
     return conflicts
 
 
-def _remap_scene_agents(preset: Dict[str, Any], agent_name_map: Dict[str, str]) -> Dict[str, Any]:
-    _ = agent_name_map
-    return dict(preset)
+def _remap_scene_references(
+    preset: Dict[str, Any],
+    agent_name_map: Dict[str, str],
+    skill_directory_map: Dict[str, str],
+) -> Dict[str, Any]:
+    """Rewrite bundle-local references to the current account's resource names."""
+    work = dict(preset)
+    if isinstance(work.get("agent_names"), list):
+        work["agent_names"] = [
+            agent_name_map.get(str(name or "").strip(), str(name or "").strip())
+            for name in work.get("agent_names") or []
+            if str(name or "").strip()
+        ]
+    host = dict(work.get("host") or {}) if isinstance(work.get("host"), dict) else {}
+    skill_directory = str(host.get("skill_directory") or "").strip()
+    if skill_directory and skill_directory in skill_directory_map:
+        host["skill_directory"] = skill_directory_map[skill_directory]
+    if host:
+        work["host"] = host
+    return work
+
+
+def _remap_agent_skill_references(agent: Dict[str, Any], skill_directory_map: Dict[str, str]) -> Dict[str, Any]:
+    """Rewrite agent Skill directory references after bundle Skill import planning."""
+    work = strip_agent_row_for_disk(dict(agent))
+    skills = []
+    for item in work.get("skills") or []:
+        if isinstance(item, dict):
+            row = dict(item)
+            directory_name = str(row.get("directory_name") or "").strip()
+            if directory_name and directory_name in skill_directory_map:
+                row["directory_name"] = skill_directory_map[directory_name]
+            skills.append(row)
+        elif isinstance(item, str) and item.strip():
+            skills.append(skill_directory_map.get(item.strip(), item.strip()))
+    work["skills"] = skills
+    return work
 
 
 def _prepare_import_scene_by_name_identity(
@@ -302,26 +335,19 @@ def _prepare_import_scene_by_name_identity(
 ]:
     imported_skills, overwritten_skills, skill_directory_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
     tool_name_map, mcp_rows_to_import, _overwritten_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
-    remapped_preset = dict(norm)
-    remapped_agents = [strip_agent_row_for_disk(dict(row)) for row in agent_bundle if isinstance(row, dict)]
+    remapped_agents = [
+        _remap_agent_skill_references(row, skill_directory_map)
+        for row in agent_bundle
+        if isinstance(row, dict)
+    ]
     agent_name_map, agent_rows_to_import, kept_agent_names = _agent_name_identity_import_plan(
         existing_agents,
         remapped_agents,
     )
-    remapped_preset = _remap_scene_agents(remapped_preset, agent_name_map)
+    remapped_preset = _remap_scene_references(norm, agent_name_map, skill_directory_map)
 
-    existing_presets = _load_session_preset_rows_from_resource_files()
-    existing_scene_names = {
-        _normalized_name_key(row.get("name")): str(row.get("name") or "").strip()
-        for row in existing_presets
-        if _normalized_name_key(row.get("name")) and str(row.get("name") or "").strip()
-    }
-    existing_scene_name = existing_scene_names.get(_normalized_name_key(remapped_preset.get("name")))
     kept_scene_names: List[str] = []
     keep_preset = False
-    if existing_scene_name:
-        kept_scene_names.append(existing_scene_name)
-        keep_preset = True
     return (
         remapped_preset,
         keep_preset,
@@ -510,7 +536,7 @@ def _session_preset_bundle_zip_for_preset(preset_name: str) -> Tuple[bytes, Dict
 
 @router.get("/settings/session-presets/{preset_name}/export-bundle")
 async def export_session_preset_bundle(preset_name: str):
-    """导出场景包 ZIP：含 scenario_bundle.json、agents.json、skills/、可选 mcp_servers.json。"""
+    """导出场景资源包 ZIP：bundle.json + resources/ 镜像树。"""
     zip_bytes, _match, safe_name = _session_preset_bundle_zip_for_preset(preset_name)
     filename = f"scenario-bundle-{safe_name}.zip"
     return StreamingResponse(
@@ -530,7 +556,7 @@ async def import_session_preset_bundle(
     mcp_skip_existing: bool = Form(False),
     name_conflict: str = Form("overwrite"),
 ):
-    """导入场景包：合并 Agent、Skill、工具与场景预设。dry_run=true 时仅返回包内清单、同名保留与名称映射预览。"""
+    """导入场景包：合并 Agent、Skill、工具与场景预设。dry_run=true 时返回包内清单、同名覆盖与名称映射预览。"""
     from app.api.agents import load_agent_instances
 
     fn = (file.filename or "").strip().lower()
@@ -633,7 +659,7 @@ async def import_session_preset_bundle(
                         "name_conflict_mode": conflict,
                         "missing_references": missing_references,
                     },
-                    "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹；同名资源保留本地。",
+                    "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹；同名资源按当前契约覆盖。",
                 },
             }
 
@@ -827,8 +853,8 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "overwritten_existing_names": overwritten_existing_names,
                 "kept_existing_names": kept_scene_names,
                 "skills_imported": imported_skills,
-                "skills_overwritten": [],
-                "skills_kept": overwritten_skills,
+                "skills_overwritten": overwritten_skills,
+                "skills_kept": [],
                 "skills_skipped": [],
                 "agent_imported_names": [
                     str(row.get("name") or "").strip()

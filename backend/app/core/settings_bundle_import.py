@@ -10,7 +10,7 @@ import yaml
 
 from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row
-from app.core.scenario_bundle import list_skill_directories_in_bundle_skills_dir
+from app.core.scenario_bundle import bundle_skills_root, list_skill_directories_in_bundle_skills_dir
 
 
 def normalized_name_key(raw: Any) -> str:
@@ -217,7 +217,7 @@ def _skill_dir_for_directory_name(
         return None
     roots: List[Path] = []
     if bundle_dir is not None:
-        roots.append(bundle_dir / "skills")
+        roots.append(bundle_skills_root(bundle_dir))
     roots.append(user_skills_dir)
     roots.extend(extra_skill_roots)
     for root in roots:
@@ -479,8 +479,8 @@ def skill_name_identity_import_plan(
 
     directory_map: Dict[str, str] = {}
     copy_pairs: List[Tuple[str, str]] = []
-    kept_existing: List[str] = []
-    skills_root = bundle_dir / "skills"
+    overwritten: List[str] = []
+    skills_root = bundle_skills_root(bundle_dir)
     for incoming_directory in skill_directories:
         src = skills_root / incoming_directory
         if not src.is_dir() or not (src / "SKILL.md").is_file():
@@ -489,20 +489,20 @@ def skill_name_identity_import_plan(
         name_key = normalized_name_key(fm.get("name") or incoming_directory)
         existing_directory = existing_name_to_directory.get(name_key) if name_key else ""
         if existing_directory:
-            directory_map[incoming_directory] = existing_directory
-            kept_existing.append(existing_directory)
-            continue
-        target_directory = _new_skill_directory_name(used_directory_names)
+            target_directory = existing_directory
+            overwritten.append(existing_directory)
+        else:
+            target_directory = _new_skill_directory_name(used_directory_names)
+            if name_key:
+                existing_name_to_directory[name_key] = target_directory
         directory_map[incoming_directory] = target_directory
         copy_pairs.append((incoming_directory, target_directory))
-        if name_key:
-            existing_name_to_directory[name_key] = target_directory
-    return directory_map, copy_pairs, list(dict.fromkeys(kept_existing))
+    return directory_map, copy_pairs, list(dict.fromkeys(overwritten))
 
 
 def bundle_skill_display_name_map(bundle_dir: Path, skill_directories: List[str] | None = None) -> Dict[str, str]:
     skill_directories = list(skill_directories) if skill_directories is not None else list_skill_directories_in_bundle_skills_dir(bundle_dir)
-    skills_root = bundle_dir / "skills"
+    skills_root = bundle_skills_root(bundle_dir)
     out: Dict[str, str] = {}
     for sid in skill_directories:
         skill_directory = str(sid or "").strip()
@@ -516,10 +516,10 @@ def bundle_skill_display_name_map(bundle_dir: Path, skill_directories: List[str]
 def copy_bundle_skills_to_user_by_name(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
     """Copy bundle skills using name as the import identity.
 
-    Returns (imported_skill_directories, kept_existing_skill_directories, bundle_directory_to_local_directory_map).
+    Returns (imported_skill_directories, overwritten_skill_directories, bundle_directory_to_local_directory_map).
     """
     directory_map, copy_pairs, overwritten = skill_name_identity_import_plan(bundle_dir, user_skills_dir)
-    skills_root = bundle_dir / "skills"
+    skills_root = bundle_skills_root(bundle_dir)
     imported: List[str] = []
     for incoming_directory, target_directory in copy_pairs:
         src = skills_root / incoming_directory

@@ -131,7 +131,7 @@ def _find_agent_row(agent_name: str) -> Optional[Dict[str, Any]]:
 
 @router.get("/agents/{agent_name}/export-bundle")
 async def export_agent_instance_bundle(agent_name: str):
-    """导出专家包 ZIP：expert_bundle.json、skills/、可选 mcp_servers.json。"""
+    """导出专家资源包 ZIP：bundle.json + resources/ 镜像树。"""
     from app.api.settings_mcp import load_mcp_config
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.settings_bundle_import import collect_mcp_refs_from_skill_dirs, mcp_rows_for_bundle_refs
@@ -173,6 +173,7 @@ async def import_agent_instance_bundle(
     from app.core.scenario_bundle import (
         extract_scenario_bundle_dir,
         list_skill_directories_in_bundle_skills_dir,
+        read_bundle_tool_rows,
     )
     from app.skills.loader import get_builtin_skills_dir
 
@@ -202,12 +203,7 @@ async def import_agent_instance_bundle(
             skill_directories_in_zip,
         )
 
-        mcp_path = tmp / "mcp_servers.json"
-        mcp_bundle: List[Dict[str, Any]] = []
-        if mcp_path.is_file():
-            raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
-            if isinstance(raw_m, list):
-                mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
+        mcp_bundle = read_bundle_tool_rows(tmp)
 
         mcps_preview = [
             {"name": str(x.get("name") or "")}
@@ -246,7 +242,7 @@ async def import_agent_instance_bundle(
                         "name_conflict_existing_names": same_name_agent_names,
                         "missing_references": missing_references,
                     },
-                    "note": "确认后将写入技能目录并合并专家；同名 Agent 保留本地。",
+                    "note": "确认后将写入技能目录并合并专家；同名专家按当前契约覆盖。",
                 },
             }
 

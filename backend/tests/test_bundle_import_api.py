@@ -20,7 +20,7 @@ def _mcp_row(name: str) -> dict:
     }
 
 
-def test_skill_zip_import_keeps_same_name_local_skill(monkeypatch, tmp_path: Path):
+def test_skill_zip_import_overwrites_same_name_local_skill_content(monkeypatch, tmp_path: Path):
     from app.api import settings_skills as api
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
     from app.main import app
@@ -59,8 +59,9 @@ def test_skill_zip_import_keeps_same_name_local_skill(monkeypatch, tmp_path: Pat
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["directory_name"] == "skill-local"
-    assert data["kept_by_name"] is True
-    assert "old body" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert data["overwritten_by_name"] is True
+    assert "new body" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert "old body" not in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
     assert not any(p.name != "skill-local" for p in ctx.skills_dir.iterdir() if p.is_dir())
 
 
@@ -108,7 +109,7 @@ def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path
     assert [x["name"] for x in missing["tools"]] == ["Missing Tool"]
 
 
-def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Path):
+def test_scene_bundle_import_overwrites_same_name_resources(monkeypatch, tmp_path: Path):
     from app.api.agents import save_agent_instances
     from app.api import settings_presets as api
     from app.api.settings_mcp import save_mcp_config
@@ -145,15 +146,18 @@ def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Pa
     try:
         preview = asyncio.run(api._import_scene_from_bundle_bytes(raw, dry_run=True))
         result = asyncio.run(api._import_scene_from_bundle_bytes(raw, dry_run=False))
+        imported_scene = next(row for row in api._load_session_preset_rows_from_resource_files() if row["name"] == "Scene A")
     finally:
         reset_current_username(token)
 
     assert preview["preview"]["name_conflict_existing_names"] == ["Scene A"]
     assert "skill_names" not in preview["preview"]
     assert preview["preview"]["skill_display_names"] == {"skill-shared-skill": "Skill A"}
-    assert result["summary"]["kept_agent_names"] == ["Expert A"]
-    assert result["summary"]["skills_kept"] == ["skill-local"]
-    assert "old" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert result["summary"]["agent_imported_names"] == ["Expert A"]
+    assert result["summary"]["skills_overwritten"] == ["skill-local"]
+    assert "new" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert "old" not in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert imported_scene["host"]["skill_directory"] == "skill-local"
 
 
 def test_expert_bundle_preview_uses_skill_display_names(monkeypatch, tmp_path: Path):

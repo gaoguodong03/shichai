@@ -1,5 +1,8 @@
 import shutil
 import tempfile
+import io
+import json
+import zipfile
 from pathlib import Path
 
 from app.core.expert_bundle import build_expert_bundle_zip_bytes, merge_single_expert_into_instances
@@ -7,7 +10,7 @@ from app.core.scenario_bundle import extract_scenario_bundle_dir
 from app.core.expert_bundle import read_expert_bundle_manifest
 
 
-def test_merge_single_expert_skip_on_same_name():
+def test_merge_single_expert_overwrites_same_name_even_when_skip_requested():
     user = [{"name": "Old", "description": "", "system_prompt": "", "skills": [], "llm_name": ""}]
     bundle_row = {
         "name": "Old",
@@ -17,11 +20,12 @@ def test_merge_single_expert_skip_on_same_name():
         "llm_name": "",
     }
     merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="skip")
-    assert skipped is True
-    assert fid is None
-    assert overwritten == []
+    assert skipped is False
+    assert fid == "Old"
+    assert overwritten == ["Old"]
     assert len(merged) == 1
     assert merged[0]["name"] == "Old"
+    assert merged[0]["description"] == ""
 
 
 def test_merge_single_expert_overwrite_all_same_name_and_keep_import():
@@ -55,6 +59,14 @@ def test_expert_bundle_zip_roundtrip():
     root = Path(tempfile.mkdtemp())
     try:
         raw = build_expert_bundle_zip_bytes(expert, [], root, [])
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            names = set(zf.namelist())
+            assert "bundle.json" in names
+            assert "expert_bundle.json" not in names
+            manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+            assert manifest["bundle_type"] == "agent"
+            assert "bundle_version" not in manifest
+            assert "resources/agents/E/agent.json" in names
         ext = extract_scenario_bundle_dir(raw)
         try:
             _m, ex = read_expert_bundle_manifest(ext)
