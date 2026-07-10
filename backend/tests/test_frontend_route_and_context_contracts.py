@@ -158,6 +158,19 @@ def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallba
     assert "if (body.target_agent_name) messageBody.target_agent_name = body.target_agent_name" in chat_handler.group(1)
 
 
+def test_e2e_host_profile_mock_uses_host_name_not_display_name():
+    files = [
+        "frontend/e2e/fixtures/mockApi.ts",
+        "frontend/e2e/settings.spec.ts",
+        "frontend/e2e/workspace.spec.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+
+    assert "hostProfile.display_name" not in combined
+    assert "state.hostProfile.display_name" not in combined
+    assert "display_name || state.hostProfile.name" not in combined
+
+
 def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
     files = [
         "frontend/src/api/chat.ts",

@@ -9,7 +9,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('menuitem', { name: '空会话' }).click()
     await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible()
 
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请回答这条 UI 自动化消息')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请回答这条 UI 自动化消息')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('自动化测试回复：需求已收到。')).toBeVisible()
@@ -73,8 +73,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.locator('.group-chat-workspace-preview-textarea')).toHaveValue(/# 验收说明/)
     await page.locator('.group-chat-workspace-preview').getByRole('button', { name: '取消' }).click()
 
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请更新工作区文件')
-    await expect(page.getByPlaceholder('输入 @ 可提及主持人或专家')).toHaveValue('请更新工作区文件')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请更新工作区文件')
+    await expect(page.getByPlaceholder('输入 @ 可指定专家')).toHaveValue('请更新工作区文件')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('我已经更新工作区文件。')).toBeVisible()
@@ -261,50 +261,16 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         resolve()
       })
     })
-    let releaseFallback: (() => void) | null = null
-    const fallbackStarted = new Promise<void>((resolve) => {
-      page.route('**/api/sessions/session-existing/chat', async (route) => {
-        if (route.request().method() !== 'POST') return route.fallback()
-        resolve()
-        await new Promise<void>((release) => {
-          releaseFallback = release
-        })
-        await route.fulfill({
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status: 'ok',
-            data: {
-              messages: [
-                {
-                  message_id: 'assistant-writer-final',
-                  speaker: { type: 'expert', agent_name: '写作专家', skill: 'skill-write' },
-                  message: { content: '文章草稿已经写入工作区。' },
-                  created_at: '2026-05-23T10:01:00Z',
-                },
-              ],
-              end: { type: 'end', run_id: 'run-e2e-custom', phase: 'awaiting_user', waiting_for_user: true },
-            },
-          }),
-        })
-      })
-    })
-
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请写一篇文章')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请写一篇文章')
     await page.getByRole('button', { name: '发送' }).click()
 
     await streamReachedFileWrite
-    await fallbackStarted
     const placeholder = page.locator('.group-chat-msg-row-other').filter({ hasText: '写作专家' }).last()
     await expect(placeholder.getByText('正在运行中...')).toBeVisible()
-
-    releaseFallback?.()
-
-    await expect(page.getByText('文章草稿已经写入工作区。')).toBeVisible()
-    await expect(page.getByText('正在运行中...')).toHaveCount(0)
+    await expect(page.getByText('四九已帮您切换专家：写作专家')).toBeVisible()
   })
 
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {
@@ -537,7 +503,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请换一个专家继续')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请换一个专家继续')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('四九已帮您切换专家：写作专家')).toBeVisible()
@@ -563,7 +529,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     })
 
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请连续处理到暂停')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请连续处理到暂停')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('已暂停：等待你的确认')).toBeVisible()
@@ -572,7 +538,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
   test('场景会话工作空间显示场景主持人名称', async ({ page }) => {
     const state = createE2eState()
-    state.hostProfile.display_name = '全局主持'
+    state.hostProfile.name = '全局主持'
     state.sessions[0] = {
       ...state.sessions[0],
       host: { name: '场景主持', skill_name: '', skill_directory: '' },
@@ -641,7 +607,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请后台运行一下')
+    await page.getByPlaceholder('输入 @ 可指定专家').fill('请后台运行一下')
     await page.getByRole('button', { name: '发送' }).click()
     await streamStarted
 
