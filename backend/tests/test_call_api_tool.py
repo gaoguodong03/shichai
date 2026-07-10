@@ -169,3 +169,16 @@ def test_call_api_does_not_write_cursor_debug_log(monkeypatch):
 
     assert "状态码: 200" in out
     assert not debug_log.exists()
+
+
+def test_saved_http_api_helper_errors_do_not_advertise_removed_call_api_tool():
+    from app.tools import call_api as mod
+
+    text = Path(mod.__file__).read_text(encoding="utf-8")
+
+    for phrase in [
+        "不要用 call_api",
+        "改用 call_api",
+        "call_api 的 url",
+    ]:
+        assert phrase not in text

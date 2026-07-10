@@ -251,11 +251,11 @@ def _call_api_impl(
         if "protocol" in err_str.lower() and ("missing" in err_str.lower() or "http" in err_str.lower()):
             return (
                 f"错误：请求失败 - {e}\n\n"
-                "提示：call_api 的 url 需包含 http:// 或 https://。若您要**生成图片**，请使用 image-generation_generate_image 或 volces-icon_generate_app_icon，不要用 call_api。"
+                "提示：HTTP API 工具的 URL 需包含 http:// 或 https://。若您要**生成图片**，请使用 image-generation_generate_image 或 volces-icon_generate_app_icon。"
             )
         if "nodename" in err_str or "not known" in err_str or getattr(e, "errno", None) == 8:
             return (
                 "错误：无法解析请求的域名（网络或 DNS 异常）。请检查本机网络、代理或防火墙。\n\n"
-                "若您要**生成图片**，请改用 image-generation_generate_image 或 volces-icon_generate_app_icon，不要用 call_api 请求外部 URL。"
+                "若您要**生成图片**，请改用 image-generation_generate_image 或 volces-icon_generate_app_icon。"
             )
         return f"错误：请求失败 - {e}"
