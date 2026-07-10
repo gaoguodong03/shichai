@@ -42,7 +42,7 @@ from app.core.settings_bundle_import import (
     normalized_name_key,
     prepare_scene_import_by_name_identity,
     remap_frontmatter_mcp_refs,
-    skill_name_identity_import_plan as _skill_name_identity_import_plan,
+    skill_directory_identity_import_plan as _skill_directory_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
 from app.core.name_based_resources import normalize_scenario_row
@@ -441,7 +441,7 @@ async def import_session_preset_bundle(
         ]
 
         user_skills = _get_skills_dir()
-        skill_directory_map, _skill_copy_pairs, would_overwrite_skills = _skill_name_identity_import_plan(
+        skill_directory_map, _skill_copy_pairs, would_overwrite_skills = _skill_directory_identity_import_plan(
             tmp,
             user_skills,
             skill_directories_in_zip,
@@ -576,7 +576,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         skill_directories_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
         skill_display_names = _bundle_skill_display_name_map(tmp, skill_directories_in_zip)
         user_skills = _get_skills_dir()
-        skill_directory_map, _skill_copy_pairs, overwritten_skill_directories = _skill_name_identity_import_plan(
+        skill_directory_map, _skill_copy_pairs, overwritten_skill_directories = _skill_directory_identity_import_plan(
             tmp,
             user_skills,
             skill_directories_in_zip,

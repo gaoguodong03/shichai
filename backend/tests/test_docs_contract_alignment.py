@@ -455,3 +455,22 @@ def test_sandbox_tool_docs_use_current_workspace_rename_schema():
 
     assert "target_path" in section
     assert "new_name" not in section
+
+
+def test_resource_import_docs_use_skill_directory_identity():
+    """Resource import docs must not describe Skill import identity as display-name based."""
+    paths = [
+        PROJECT_ROOT / "docs" / "design" / "interface-document.md",
+        PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md",
+        PROJECT_ROOT / "docs" / "architecture" / "scenario-bundle-export.md",
+    ]
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for forbidden in [
+            "同名 Skill",
+            "frontmatter `name` 判断",
+            "导入同名判断",
+            "Skill 同名覆盖",
+        ]:
+            assert forbidden not in text, path

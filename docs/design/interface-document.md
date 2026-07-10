@@ -537,7 +537,7 @@ DELETE /api/agents/{agent_name}
 | `file` | file | 必填 | ZIP 专家包 |
 | `dry_run` | bool | `true` | 只预览不写入 |
 
-同名专家按名称覆盖；同名 Skill 保留目标账号本地目录名但替换目录内容；同名工具按名称覆盖。导入接口不提供调用方选择的冲突策略字段。
+同名专家按名称覆盖；Skill 按 `directory_name` 覆盖同目录内容，不同目录即新增；同名工具按名称覆盖。导入接口不提供调用方选择的冲突策略字段。
 
 ## 8. 场景接口
 
@@ -564,7 +564,7 @@ PUT /api/settings/session-presets
 | `GET` | `/api/settings/session-presets/{preset_name}/export-bundle` | 导出场景 ZIP 包 |
 | `POST` | `/api/settings/session-presets/import-bundle` | 导入场景 ZIP 包 |
 
-导入接口使用 multipart form，至少包含 `file` 和可选 `dry_run`。同名场景、专家和工具按名称覆盖；同名 Skill 保留目标账号本地目录名但替换目录内容。导入接口不提供调用方选择的冲突策略字段。
+导入接口使用 multipart form，至少包含 `file` 和可选 `dry_run`。同名场景、专家和工具按名称覆盖；Skill 按 `directory_name` 覆盖同目录内容，不同目录即新增。导入接口不提供调用方选择的冲突策略字段。
 
 ## 9. Skill 接口
 
@@ -608,7 +608,7 @@ PUT /api/settings/session-presets
 | `GET` | `/api/settings/skills/{directory_name}/export-zip` | 导出 Skill ZIP |
 | `POST` | `/api/settings/skills/import-zip` | 导入 Skill ZIP |
 
-Skill ZIP 导入使用 multipart form，字段为 `file`。同名 Skill 以 frontmatter `name` 判断，保留目标账号本地目录名但替换目录内容。
+Skill ZIP 导入使用 multipart form，字段为 `file`。Skill 以 ZIP 内 `resources/skills/{directory_name}/` 作为导入身份；目标账号已有同目录时覆盖该目录内容，否则按该 `directory_name` 新增目录。
 
 ## 10. MCP 接口
 

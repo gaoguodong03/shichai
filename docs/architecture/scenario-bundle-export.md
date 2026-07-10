@@ -79,13 +79,13 @@ st49-resource-bundle.zip
 
 ## 3. 身份字段
 
-导入导出按名称判断资源身份：
+导入导出按当前资源身份字段判断资源身份：
 
 | 资源 | 业务身份 | 路径说明 |
 |------|----------|----------|
 | 场景 | `scenario.json.name` | `resources/scenarios/<scenario-dir>/` 只是落盘目录 |
 | 专家 | `agent.json.name` | `resources/agents/<agent-dir>/` 只是落盘目录 |
-| Skill | `directory_name` | `resources/skills/<skill-directory>/` 是本地执行路径，frontmatter `name` 只做展示和导入同名判断 |
+| Skill | `directory_name` | `resources/skills/<skill-directory>/` 是查找、引用和执行路径，frontmatter `name` 只做展示 |
 | 工具 | `tool.json.name` | `resources/tools/<tool-dir>/` 只是落盘目录 |
 | 模型 | `model.json.name` | `resources/models/<model-dir>/` 只是落盘目录 |
 
@@ -101,7 +101,7 @@ st49-resource-bundle.zip
 - `scenario_id`
 - `*_ids`
 
-Skill 的 `directory_name` 是查找、引用和执行路径字段。导入时如果发生同名覆盖或目录冲突，必须根据目标账号本地目录重写引用。
+Skill 的 `directory_name` 是查找、引用和执行路径字段。导入时如果包内目录和目标账号已有目录相同，覆盖该目录内容；不同目录视为新增 Skill。
 
 ## 4. 导出规则
 
@@ -160,15 +160,15 @@ Skill 包必须包含：
 |------|----------|
 | 场景 | 覆盖本地场景内容 |
 | 专家 | 覆盖本地专家内容 |
-| Skill | 保留本地目录名，删除旧目录内容，写入导入包中同名 Skill 的全部文件 |
+| Skill | 按 `directory_name` 覆盖同目录内容；不同目录即新增 |
 | 工具 | 覆盖本地工具内容 |
 | 模型 | 只在导入模型包时覆盖本地模型内容 |
 
-不同名资源按当前命名规则创建新目录并写入。
+不同名资源按当前命名规则创建新目录并写入；Skill 冲突判断只使用 `directory_name`。
 
 ## 6. Skill 目录映射
 
-Skill 同名覆盖时必须保留目标账号的本地目录名，原因是本地其他专家可能已经引用该目录。
+Skill 目录覆盖时必须保留目标账号的本地目录名，原因是本地其他专家可能已经引用该目录。
 
 导入时需要生成临时 `directory_map`：
 

@@ -29,14 +29,14 @@ from app.core.session_preset_validate import (
 from app.core.settings_bundle_import import (
     bundle_skill_display_name_map as _bundle_skill_display_name_map,
     collect_tool_names_from_skill_dirs,
-    copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
+    copy_bundle_skills_to_user_by_directory as _copy_bundle_skills_to_user_by_directory,
     find_missing_references_for_expert_bundle as _find_missing_references_for_expert_bundle,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     find_missing_references_for_skill_bundle as _find_missing_references_for_skill_bundle,
     mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
     mcp_name_map_for_import,
     remap_frontmatter_mcp_refs,
-    skill_name_identity_import_plan as _skill_name_identity_import_plan,
+    skill_directory_identity_import_plan as _skill_directory_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
 from app.core.scenario_bundle import (
@@ -189,20 +189,9 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         bundle_dir_for_refs = tmp
         fm, body = _read_skill_file(src)
         incoming_name = str(fm.get("name") or sid0).strip() or sid0
-        incoming_name_key = _normalized_name_key(incoming_name)
         base = _get_skills_dir()
         base.mkdir(parents=True, exist_ok=True)
-        existing_same_name_directories: List[str] = []
-        for child in sorted(base.iterdir(), key=lambda p: p.name):
-            if not child.is_dir():
-                continue
-            try:
-                efm, _ = _read_skill_file(child)
-            except Exception:
-                continue
-            ename = str(efm.get("name") or child.name).strip()
-            if _normalized_name_key(ename) == incoming_name_key:
-                existing_same_name_directories.append(child.name)
+        existing_same_directory = (base / sid0).is_dir()
         if dry_run:
             req_preview = _python_requirements_from_skill_dir(src)
             missing_references = _find_missing_references_for_skill_bundle(
@@ -219,14 +208,14 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "preview": {
                     "directory_name": sid0,
                     "name": incoming_name,
-                    "overwrite_directory_names": existing_same_name_directories,
+                    "overwrite_directory_names": [sid0] if existing_same_directory else [],
                     "python_requirements": req_preview,
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "missing_references": missing_references,
                 },
             }
         tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        target_directory = existing_same_name_directories[0] if existing_same_name_directories else _next_available_directory_name(base, _slugify(incoming_name))
+        target_directory = sid0
         dest = base / target_directory
         if dest.exists():
             shutil.rmtree(dest)
@@ -261,7 +250,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             "imported_directory_name": target_directory,
             "name": str(fm2.get("name") or target_directory),
             "summary": {
-                "overwritten_directory_names": existing_same_name_directories,
+                "overwritten_directory_names": [target_directory] if existing_same_directory else [],
                 "missing_references": missing_references,
                 "tool_name_map": tool_name_map,
                 "mcp_added": mcp_added,
@@ -329,7 +318,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
         skill_display_names = _bundle_skill_display_name_map(tmp, directory_names_in_zip)
         mcp_bundle = read_bundle_tool_rows(tmp)
         user_skills = _agent_skills_dir()
-        directory_name_map, _skill_copy_pairs, overwritten_directory_names = _skill_name_identity_import_plan(
+        directory_name_map, _skill_copy_pairs, overwritten_directory_names = _skill_directory_identity_import_plan(
             tmp,
             user_skills,
             directory_names_in_zip,
@@ -372,7 +361,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             load_mcp_config(),
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
-        imported_skills, overwritten_skills, directory_name_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
+        imported_skills, overwritten_skills, directory_name_map = _copy_bundle_skills_to_user_by_directory(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
         tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         for sid in imported_skills:
@@ -539,7 +528,7 @@ async def import_skill_zip(
     data = {
         **result,
         "directory_name": directory_name,
-        "overwritten_by_name": bool(summary.get("overwritten_directory_names")),
+        "overwritten_by_directory": bool(summary.get("overwritten_directory_names")),
     }
     return {"status": "ok", "data": data}
 

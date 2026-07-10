@@ -245,6 +245,26 @@ def test_normalize_skill_refs_dedupes_by_exact_directory_name_identity():
     ]
 
 
+def test_skill_bundle_import_plan_uses_directory_name_identity(tmp_path: Path):
+    from app.core.settings_bundle_import import skill_directory_identity_import_plan
+
+    bundle_dir = tmp_path / "bundle"
+    incoming = bundle_dir / "resources" / "skills" / "skill-incoming"
+    incoming.mkdir(parents=True)
+    incoming.joinpath("SKILL.md").write_text("---\nname: Same Display\n---\nincoming\n", encoding="utf-8")
+
+    user_skills = tmp_path / "user-skills"
+    local = user_skills / "skill-local"
+    local.mkdir(parents=True)
+    local.joinpath("SKILL.md").write_text("---\nname: Same Display\n---\nlocal\n", encoding="utf-8")
+
+    directory_map, copy_pairs, overwritten = skill_directory_identity_import_plan(bundle_dir, user_skills)
+
+    assert directory_map == {"skill-incoming": "skill-incoming"}
+    assert copy_pairs == [("skill-incoming", "skill-incoming")]
+    assert overwritten == []
+
+
 def test_normalize_scenario_host_preserves_skill_directory_identity():
     row = normalize_scenario_row(
         {

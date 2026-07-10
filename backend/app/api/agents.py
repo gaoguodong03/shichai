@@ -196,9 +196,9 @@ async def import_agent_instance_bundle(
         user_skills = _agent_skills_dir()
         skill_directories_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
         skill_display_names = bundle_skill_display_name_map(tmp, skill_directories_in_zip)
-        from app.core.settings_bundle_import import skill_name_identity_import_plan
+        from app.core.settings_bundle_import import skill_directory_identity_import_plan
 
-        _skill_directory_map, _skill_copy_pairs, would_overwrite = skill_name_identity_import_plan(
+        _skill_directory_map, _skill_copy_pairs, would_overwrite = skill_directory_identity_import_plan(
             tmp,
             user_skills,
             skill_directories_in_zip,

@@ -4,7 +4,6 @@ from __future__ import annotations
 import io
 import json
 import shutil
-import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,14 +80,6 @@ def read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
         raise ValueError("工具资源包格式错误") from exc
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
-
-def _new_skill_directory_name(used_directory_names: Set[str]) -> str:
-    candidate = f"skill-{uuid.uuid4().hex[:8]}"
-    while candidate in used_directory_names:
-        candidate = f"skill-{uuid.uuid4().hex[:8]}"
-    used_directory_names.add(candidate)
-    return candidate
 
 
 def mcp_name_identity_import_plan(
@@ -287,7 +278,7 @@ def prepare_scene_import_by_name_identity(
     List[str],
 ]:
     """Prepare scene, expert, Skill, and tool rows for name-based bundle import."""
-    imported_skills, overwritten_skills, skill_directory_map = copy_bundle_skills_to_user_by_name(bundle_dir, user_skills_dir)
+    imported_skills, overwritten_skills, skill_directory_map = copy_bundle_skills_to_user_by_directory(bundle_dir, user_skills_dir)
     tool_name_map, mcp_rows_to_import, _overwritten_mcp = mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
     remapped_agents = [
         remap_agent_skill_references(row, skill_directory_map)
@@ -714,25 +705,19 @@ def find_missing_references_for_skill_bundle(
     return missing
 
 
-def skill_name_identity_import_plan(
+def skill_directory_identity_import_plan(
     bundle_dir: Path,
     user_skills_dir: Path,
     skill_directories: List[str] | None = None,
 ) -> Tuple[Dict[str, str], List[Tuple[str, str]], List[str]]:
-    """Plan Skill import by name only without copying files."""
+    """Plan Skill import by directory_name without copying files."""
     skill_directories = list(skill_directories) if skill_directories is not None else list_skill_directories_in_bundle_skills_dir(bundle_dir)
     user_skills_dir.mkdir(parents=True, exist_ok=True)
-    existing_name_to_directory: Dict[str, str] = {}
-    used_directory_names: Set[str] = set()
+    existing_directory_names: Set[str] = set()
     for child in sorted(user_skills_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
             continue
-        directory_name = child.name
-        used_directory_names.add(directory_name)
-        fm = _read_skill_frontmatter(child)
-        name_key = normalized_name_key(fm.get("name") or directory_name)
-        if name_key and name_key not in existing_name_to_directory:
-            existing_name_to_directory[name_key] = directory_name
+        existing_directory_names.add(child.name)
 
     directory_map: Dict[str, str] = {}
     copy_pairs: List[Tuple[str, str]] = []
@@ -742,16 +727,11 @@ def skill_name_identity_import_plan(
         src = skills_root / incoming_directory
         if not src.is_dir() or not (src / "SKILL.md").is_file():
             continue
-        fm = _read_skill_frontmatter(src)
-        name_key = normalized_name_key(fm.get("name") or incoming_directory)
-        existing_directory = existing_name_to_directory.get(name_key) if name_key else ""
-        if existing_directory:
-            target_directory = existing_directory
-            overwritten.append(existing_directory)
+        target_directory = incoming_directory
+        if target_directory in existing_directory_names:
+            overwritten.append(target_directory)
         else:
-            target_directory = _new_skill_directory_name(used_directory_names)
-            if name_key:
-                existing_name_to_directory[name_key] = target_directory
+            existing_directory_names.add(target_directory)
         directory_map[incoming_directory] = target_directory
         copy_pairs.append((incoming_directory, target_directory))
     return directory_map, copy_pairs, list(dict.fromkeys(overwritten))
@@ -770,12 +750,12 @@ def bundle_skill_display_name_map(bundle_dir: Path, skill_directories: List[str]
     return out
 
 
-def copy_bundle_skills_to_user_by_name(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
-    """Copy bundle skills using name as the import identity.
+def copy_bundle_skills_to_user_by_directory(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
+    """Copy bundle skills using directory_name as the import identity.
 
     Returns (imported_skill_directories, overwritten_skill_directories, bundle_directory_to_local_directory_map).
     """
-    directory_map, copy_pairs, overwritten = skill_name_identity_import_plan(bundle_dir, user_skills_dir)
+    directory_map, copy_pairs, overwritten = skill_directory_identity_import_plan(bundle_dir, user_skills_dir)
     skills_root = bundle_skills_root(bundle_dir)
     imported: List[str] = []
     for incoming_directory, target_directory in copy_pairs:

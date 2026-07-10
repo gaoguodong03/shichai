@@ -21,7 +21,7 @@ def _mcp_row(name: str) -> dict:
     }
 
 
-def test_skill_zip_import_overwrites_same_name_local_skill_content(monkeypatch, tmp_path: Path):
+def test_skill_zip_import_uses_directory_name_not_display_name_identity(monkeypatch, tmp_path: Path):
     from app.api import settings_skills as api
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
     from app.main import app
@@ -71,11 +71,13 @@ def test_skill_zip_import_overwrites_same_name_local_skill_content(monkeypatch, 
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["directory_name"] == "skill-local"
-    assert data["overwritten_by_name"] is True
-    assert "new body" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
-    assert "old body" not in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
-    assert not any(p.name != "skill-local" for p in ctx.skills_dir.iterdir() if p.is_dir())
+    imported_skill = ctx.skills_dir / "source_skill"
+    assert data["directory_name"] == "source_skill"
+    assert data["overwritten_by_directory"] is False
+    assert data["summary"]["overwritten_directory_names"] == []
+    assert "old body" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert "new body" in imported_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert sorted(p.name for p in ctx.skills_dir.iterdir() if p.is_dir()) == ["skill-local", "source_skill"]
 
 
 def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path: Path):
@@ -160,10 +162,11 @@ def test_scene_bundle_import_overwrites_same_name_resources(monkeypatch, tmp_pat
     assert "skill_names" not in preview["preview"]
     assert preview["preview"]["skill_display_names"] == {"skill-shared-skill": "Skill A"}
     assert result["summary"]["agent_imported_names"] == ["Expert A"]
-    assert result["summary"]["skills_overwritten"] == ["skill-local"]
-    assert "new" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
-    assert "old" not in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
-    assert imported_scene["host"]["skill_directory"] == "skill-local"
+    imported_skill = ctx.skills_dir / "skill-shared-skill"
+    assert result["summary"]["skills_overwritten"] == []
+    assert "old" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert "new" in imported_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert imported_scene["host"]["skill_directory"] == "skill-shared-skill"
 
 
 def test_bundle_import_apis_do_not_accept_legacy_conflict_controls():
@@ -304,7 +307,7 @@ def test_expert_bundle_preview_uses_skill_display_names(monkeypatch, tmp_path: P
     assert preview["skill_display_names"] == {"skill-incoming": "Incoming Skill"}
 
 
-def test_scene_bundle_import_creates_new_skill_directory_when_path_conflicts(monkeypatch, tmp_path: Path):
+def test_scene_bundle_import_overwrites_same_skill_directory_identity(monkeypatch, tmp_path: Path):
     from app.api import settings_presets as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
@@ -336,5 +339,8 @@ def test_scene_bundle_import_creates_new_skill_directory_when_path_conflicts(mon
 
     imported = result["summary"]["skills_imported"]
     assert len(imported) == 1
-    assert imported[0] != "skill-shared-skill"
-    assert (ctx.skills_dir / imported[0] / "SKILL.md").is_file()
+    assert imported[0] == "skill-shared-skill"
+    assert result["summary"]["skills_overwritten"] == ["skill-shared-skill"]
+    text = (ctx.skills_dir / "skill-shared-skill" / "SKILL.md").read_text(encoding="utf-8")
+    assert "new" in text
+    assert "old" not in text
