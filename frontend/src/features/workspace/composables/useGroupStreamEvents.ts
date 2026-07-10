@@ -134,7 +134,7 @@ export function useGroupStreamEvents(args: {
       ...cleared,
       {
         speaker: { type: 'expert', agent_name: id },
-        message: { content: statusContent },
+        message: { content: statusContent, attachments: [] },
         _streaming: true,
         _streamingStatus: true,
         ...extra,
@@ -174,7 +174,7 @@ export function useGroupStreamEvents(args: {
         ...cleared,
         {
           speaker: { type: 'expert', agent_name: agentName },
-          message: { content: text },
+          message: { content: text, attachments: [] },
           _streaming: true,
           _streamingStatus: false,
         } as unknown as GroupMessage,

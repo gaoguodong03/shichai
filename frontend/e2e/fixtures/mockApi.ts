@@ -119,7 +119,7 @@ export function createE2eState(): E2eState {
           {
             message_id: 'assistant-history',
             speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
-            message: { content: '历史回复：这里可以继续追问。' },
+            message: { content: '历史回复：这里可以继续追问。', attachments: [] },
             created_at: now,
           },
         ],
@@ -394,7 +394,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         session.messages.push({
           message_id: `assistant-${session.messages.length + 1}`,
           speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
-          message: { content: answer },
+          message: { content: answer, attachments: [] },
           created_at: now,
           skill_result: {
             execution_status: 'succeeded',
@@ -411,7 +411,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         ['message', {
           message_id: 'assistant-stream',
           speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
-          message: { content: answer },
+          message: { content: answer, attachments: [] },
           created_at: now,
           skill_result: {
             execution_status: 'succeeded',
