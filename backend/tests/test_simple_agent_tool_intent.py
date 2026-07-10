@@ -8,6 +8,7 @@ from app.agent.simple_agent_finalization import (
     _final_synthesis_instruction,
     _post_tool_synthesis_instruction,
 )
+from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step
 from app.agent.tool_spec import ToolSpec
 
@@ -181,6 +182,27 @@ def test_deterministic_tool_fallback_does_not_expose_missing_llm_summary_state()
     assert "工具已执行完成" in text
     assert "ISEF: International Rules" in text
     assert "模型没有生成最终文字总结" not in text
+
+
+def test_mcp_direct_final_does_not_treat_artifact_ref_as_message_content():
+    raw = json.dumps(
+        {
+            "execution_status": "succeeded",
+            "content": "",
+            "artifacts": [{"type": "markdown", "name": "报告", "path": "reports/report.md"}],
+            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        },
+        ensure_ascii=False,
+    )
+
+    message = _mcp_tool_result_direct_final_message(
+        {
+            "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": {}}],
+            "tool_raw_outputs": [raw],
+        }
+    )
+
+    assert message is None
 
 
 @pytest.mark.asyncio

@@ -30,6 +30,7 @@ from app.agent.group_orchestration_fsm import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_runtime_logs import append_tool_execution_logs
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent, SseStartEvent
+from app.agent.structured_output_contracts import ArtifactRef
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
     build_session_payload,
@@ -176,11 +177,15 @@ def _collect_artifacts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any
         for item in raw_artifacts:
             if not isinstance(item, dict):
                 continue
-            kind = str(item.get("type") or "other").strip() or "other"
-            name = str(item.get("name") or item.get("path") or "artifact").strip()
-            path = str(item.get("path") or "").strip()
-            if path:
-                artifacts.append({"type": kind, "name": name, "path": path})
+            public_ref = {
+                "type": item.get("type"),
+                "name": item.get("name"),
+                "path": item.get("path"),
+            }
+            try:
+                artifacts.append(ArtifactRef.model_validate(public_ref).model_dump())
+            except Exception:
+                continue
     return artifacts
 
 

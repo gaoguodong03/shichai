@@ -6,26 +6,14 @@ from typing import Any
 from app.agent.messages import AIMessage
 
 
-def _text_artifact_from_mcp_result(payload: dict[str, Any]) -> str:
+def _content_from_mcp_result(payload: dict[str, Any]) -> str:
     if str(payload.get("execution_status") or "").strip() != "succeeded":
         return ""
-    content = str(payload.get("content") or "").strip()
-    if content:
-        return content
-    artifacts = payload.get("artifacts")
-    if isinstance(artifacts, list):
-        for item in artifacts:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("type") or "").strip() in {"markdown", "json", "table", "other"}:
-                text = str(item.get("name") or item.get("path") or "").strip()
-                if text:
-                    return text
-    return ""
+    return str(payload.get("content") or "").strip()
 
 
 def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
-    """Surface standard MCP text artifacts directly instead of asking the LLM to restate them."""
+    """Surface standard MCP content directly instead of asking the LLM to restate it."""
     calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
     if not isinstance(calls, list) or not calls:
         return None
@@ -45,7 +33,7 @@ def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage
             continue
         if not isinstance(outer, dict):
             continue
-        text = _text_artifact_from_mcp_result(outer)
+        text = _content_from_mcp_result(outer)
         if text:
             return AIMessage(content=text)
 
@@ -58,7 +46,7 @@ def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage
             continue
         if not isinstance(payload, dict):
             continue
-        text = _text_artifact_from_mcp_result(payload)
+        text = _content_from_mcp_result(payload)
         if text:
             return AIMessage(content=text)
     return None

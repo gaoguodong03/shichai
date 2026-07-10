@@ -33,6 +33,25 @@ async def _collect_stream_events(response) -> list[tuple[str, dict[str, Any]]]:
     return events
 
 
+def test_collect_artifacts_keeps_only_strict_public_artifact_refs():
+    from app.agent.group_chat_runtime import _collect_artifacts
+
+    artifacts = _collect_artifacts(
+        [
+            {
+                "artifacts": [
+                    {"path": "reports/missing-type-and-name.md"},
+                    {"type": "file", "path": "reports/missing-name.md"},
+                    {"type": "legacy", "name": "旧类型", "path": "reports/legacy.md"},
+                    {"type": "file", "name": "报告", "path": "reports/report.md", "data": {"inline": True}},
+                ]
+            }
+        ]
+    )
+
+    assert artifacts == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
+
+
 @pytest.mark.asyncio
 async def test_chat_stream_starts_with_start_event(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
