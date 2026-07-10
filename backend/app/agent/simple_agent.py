@@ -8,6 +8,7 @@ from typing import Any
 
 from app.agent.messages import AIMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
@@ -305,7 +306,7 @@ class SimpleAgent:
                     guard_msgs = _missing_tool_response_messages(
                         tool_calls,
                         [],
-                        "检测到重复工具调用，已停止继续重试",
+                        render_platform_prompt("agent.repeated_tool_guard.v1", {}),
                     )
                     messages.extend(guard_msgs)
                     yield {
@@ -827,7 +828,7 @@ class SimpleAgent:
                     guard_msgs = _missing_tool_response_messages(
                         tool_calls,
                         [],
-                        "检测到重复工具调用，已停止继续重试",
+                        render_platform_prompt("agent.repeated_tool_guard.v1", {}),
                     )
                     messages.extend(guard_msgs)
                     break

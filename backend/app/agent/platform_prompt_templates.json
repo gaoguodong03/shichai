@@ -88,6 +88,7 @@
   "agent.text_tool_protocol.retry.v1": "上一步没有产生可执行的工具调用，平台未执行任何文件操作。请重新选择可用文件工具并填写参数完成任务。",
   "agent.text_tool_protocol.failure.v1": "本轮工具调用格式不符合要求，平台未执行文件操作；如果需要保存或修改文件，请重新发起任务。",
   "agent.tool_call.missing_response.v1": "工具 {tool_name} 未继续执行：{reason}",
+  "agent.repeated_tool_guard.v1": "检测到重复工具调用，已停止继续重试",
   "delivery.guard.unverified_title.v1": "本轮没有确认文件生成成功。",
   "delivery.guard.unverified_reason.v1": "平台没有捕获到成功的文件、图片或工作区写入工具结果，因此不能把专家回复中的生成/保存声明视为已完成。",
   "delivery.guard.mentioned_paths_header.v1": "原回复提到的路径或链接：",
