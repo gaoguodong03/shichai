@@ -218,6 +218,15 @@ def test_backend_prompts_do_not_teach_generic_call_api_tool():
     assert "使用 `call_api`" not in prompt_text
 
 
+def test_call_api_module_does_not_export_generic_llm_tool():
+    """Saved HTTP API execution may reuse the helper, but generic call_api is not an LLM tool."""
+    module_text = (ROOT / "backend/app/tools/call_api.py").read_text(encoding="utf-8")
+
+    assert "def _call_api_impl" in module_text
+    assert "call_api = ToolSpec.from_function" not in module_text
+    assert 'name="call_api"' not in module_text
+
+
 def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
     runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
 

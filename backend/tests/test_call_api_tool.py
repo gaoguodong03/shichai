@@ -7,10 +7,7 @@ import httpx
 
 
 def _run_call_api(mod, **kwargs):
-    tool_obj = mod.call_api
-    if hasattr(tool_obj, "func"):
-        return tool_obj.func(**kwargs)
-    return tool_obj.invoke(kwargs)
+    return mod._call_api_impl(**kwargs)
 
 
 def test_ssrf_guard_blocks_localhost():
