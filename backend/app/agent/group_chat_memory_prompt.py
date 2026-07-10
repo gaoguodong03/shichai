@@ -17,11 +17,11 @@ from app.agent.platform_prompts import render_platform_prompt
 logger = logging.getLogger(__name__)
 
 
-def _build_default_action_prompt(discussion_goal: str, context: str) -> str:
+def _build_default_action_prompt(discussion_goal: str, input_prompt: str) -> str:
     """Build the default expert action prompt when the host provides no instruction."""
     return render_platform_prompt(
         "expert.action.default.v1",
-        {"discussion_goal": discussion_goal, "recent_history": context},
+        {"discussion_goal": discussion_goal, "recent_history": input_prompt},
     )
 
 
@@ -172,13 +172,13 @@ def _build_action_prompt_with_memory(
     session_id: str,
     target_agent_name: str,
     discussion_goal: str,
-    context: str,
+    input_prompt: str,
     app_settings: Dict[str, Any],
     host_next_action: Optional[str] = None,
 ) -> str:
     mem = _get_group_memory_settings(app_settings)
     if not mem["enabled"]:
-        return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, context)
+        return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, input_prompt)
 
     dispatch = {"has_memory": False, "rendered": ""}
     try:
@@ -203,13 +203,13 @@ def _build_action_prompt_with_memory(
             },
         )
 
-    return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, context)
+    return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, input_prompt)
 
 
 def _ensure_structured_action_prompt(
     prompt: str,
     discussion_goal: str,
-    context: str,
+    input_prompt: str,
     target_agent_name: str,
     *,
     host_round_instruction: Optional[str] = None,
@@ -217,7 +217,7 @@ def _ensure_structured_action_prompt(
     """Lightly validate expert action prompt structure and fill missing execution anchors."""
     _ = target_agent_name
     prompt_text = (prompt or "").strip()
-    context_excerpt = _shorten_text(context, max_chars=1600)
+    input_prompt_excerpt = _shorten_text(input_prompt, max_chars=1600)
     host_instruction = (host_round_instruction or "").strip()
     host_already_in_prompt = bool(
         host_instruction
@@ -253,7 +253,7 @@ def _ensure_structured_action_prompt(
             {
                 "host_instruction_block": host_anchor,
                 "discussion_goal": discussion_goal,
-                "input_prompt": context_excerpt,
+                "input_prompt": input_prompt_excerpt,
             },
         )
 
@@ -261,7 +261,7 @@ def _ensure_structured_action_prompt(
     if not has_goal:
         parts.append(render_platform_prompt("expert.action.goal_section.v1", {"discussion_goal": discussion_goal}))
     if not has_input:
-        parts.append(render_platform_prompt("expert.action.input_section.v1", {"input_prompt": context_excerpt}))
+        parts.append(render_platform_prompt("expert.action.input_section.v1", {"input_prompt": input_prompt_excerpt}))
     if not has_output_format:
         parts.append(render_platform_prompt("expert.action.output_format.v1", {}))
     if not has_boundary:
@@ -275,7 +275,7 @@ def build_checked_expert_action_prompt(
     session_id: str,
     target_agent_name: str,
     discussion_goal: str,
-    context: str,
+    input_prompt: str,
     app_settings: Dict[str, Any],
     host_next_action: Optional[str] = None,
 ) -> str:
@@ -283,14 +283,14 @@ def build_checked_expert_action_prompt(
         session_id=session_id,
         target_agent_name=target_agent_name,
         discussion_goal=discussion_goal,
-        context=context,
+        input_prompt=input_prompt,
         app_settings=app_settings,
         host_next_action=host_next_action,
     )
     return _ensure_structured_action_prompt(
         prompt=raw,
         discussion_goal=discussion_goal,
-        context=context,
+        input_prompt=input_prompt,
         target_agent_name=target_agent_name,
         host_round_instruction=host_next_action,
     )

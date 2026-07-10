@@ -1,3 +1,4 @@
+import ast
 import pytest
 from pathlib import Path
 
@@ -127,6 +128,26 @@ def test_expert_action_repair_sections_use_platform_prompt_registry():
         "expert.action.input_section.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_expert_action_prompt_builders_do_not_name_llm_inputs_as_context():
+    """LLM-visible prompt inputs should use prompt terminology, not generic context naming."""
+    module_text = (ROOT / "backend/app/agent/group_chat_memory_prompt.py").read_text(encoding="utf-8")
+    tree = ast.parse(module_text)
+    prompt_builder_names = {
+        "_build_default_action_prompt",
+        "_build_action_prompt_with_memory",
+        "_ensure_structured_action_prompt",
+        "build_checked_expert_action_prompt",
+    }
+
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in prompt_builder_names:
+            continue
+        arg_names = {arg.arg for arg in node.args.args + node.args.kwonlyargs}
+        local_names = {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
+        assert "context" not in arg_names, node.name
+        assert "context_excerpt" not in local_names, node.name
 
 
 def test_group_title_user_messages_use_platform_prompt_registry():

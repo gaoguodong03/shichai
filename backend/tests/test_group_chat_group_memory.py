@@ -35,7 +35,7 @@ def test_action_prompt_default_when_memory_disabled():
         session_id="group-test",
         target_agent_name="专家A",
         discussion_goal="写周报",
-        context="最近讨论内容",
+        input_prompt="最近讨论内容",
         app_settings=app_settings,
         host_next_action="",
     )
@@ -58,7 +58,7 @@ def test_action_prompt_uses_memory_when_available(monkeypatch):
         session_id="group-test",
         target_agent_name="专家A",
         discussion_goal="写周报",
-        context="ignored",
+        input_prompt="ignored",
         app_settings={"group_memory": {"enabled": True, "dispatch_top_k": 2, "max_facts": 20}},
         host_next_action="补充要求",
     )
@@ -77,7 +77,7 @@ def test_action_prompt_short_default_avoids_meta_task_preface():
     out = gc._ensure_structured_action_prompt(
         prompt="请说明边界",
         discussion_goal="伴学研讨",
-        context="学生正在讨论 AI 是否替代了本来该被考察的能力。",
+        input_prompt="学生正在讨论 AI 是否替代了本来该被考察的能力。",
         target_agent_name="同伴专家",
     )
 
