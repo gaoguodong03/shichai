@@ -520,6 +520,60 @@ async def test_build_tools_keeps_safe_named_mcp_tools_for_declared_server(monkey
 
 
 @pytest.mark.asyncio
+async def test_build_tools_loads_mcp_config_with_stable_user_id(monkeypatch):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured = {}
+
+    class DummyManager:
+        server_configs = []
+
+        async def ensure_servers_loaded(self, server_names):
+            self.server_names = list(server_names)
+
+        def get_tools(self):
+            return []
+
+    monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: ["Exa 搜索"])
+    monkeypatch.setattr(
+        tools_for_skill,
+        "load_mcp_config",
+        lambda: [
+            {
+                "name": "Exa 搜索",
+                "type": "mcp",
+                "transport": {
+                    "type": "http",
+                    "base_url": "https://mcp.exa.ai/mcp",
+                    "headers": {"Authorization": "${env:EXA_API_KEY}"},
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(tools_for_skill, "load_env_var_values", lambda: {"EXA_API_KEY": "set"})
+
+    async def fake_ensure_user_mcp_config_loaded(user_identity):
+        captured["user_identity"] = user_identity
+        return DummyManager()
+
+    monkeypatch.setattr(tools_for_skill, "ensure_user_mcp_config_loaded", fake_ensure_user_mcp_config_loaded)
+    monkeypatch.setattr(tools_for_skill, "skill_has_skill_md", lambda _sid: False)
+
+    token = set_current_user_identity(user_id="user-stable-mcp", username="mcp@example.com")
+    try:
+        await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "webv10"}]},
+            "workspace-mcp-stable",
+            resolved_skill="webv10",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_identity"] == "user-stable-mcp"
+
+
+@pytest.mark.asyncio
 async def test_skill_runtime_normalizes_safe_mcp_tool_using_original_metadata(monkeypatch):
     from app.agent.messages import AIMessage
 

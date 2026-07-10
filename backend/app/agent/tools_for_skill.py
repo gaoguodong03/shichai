@@ -430,7 +430,7 @@ async def build_tools_for_group_chat(
     # 避免纯脚本类技能被 Linkup/Exa 等远程 MCP 冷启动拖慢。
     if tool_server_names:
         try:
-            mgr = await ensure_user_mcp_config_loaded(get_current_user().username)
+            mgr = await ensure_user_mcp_config_loaded(get_current_user().user_id)
             all_tools = mgr.get_tools()
         except Exception:
             mgr = None
