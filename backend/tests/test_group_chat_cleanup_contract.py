@@ -144,6 +144,23 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     assert "speaker_task" not in default_app_settings
 
 
+def test_backend_app_code_does_not_keep_legacy_host_config_term():
+    offenders = []
+    for path in (ROOT / "app").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if "host_config" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+
+    assert offenders == []
+
+
+def test_checkpoint_service_uses_trigger_not_legacy_reason_name():
+    service = _read("app/session_state/service.py")
+
+    assert "capture_session_checkpoint(session_id: str, *, reason" not in service
+    assert '"trigger": reason' not in service
+
+
 def test_expert_skill_selection_does_not_advertise_keyword_fallback():
     expert_runtime = _read("app/agent/expert_runtime.py")
 

@@ -46,6 +46,8 @@ backend/data/users/{user_id}/
       memory/
         facts.md
         index.md
+      execution_logs/
+        tool-execution.jsonl
       checkpoints/
 ```
 
@@ -644,6 +646,8 @@ checkpoints/
 用户消息请求不再通过 `message.content` 文本承载文件和路由控制。`【文件引用：...】`、`@专家`、自然语言点名只可作为历史文本展示，不是当前协议入口；新请求必须使用 `message.attachments` 和 `message.target_agent_name`。
 
 执行日志不属于 `history.json`。MCP、Skill 脚本、HTTP API 和工作区操作的调用参数、stdout、stderr、结构化返回和中间产物应写入会话级运行日志，并通过 `message_id` 单向关联到某条历史消息。`history.json` 不反向保存 `log_ids`，避免形成双向引用。
+
+会话级工具执行日志固定写入 `sessions/{session_id}/execution_logs/tool-execution.jsonl`。该目录不进入检查点，也不参与 `workspace_tree` 或 `memory_tree`。
 
 会话运行日志典型结构：
 

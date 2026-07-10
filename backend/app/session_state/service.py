@@ -202,10 +202,10 @@ def auto_checkpoint_suppressed() -> bool:
     return bool(_AUTO_CHECKPOINT_SUPPRESSED.get())
 
 
-def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Dict[str, Any]:
+def capture_session_checkpoint(session_id: str, *, trigger: str = "manual") -> Dict[str, Any]:
     """Capture the current file-backed session state as a checkpoint object."""
     if auto_checkpoint_suppressed():
-        return {"skipped": True, "trigger": reason}
+        return {"skipped": True, "trigger": trigger}
 
     layout = _session_layout(session_id)
     store = _object_store(session_id)
@@ -227,7 +227,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
 
     chain = load_chain(layout)
     head = load_head(layout)
-    if head and reason not in {"manual_snapshot", "rollback"}:
+    if head and trigger not in {"manual_snapshot", "rollback"}:
         try:
             current = read_checkpoint(layout, head)
             if str(current.get("state_hash") or "") == state_hash:
@@ -241,7 +241,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
         "checkpoint_id": checkpoint_id,
         "parent_checkpoint_id": head,
         "created_at": _now(),
-        "trigger": reason,
+        "trigger": trigger,
         "session_blob": session_blob,
         "history_blob": history_blob,
         "orchestration_state_blob": orchestration_state_blob,
@@ -419,7 +419,7 @@ def clone_session_from_checkpoint(
     elif normalized_message_id:
         source = _checkpoint_for_message(session_id, message_id=normalized_message_id)
     else:
-        source = capture_session_checkpoint(session_id, reason="clone")
+        source = capture_session_checkpoint(session_id, trigger="clone")
         if source.get("skipped"):
             raise HTTPException(status_code=400, detail="Unable to snapshot source session")
     new_session_id = f"group-{uuid.uuid4().hex[:12]}"
@@ -443,7 +443,7 @@ async def rollback_session_to_checkpoint(session_id: str, checkpoint_id: str) ->
 
     checkpoint = read_checkpoint(layout, checkpoint_id)
     _apply_checkpoint(session_id, checkpoint)
-    rollback_checkpoint = capture_session_checkpoint(session_id, reason="rollback")
+    rollback_checkpoint = capture_session_checkpoint(session_id, trigger="rollback")
     return {
         "session_id": session_id,
         "checkpoint_id": rollback_checkpoint.get("checkpoint_id"),

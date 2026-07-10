@@ -223,7 +223,7 @@ async def session_export(session_id: str):
 @router.post("/sessions/{session_id}/snapshot")
 async def session_snapshot(session_id: str):
     """为当前会话创建一个状态快照。"""
-    return {"status": "ok", "data": capture_session_checkpoint(session_id, reason="manual_snapshot")}
+    return {"status": "ok", "data": capture_session_checkpoint(session_id, trigger="manual_snapshot")}
 
 
 @router.get("/sessions/{session_id}/snapshots")

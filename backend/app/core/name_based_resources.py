@@ -175,7 +175,7 @@ def _agent_names_from_row(row: Dict[str, Any]) -> List[str]:
     return out
 
 
-def _normalize_scenario_host_config(raw: Any) -> Dict[str, Any]:
+def _normalize_scenario_host_snapshot(raw: Any) -> Dict[str, Any]:
     """Normalize host snapshots to the current `host` contract."""
     cfg = raw if isinstance(raw, dict) else {}
     skill_name = str(cfg.get("skill_name") or "").strip()
@@ -202,6 +202,6 @@ def normalize_scenario_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         "name": name,
         "description": str(row.get("description") or ""),
         "system_prompt": str(row.get("system_prompt") or "") if row.get("system_prompt") is not None else "",
-        "host": _normalize_scenario_host_config(row.get("host")),
+        "host": _normalize_scenario_host_snapshot(row.get("host")),
         "agent_names": agent_names,
     }

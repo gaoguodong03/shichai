@@ -118,7 +118,7 @@ def create_session_internal(
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(gsid, reason="session_created")
+        capture_session_checkpoint(gsid, trigger="session_created")
     except Exception:
         logger.warning("session_state initial checkpoint failed: %s", gsid, exc_info=True)
     # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
@@ -324,7 +324,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(group_session_id, reason="session_changed")
+        capture_session_checkpoint(group_session_id, trigger="session_changed")
     except Exception:
         logger.warning("session_state update checkpoint failed: %s", group_session_id, exc_info=True)
     return {"status": "ok", "data": _build_session_payload(group_session_id, session_definitions[group_session_id])}

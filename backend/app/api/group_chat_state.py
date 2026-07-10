@@ -519,7 +519,7 @@ def save_group_history(
         from app.session_state.service import capture_session_checkpoint
 
         if checkpoint_trigger:
-            capture_session_checkpoint(group_session_id, reason=checkpoint_trigger)
+            capture_session_checkpoint(group_session_id, trigger=checkpoint_trigger)
     except Exception:
         logger.warning("session_state history checkpoint failed: %s", group_session_id, exc_info=True)
 

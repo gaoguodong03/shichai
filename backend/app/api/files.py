@@ -26,13 +26,13 @@ UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
 NO_STORE_HEADERS = {"Cache-Control": "no-store"}
 
 
-def _auto_checkpoint_workspace(workspace_id: str, reason: str) -> None:
+def _auto_checkpoint_workspace(workspace_id: str, trigger: str) -> None:
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(workspace_id, reason=reason)
+        capture_session_checkpoint(workspace_id, trigger=trigger)
     except Exception:
-        logger.warning("workspace checkpoint failed: %s reason=%s", workspace_id, reason, exc_info=True)
+        logger.warning("workspace checkpoint failed: %s trigger=%s", workspace_id, trigger, exc_info=True)
 
 
 def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:

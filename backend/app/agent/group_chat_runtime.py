@@ -27,6 +27,7 @@ from app.agent.group_chat_streaming import iter_with_keepalive, stream_backgroun
 from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_recent_context
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_orchestration_fsm import resolve_group_entry_route
+from app.agent.session_runtime_logs import append_tool_execution_logs
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent, SseStartEvent
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
@@ -528,6 +529,13 @@ async def _run_one_expert_turn(
         "skill_result": skill_result,
     }
     assistant_msg = frontend_history_message(assistant_msg)
+    append_tool_execution_logs(
+        group_session_id,
+        message_id=str(assistant_msg.get("message_id") or ""),
+        agent_name=agent_name,
+        skill=str(runtime.skill or ""),
+        tool_results=tool_results,
+    )
     messages.append(assistant_msg)
     save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
     session_item["updated_at"] = format_storage_timestamp()

@@ -7,6 +7,7 @@ Canonical layout (multi-tenant isolated under data/users/{user_id}/):
         session.json              # session definition snapshot
         history.json              # runtime chat history (JSON)
         runtime.json              # live runtime mirror for UI recovery
+        execution_logs/           # session-level runtime traces, not checkpointed
         workspace/                # live working tree (like git checkout)
         checkpoints/
           HEAD.json
