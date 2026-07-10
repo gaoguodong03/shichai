@@ -1012,7 +1012,7 @@
               v-if="scenarioConflictPreviewRows.length"
               class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
             >
-              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
+              <div class="text-xs font-medium mb-1">同名内容将覆盖本地内容，冲突预览：</div>
               <ul class="list-disc pl-4 text-xs space-y-0.5">
                 <li v-for="row in scenarioConflictPreviewRows" :key="row">{{ row }}</li>
               </ul>
@@ -1123,7 +1123,7 @@
               v-if="agentConflictPreviewRows.length"
               class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
             >
-              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
+              <div class="text-xs font-medium mb-1">同名内容将覆盖本地内容，冲突预览：</div>
               <ul class="list-disc pl-4 text-xs space-y-0.5">
                 <li v-for="row in agentConflictPreviewRows" :key="row">{{ row }}</li>
               </ul>
@@ -1282,7 +1282,7 @@
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ pendingSkillZipFile?.name || '未选择文件' }}</div>
             <p class="text-xs text-muted">仅支持 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。</p>
-            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将保留本地版本；名称不同会作为新版本导入。</p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将覆盖本地内容；名称不同会作为新版本导入。</p>
           </div>
           <div class="flex justify-start gap-2">
             <button

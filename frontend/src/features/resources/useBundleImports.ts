@@ -185,8 +185,8 @@ export function useBundleImports(options: {
     return item.display_name || typeLabel
   }
 
-  function importSummaryLine(label: string, added: number, kept: number): string {
-    return `${label}：新增 ${Math.max(0, added)} 个，保留 ${Math.max(0, kept)} 个`
+  function importSummaryLine(label: string, added: number, overwritten: number, failed = 0): string {
+    return `${label}：新增 ${Math.max(0, added)} 个，覆盖 ${Math.max(0, overwritten)} 个，失败 ${Math.max(0, failed)} 个`
   }
 
   const scenarioConflictPreviewRows = computed(() => {
@@ -289,15 +289,13 @@ export function useBundleImports(options: {
             skills_imported?: string[]
             skills_skipped?: string[]
             skills_overwritten?: string[]
-            skills_kept?: string[]
             agent_imported_names?: string[]
-            kept_agent_names?: string[]
+            overwritten_agent_names?: string[]
             skipped_by_name?: string[]
             overwritten_existing_names?: string[]
-            kept_existing_names?: string[]
             mcp_added?: number
             mcp_updated?: number
-            mcp_skipped?: number
+            mcp_failed?: number
           }
         }
       }
@@ -306,12 +304,12 @@ export function useBundleImports(options: {
       }
       const s = j.data?.summary
       const msg = s
-        ? [
+          ? [
             '导入成功',
-            importSummaryLine('场景', (s.preset_imported_names || []).length, (s.kept_existing_names || []).length),
-            importSummaryLine('专家', (s.agent_imported_names || []).length, (s.kept_agent_names || []).length),
-            importSummaryLine('技能', (s.skills_imported || []).length, (s.skills_kept || []).length),
-            importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_skipped ?? 0),
+            importSummaryLine('场景', (s.preset_imported_names || []).length, (s.overwritten_existing_names || []).length),
+            importSummaryLine('专家', (s.agent_imported_names || []).length, (s.overwritten_agent_names || []).length),
+            importSummaryLine('技能', (s.skills_imported || []).length, (s.skills_overwritten || []).length),
+            importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_updated ?? 0, s.mcp_failed ?? 0),
           ].join('\n')
         : '导入成功'
       await options.fetchScenarioPresets()
@@ -470,11 +468,10 @@ export function useBundleImports(options: {
             skills_imported?: string[]
             skipped_by_name?: boolean
             overwritten_agent_names?: string[]
-            kept_agent_names?: string[]
             skills_overwritten?: string[]
-            skills_kept?: string[]
             mcp_added?: number
-            mcp_skipped?: number
+            mcp_updated?: number
+            mcp_failed?: number
           }
         }
       }
@@ -482,15 +479,15 @@ export function useBundleImports(options: {
         throw new Error(j.detail || '导入失败')
       }
       const summary = j.data?.summary
-      const keptCount = (summary?.kept_agent_names || []).length
-      const agentAddedCount = summary?.imported_agent_name && keptCount === 0 ? 1 : 0
+      const overwrittenAgentCount = (summary?.overwritten_agent_names || []).length
+      const agentAddedCount = summary?.imported_agent_name && overwrittenAgentCount === 0 ? 1 : 0
       const skillWriteCount = (summary?.skills_imported || []).length
-      const skillKeptCount = (summary?.skills_kept || []).length
+      const skillOverwriteCount = (summary?.skills_overwritten || []).length
       const msg = [
         '导入成功',
-        importSummaryLine('专家', agentAddedCount, keptCount),
-        importSummaryLine('技能', skillWriteCount, skillKeptCount),
-        importSummaryLine('工具', summary?.mcp_added ?? 0, summary?.mcp_skipped ?? 0),
+        importSummaryLine('专家', agentAddedCount, overwrittenAgentCount),
+        importSummaryLine('技能', skillWriteCount, skillOverwriteCount),
+        importSummaryLine('工具', summary?.mcp_added ?? 0, summary?.mcp_updated ?? 0, summary?.mcp_failed ?? 0),
       ].join('\n')
       await options.fetchAgents()
       await options.fetchSkills()

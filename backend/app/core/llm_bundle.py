@@ -1,4 +1,4 @@
-"""模型配置包（ZIP）：llm_bundle.json。"""
+"""模型配置资源包（ZIP）：bundle.json + resources/models。"""
 from __future__ import annotations
 
 import io
@@ -8,8 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-LLM_BUNDLE_VERSION = 1
-LLM_MANIFEST_NAME = "llm_bundle.json"
+from app.core.scenario_bundle import MANIFEST_NAME, MODELS_DIR, _resource_dir_name, _read_resource_rows
+
+LLM_MANIFEST_NAME = MANIFEST_NAME
 
 
 def sanitize_llm_provider_for_bundle(provider: Dict[str, Any]) -> Dict[str, Any]:
@@ -28,6 +29,8 @@ def provider_for_settings_import(provider: Dict[str, Any]) -> Dict[str, Any]:
     """Drop response-only fields before persisting an imported provider."""
     copied = sanitize_llm_provider_for_bundle(provider)
     copied.pop("api_key_set", None)
+    copied.pop("name", None)
+    copied.pop("default_llm", None)
     return copied
 
 
@@ -38,30 +41,45 @@ def _model_name(llm_name: str, provider: Dict[str, Any]) -> str:
 def build_llm_bundle_zip_bytes(llm_name: str, provider: Dict[str, Any], *, default_llm: str = "") -> bytes:
     clean = sanitize_llm_provider_for_bundle(provider)
     name = _model_name(llm_name, clean)
+    model_row = {"name": name, **clean}
+    if default_llm:
+        model_row["default_llm"] = str(default_llm or "").strip()
     manifest = {
-        "bundle_version": LLM_BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "name": name,
-        "default_llm": str(default_llm or "").strip(),
-        "provider": clean,
+        "bundle_type": "model",
+        "root_resources": [{"type": "model", "name": name}],
+        "resource_counts": {
+            "scenarios": 0,
+            "agents": 0,
+            "skills": 0,
+            "tools": 0,
+            "models": 1,
+        },
     }
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(LLM_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        model_dir = _resource_dir_name(name, "model")
+        zf.writestr(f"{MODELS_DIR}/{model_dir}/model.json", json.dumps(model_row, ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
 
 def read_llm_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     path = bundle_dir / LLM_MANIFEST_NAME
     if not path.is_file():
-        raise ValueError("missing_llm_bundle_json")
+        raise ValueError("missing_bundle_json")
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("invalid_manifest")
-    llm_name = str(manifest.get("name") or "").strip()
-    provider = manifest.get("provider")
+    if manifest.get("bundle_type") != "model":
+        raise ValueError("invalid_bundle_type")
+    model_rows = _read_resource_rows(bundle_dir / MODELS_DIR, "model.json")
+    if not model_rows:
+        raise ValueError("missing_model_resource")
+    provider = sanitize_llm_provider_for_bundle(model_rows[0])
+    llm_name = str(provider.get("name") or "").strip()
     if not llm_name:
         raise ValueError("missing_llm_name")
-    if not isinstance(provider, dict):
-        raise ValueError("missing_provider_in_manifest")
-    return manifest, llm_name, sanitize_llm_provider_for_bundle(provider)
+    if "default_llm" in provider:
+        manifest = {**manifest, "default_llm": str(provider.get("default_llm") or "")}
+    return manifest, llm_name, provider

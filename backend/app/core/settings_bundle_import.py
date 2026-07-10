@@ -29,7 +29,7 @@ def mcp_name_identity_import_plan(
     existing_servers: List[Dict[str, Any]],
     bundle_servers: List[Dict[str, Any]],
 ) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
-    """Plan tool import by name only. Same name keeps local content."""
+    """Plan tool import by name only. Same name overwrites local content."""
     existing_names: Set[str] = set()
     for row in existing_servers:
         name_key = normalized_name_key(row.get("name"))
@@ -38,22 +38,21 @@ def mcp_name_identity_import_plan(
 
     name_map: Dict[str, str] = {}
     rows_to_import: List[Dict[str, Any]] = []
-    kept_existing_names: List[str] = []
+    overwritten_existing_names: List[str] = []
     for incoming in bundle_servers:
         incoming_name = str(incoming.get("name") or "").strip()
         name_key = normalized_name_key(incoming.get("name"))
         if not incoming_name or not name_key:
             continue
+        copied = normalize_tool_row(dict(incoming))
         if name_key in existing_names:
             name_map[incoming_name] = incoming_name
-            kept_existing_names.append(incoming_name)
-            continue
-        copied = normalize_tool_row(dict(incoming))
+            overwritten_existing_names.append(incoming_name)
+        else:
+            existing_names.add(name_key)
         name_map[incoming_name] = incoming_name
         rows_to_import.append(copied)
-        if name_key:
-            existing_names.add(name_key)
-    return name_map, rows_to_import, list(dict.fromkeys(kept_existing_names))
+    return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
 
 
 def upsert_rows_by_name(

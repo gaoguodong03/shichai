@@ -396,8 +396,7 @@ async def import_llm_provider_bundle(
             }
 
         next_providers = dict(current_providers or {})
-        if llm_name in next_providers:
-            raise HTTPException(status_code=409, detail="同名模型已存在")
+        overwritten = llm_name in next_providers
         next_providers[llm_name] = provider_for_settings_import(provider)
         default_llm = str(current.get("default_llm") or "")
         if not default_llm:
@@ -409,7 +408,7 @@ async def import_llm_provider_bundle(
                 "dry_run": False,
                 "summary": {
                     "imported_name": llm_name,
-                    "overwritten": False,
+                    "overwritten": overwritten,
                 },
             },
         }

@@ -234,7 +234,7 @@ def _agent_name_identity_import_plan(
 
     name_map: Dict[str, str] = {}
     rows_to_import: List[Dict[str, Any]] = []
-    kept_existing_names: List[str] = []
+    overwritten_existing_names: List[str] = []
     for incoming in bundle_agents:
         incoming_name = str(incoming.get("name") or "").strip()
         name_key = _normalized_name_key(incoming.get("name"))
@@ -243,11 +243,12 @@ def _agent_name_identity_import_plan(
         copied = strip_agent_row_for_disk(dict(incoming))
         name_map[incoming_name] = incoming_name
         if name_key in existing_names:
+            overwritten_existing_names.append(incoming_name)
             rows_to_import.append(copied)
             continue
         rows_to_import.append(copied)
         existing_names.add(name_key)
-    return name_map, rows_to_import, []
+    return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
 
 
 def _agent_name_conflicts(
@@ -340,7 +341,7 @@ def _prepare_import_scene_by_name_identity(
         for row in agent_bundle
         if isinstance(row, dict)
     ]
-    agent_name_map, agent_rows_to_import, kept_agent_names = _agent_name_identity_import_plan(
+    agent_name_map, agent_rows_to_import, overwritten_agent_names = _agent_name_identity_import_plan(
         existing_agents,
         remapped_agents,
     )
@@ -358,7 +359,7 @@ def _prepare_import_scene_by_name_identity(
         tool_name_map,
         agent_name_map,
         imported_skills,
-        kept_agent_names,
+        overwritten_agent_names,
         overwritten_skills,
     )
 
@@ -677,7 +678,7 @@ async def import_session_preset_bundle(
         meta = _request_log_meta(request)
         user_ctx = get_current_user_context(default_fallback=False)
         logger.info(
-            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s skipped_by_name=%s resource_names_before=%s resource_names_after=%s skills_imported=%s skills_skipped=%s mcp_added=%s mcp_updated=%s mcp_skipped=%s referer=%s",
+            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s skipped_by_name=%s resource_names_before=%s resource_names_after=%s skills_imported=%s skills_failed=%s mcp_added=%s mcp_updated=%s mcp_failed=%s referer=%s",
             user_ctx.user_id if user_ctx else "",
             user_ctx.username if user_ctx else get_current_username() or "",
             meta["client"],
@@ -693,7 +694,7 @@ async def import_session_preset_bundle(
             summary.get("skills_skipped") or [],
             summary.get("mcp_added") or 0,
             summary.get("mcp_updated") or 0,
-            summary.get("mcp_skipped") or 0,
+            summary.get("mcp_failed") or 0,
             meta["referer"],
         )
 
@@ -796,7 +797,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             tool_name_map,
             agent_name_map,
             imported_skills,
-            kept_agent_names,
+            overwritten_agent_names,
             overwritten_skills,
         ) = _prepare_import_scene_by_name_identity(
             norm,
@@ -824,14 +825,8 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         mcp_before = load_mcp_config()
         existing_mcp_names = {str(row.get("name") or "").strip() for row in mcp_before}
         imported_mcp_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
-        kept_mcp_names = [
-            name
-            for name in dict.fromkeys(str(x or "").strip() for x in tool_name_map.values())
-            if name and name in existing_mcp_names and name not in imported_mcp_names
-        ]
         merged_mcp = _upsert_rows_by_name(mcp_before, mcp_rows_to_import, "name")
         mcp_added = len([name for name in imported_mcp_names if name and name not in existing_mcp_names])
-        mcp_skipped = len(kept_mcp_names)
         mcp_updated = len([name for name in imported_mcp_names if name and name in existing_mcp_names])
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
@@ -851,26 +846,23 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "preset_imported_names": imported_names,
                 "skipped_by_name": skipped_by_name,
                 "overwritten_existing_names": overwritten_existing_names,
-                "kept_existing_names": kept_scene_names,
                 "skills_imported": imported_skills,
                 "skills_overwritten": overwritten_skills,
-                "skills_kept": [],
                 "skills_skipped": [],
                 "agent_imported_names": [
                     str(row.get("name") or "").strip()
                     for row in agent_rows_to_import
                     if str(row.get("name") or "").strip()
                 ],
-                "kept_agent_names": kept_agent_names,
+                "overwritten_agent_names": overwritten_agent_names,
                 "skill_map": skill_directory_map,
                 "tool_map": tool_name_map,
                 "agent_map": agent_name_map,
                 "missing_references": missing_references,
                 **requirements_result,
                 "mcp_added": mcp_added,
-                "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "mcp_kept_names": kept_mcp_names,
+                "mcp_failed": 0,
             },
         }
     finally:

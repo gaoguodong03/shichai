@@ -46,6 +46,18 @@ def test_skill_zip_import_overwrites_same_name_local_skill_content(monkeypatch, 
         encoding="utf-8",
     )
     raw = api._build_skill_zip_bytes(source_skill, [])
+    import zipfile
+    from io import BytesIO
+
+    with zipfile.ZipFile(BytesIO(raw)) as zf:
+        names = set(zf.namelist())
+        assert "bundle.json" in names
+        assert "SKILL.md" not in names
+        assert "mcp_servers.json" not in names
+        manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+        assert manifest["bundle_type"] == "skill"
+        assert "bundle_version" not in manifest
+        assert "resources/skills/source_skill/SKILL.md" in names
 
     from fastapi.testclient import TestClient
 
@@ -68,7 +80,6 @@ def test_skill_zip_import_overwrites_same_name_local_skill_content(monkeypatch, 
 def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path: Path):
     from app.api import settings_skills as api
     from app.api.settings_mcp import save_mcp_config
-    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
@@ -93,13 +104,7 @@ def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path
         "body\n",
         encoding="utf-8",
     )
-    raw = build_scenario_bundle_zip_bytes(
-        {"name": "Dummy", "agent_names": ["Dummy"]},
-        [],
-        [],
-        source_skills,
-        ["skill-a"],
-    )
+    raw = api._build_skill_zip_bytes(skill_dir, [])
     try:
         result = asyncio.run(api._import_skill_from_bundle_bytes(raw, dry_run=True))
     finally:

@@ -165,7 +165,7 @@ def test_app_settings_preserves_top_level_system_prompt(monkeypatch, tmp_path):
 
 
 def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
-    """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 或密钥绑定信息。"""
+    """模型包使用资源包镜像结构，且不得导出 API Key 或密钥绑定信息。"""
     from app.core.llm_bundle import (
         LLM_MANIFEST_NAME,
         build_llm_bundle_zip_bytes,
@@ -188,10 +188,16 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
 
     raw = build_llm_bundle_zip_bytes("example", provider, default_llm="example")
     with zipfile.ZipFile(BytesIO(raw)) as zf:
+        names = set(zf.namelist())
         assert LLM_MANIFEST_NAME in zf.namelist()
-        manifest_text = zf.read(LLM_MANIFEST_NAME).decode("utf-8")
+        assert "llm_bundle.json" not in names
+        manifest = json.loads(zf.read(LLM_MANIFEST_NAME).decode("utf-8"))
+        assert manifest["bundle_type"] == "model"
+        assert "bundle_version" not in manifest
+        manifest_text = zf.read("resources/models/example/model.json").decode("utf-8")
     manifest = json.loads(manifest_text)
-    manifest_provider = manifest["provider"]
+    manifest_provider = manifest
+    assert manifest_provider["name"] == "example"
     assert "plain-secret" not in manifest_text
     assert "api_key" not in manifest_provider
     assert "api_key_env" not in manifest_provider

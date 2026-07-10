@@ -123,7 +123,18 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("application/zip")
     with zipfile.ZipFile(BytesIO(exported.content)) as zf:
-        rows = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+        names = set(zf.namelist())
+        assert "bundle.json" in names
+        assert "mcp_servers.json" not in names
+        manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+        assert manifest["bundle_type"] == "tool"
+        assert "bundle_version" not in manifest
+        rows = [
+            json.loads(zf.read(name).decode("utf-8"))
+            for name in zf.namelist()
+            if name.startswith("resources/tools/") and name.endswith("/tool.json")
+        ]
+    assert len(rows) == 1
     assert "enabled" not in rows[0]
     assert "${env:QWEN_AUDIO_API_KEY}" in rows[0]["server_config"]
     assert "qwen3-asr-1.7b" in rows[0]["server_config"]
@@ -185,7 +196,19 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     exported_skill = client.get(f"/api/settings/skills/{skill_id}/export-zip", headers=headers)
     assert exported_skill.status_code == 200
     with zipfile.ZipFile(BytesIO(exported_skill.content)) as zf:
-        skill_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+        names = set(zf.namelist())
+        assert "bundle.json" in names
+        assert "SKILL.md" not in names
+        assert "mcp_servers.json" not in names
+        manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+        assert manifest["bundle_type"] == "skill"
+        assert "bundle_version" not in manifest
+        assert f"resources/skills/{skill_id}/SKILL.md" in names
+        skill_tools = [
+            json.loads(zf.read(name).decode("utf-8"))
+            for name in zf.namelist()
+            if name.startswith("resources/tools/") and name.endswith("/tool.json")
+        ]
     assert [row["name"] for row in skill_tools] == [tool_id]
     assert "sk-live-secret" not in json.dumps(skill_tools, ensure_ascii=False)
     assert "qwen3-asr-1.7b" in json.dumps(skill_tools, ensure_ascii=False)
@@ -267,7 +290,7 @@ def test_mcp_settings_rejects_legacy_runtime_fields(frontend_flow_client: TestCl
         headers=headers,
     )
     assert imported.status_code == 400
-    assert "旧运行字段" in imported.json()["detail"]
+    assert "bundle.json" in imported.json()["detail"]
 
 
 def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClient):
@@ -488,14 +511,20 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert exported_llm.status_code == 200
     assert exported_llm.headers["content-type"].startswith("application/zip")
     with zipfile.ZipFile(BytesIO(exported_llm.content)) as zf:
-        manifest_text = zf.read("llm_bundle.json").decode("utf-8")
-        manifest = json.loads(manifest_text)
-    assert "sk-inline-secret" not in manifest_text
-    assert manifest["name"] == "qwen"
-    assert manifest["provider"]["model"] == "qwen3-max"
-    assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    assert "api_key" not in manifest["provider"]
-    assert "api_key_env" not in manifest["provider"]
+        names = set(zf.namelist())
+        assert "bundle.json" in names
+        assert "llm_bundle.json" not in names
+        manifest = json.loads(zf.read("bundle.json").decode("utf-8"))
+        assert manifest["bundle_type"] == "model"
+        assert "bundle_version" not in manifest
+        model_text = zf.read("resources/models/qwen/model.json").decode("utf-8")
+        model = json.loads(model_text)
+    assert "sk-inline-secret" not in model_text
+    assert model["name"] == "qwen"
+    assert model["model"] == "qwen3-max"
+    assert model["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert "api_key" not in model
+    assert "api_key_env" not in model
 
     preview_llm = client.post(
         "/api/settings/llm-providers/import-bundle",
@@ -515,7 +544,9 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         files={"file": ("qwen.zip", exported_llm.content, "application/zip")},
         headers=headers,
     )
-    assert imported_llm.status_code == 409
+    assert imported_llm.status_code == 200
+    assert imported_llm.json()["data"]["summary"]["imported_name"] == "qwen"
+    assert imported_llm.json()["data"]["summary"]["overwritten"] is True
 
     remove_same_name = client.put(
         "/api/settings/app",

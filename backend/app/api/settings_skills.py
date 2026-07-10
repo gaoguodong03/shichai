@@ -12,6 +12,7 @@ import tempfile
 import uuid
 import yaml
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,10 +41,14 @@ from app.core.settings_bundle_import import (
     upsert_rows_by_name as _upsert_rows_by_name,
 )
 from app.core.scenario_bundle import (
+    MANIFEST_NAME,
+    SKILLS_DIR,
+    TOOLS_DIR,
     bundle_skills_root,
     extract_scenario_bundle_dir,
     list_skill_directories_in_bundle_skills_dir,
     read_bundle_tool_rows,
+    _resource_dir_name,
 )
 from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
 from app.core.security import user_context_dependency
@@ -199,13 +204,7 @@ def _parse_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
 
 
 def _read_mcp_bundle_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
-    path = bundle_dir / "mcp_servers.json"
-    if not path.is_file():
-        return []
-    try:
-        return _parse_mcp_bundle_rows(path.read_bytes())
-    except Exception:
-        return []
+    return read_bundle_tool_rows(bundle_dir)
 
 
 async def _merge_imported_skill_requirements_and_prewarm(directory_names: List[str], skills_root: Path) -> Dict[str, Any]:
@@ -244,31 +243,19 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
+        manifest_path = tmp / MANIFEST_NAME
+        if not manifest_path.is_file():
+            raise HTTPException(status_code=400, detail="分享包中缺少 bundle.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or manifest.get("bundle_type") != "skill":
+            raise HTTPException(status_code=400, detail="技能资源包类型无效")
         mcp_bundle = _read_mcp_bundle_rows(tmp)
         directory_names = list_skill_directories_in_bundle_skills_dir(tmp)
         if not directory_names:
-            root_skill = tmp / "SKILL.md"
-            if not root_skill.is_file():
-                raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
-            root_fm, _root_body = _read_skill_file(tmp)
-            root_name = str(root_fm.get("name") or "skill").strip() or "skill"
-            sid0 = _slugify(root_name)
-            normalized = tmp / "__normalized_skill_bundle"
-            src = normalized / "resources" / "skills" / sid0
-            src.mkdir(parents=True, exist_ok=True)
-            for child in tmp.iterdir():
-                if child.name in {"__normalized_skill_bundle", "mcp_servers.json"}:
-                    continue
-                dest_child = src / child.name
-                if child.is_dir():
-                    shutil.copytree(child, dest_child)
-                else:
-                    shutil.copy2(child, dest_child)
-            bundle_dir_for_refs = normalized
-        else:
-            sid0 = directory_names[0]
-            src = bundle_skills_root(tmp) / sid0
-            bundle_dir_for_refs = tmp
+            raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
+        sid0 = directory_names[0]
+        src = bundle_skills_root(tmp) / sid0
+        bundle_dir_for_refs = tmp
         fm, body = _read_skill_file(src)
         incoming_name = str(fm.get("name") or sid0).strip() or sid0
         incoming_name_key = _normalized_name_key(incoming_name)
@@ -308,7 +295,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "missing_references": missing_references,
                 },
             }
-        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         target_directory = existing_same_name_directories[0] if existing_same_name_directories else _next_available_directory_name(base, _slugify(incoming_name))
         dest = base / target_directory
         if dest.exists():
@@ -325,7 +312,6 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
         imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
         mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
-        mcp_skipped = len(kept_tool_names)
         mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
         if mcp_rows_to_import:
             merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
@@ -346,13 +332,12 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             "name": str(fm2.get("name") or target_directory),
             "summary": {
                 "overwritten_directory_names": existing_same_name_directories,
-                "kept_directory_names": [],
                 "missing_references": missing_references,
                 "tool_name_map": tool_name_map,
                 "mcp_added": mcp_added,
-                "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "tool_kept_names": kept_tool_names,
+                "mcp_failed": 0,
+                "overwritten_tool_names": overwritten_tool_names,
             },
             **requirements_result,
         }
@@ -365,23 +350,24 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
-        mcp_path = tmp / "mcp_servers.json"
-        if not mcp_path.is_file():
-            raise HTTPException(status_code=400, detail="分享包中缺少 mcp_servers.json")
-        rows = json.loads(mcp_path.read_text(encoding="utf-8"))
-        mcp_bundle = [x for x in rows if isinstance(x, dict)] if isinstance(rows, list) else []
+        manifest_path = tmp / MANIFEST_NAME
+        if not manifest_path.is_file():
+            raise HTTPException(status_code=400, detail="分享包中缺少 bundle.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or manifest.get("bundle_type") != "tool":
+            raise HTTPException(status_code=400, detail="工具资源包类型无效")
+        mcp_bundle = read_bundle_tool_rows(tmp)
         if not mcp_bundle:
-            raise HTTPException(status_code=400, detail="分享包中没有可导入的 MCP 配置")
+            raise HTTPException(status_code=400, detail="分享包中没有可导入的工具配置")
         preview = [{"name": str(x.get("name") or "")} for x in mcp_bundle]
         if dry_run:
             return {"object_type": "mcp", "preview": {"mcps": preview}}
         mcp_before = load_mcp_config()
-        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(mcp_before, mcp_bundle)
+        tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(mcp_before, mcp_bundle)
         existing_names = {str(row.get("name") or "").strip() for row in mcp_before}
         imported_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
         merged_mcp = _upsert_rows_by_name(mcp_before, mcp_rows_to_import, "name")
         mcp_added = len([mid for mid in imported_names if mid and mid not in existing_names])
-        mcp_skipped = len(kept_tool_names)
         mcp_updated = len([mid for mid in imported_names if mid and mid in existing_names])
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
@@ -389,10 +375,10 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
             "object_type": "mcp",
             "summary": {
                 "mcp_added": mcp_added,
-                "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
+                "mcp_failed": 0,
                 "tool_name_map": tool_name_map,
-                "tool_kept_names": kept_tool_names,
+                "overwritten_tool_names": overwritten_tool_names,
             },
         }
     finally:
@@ -420,7 +406,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             user_skills,
             directory_names_in_zip,
         )
-        tool_name_map, _mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        tool_name_map, _mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         same_name_agent_names = [
             str(x.get("name") or "")
             for x in load_agent_instances()
@@ -447,8 +433,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                     "would_skip_skills": [],
                     "would_remap_skills": directory_name_map,
                     "would_remap_tools": tool_name_map,
-                    "would_overwrite_tools": [],
-                    "would_keep_tools": kept_tool_names,
+                    "would_overwrite_tools": overwritten_tool_names,
                     "would_skip_tools": [],
                     "missing_references": missing_references,
                 },
@@ -463,7 +448,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
         )
         imported_skills, overwritten_skills, directory_name_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
-        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         for sid in imported_skills:
             skill_dir = user_skills / sid
             if not (skill_dir / "SKILL.md").is_file():
@@ -507,17 +492,15 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                 "imported_agent_name": final_name,
                 "skipped_by_name": skipped_by_name,
                 "overwritten_agent_names": same_name_agent_names,
-                "kept_agent_names": [],
                 "skills_imported": imported_skills,
                 "skills_overwritten": overwritten_skills,
-                "skills_kept": [],
                 "skills_skipped": [],
                 "skill_map": directory_name_map,
                 "tool_map": tool_name_map,
                 "mcp_added": len([name for name in imported_mcp_names if name and name not in existing_mcp_names]),
                 "mcp_updated": len([name for name in imported_mcp_names if name and name in existing_mcp_names]),
-                "mcp_skipped": len(kept_tool_names),
-                "mcp_kept_names": kept_tool_names,
+                "mcp_failed": 0,
+                "overwritten_tool_names": overwritten_tool_names,
                 "missing_references": missing_references,
                 **requirements_result,
             },
@@ -619,7 +602,7 @@ async def import_skill_zip(
     file: UploadFile = File(...),
     name_conflict: str = Form("overwrite"),
 ):
-    """通过 ZIP 导入 Skill。要求 ZIP 根目录包含 SKILL.md。"""
+    """通过当前资源包 ZIP 导入 Skill。"""
     filename = (file.filename or "").strip()
     if not filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="仅支持 ZIP 文件")
@@ -628,196 +611,19 @@ async def import_skill_zip(
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
 
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(raw))
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="无效的 ZIP 文件")
-
-    entries: List[tuple[str, List[str]]] = []
-    for info in zf.infolist():
-        if info.is_dir():
-            continue
-        raw_name = (info.filename or "").replace("\\", "/").strip("/")
-        if not raw_name:
-            continue
-        parts = [p for p in raw_name.split("/") if p and p != "."]
-        if not parts or any(p == ".." for p in parts):
-            raise HTTPException(status_code=400, detail="ZIP 包含非法路径")
-        entries.append((raw_name, parts))
-    if not entries:
-        raise HTTPException(status_code=400, detail="ZIP 中没有可导入文件")
-
-    # 兼容“整个目录打包”场景：若所有文件都在同一顶层目录下，则自动剥离该层。
-    first_heads = {parts[0] for _, parts in entries}
-    strip_first = len(first_heads) == 1 and all(len(parts) >= 2 for _, parts in entries)
-
-    normalized: List[tuple[str, List[str]]] = []
-    for raw_name, parts in entries:
-        rel_parts = parts[1:] if strip_first else parts
-        if not rel_parts:
-            continue
-        normalized.append((raw_name, rel_parts))
-
-    if not any(len(parts) == 1 and parts[0].lower() == "skill.md" for _, parts in normalized):
-        raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
-
     conflict_mode = str(name_conflict or "overwrite").strip().lower()
-    if conflict_mode not in {"overwrite", "skip"}:
-        logging.getLogger(__name__).warning("unknown skill name_conflict=%s, fallback to overwrite", conflict_mode)
-        conflict_mode = "overwrite"
+    if conflict_mode != "overwrite":
+        raise HTTPException(status_code=400, detail="当前 Skill 资源包导入只支持同名覆盖")
 
-    base = _get_skills_dir()
-    base.mkdir(parents=True, exist_ok=True)
-    fallback_seed = _slugify(Path(filename).stem or "skill")
-    directory_name = _next_available_directory_name(base, fallback_seed)
-    skill_dir = base / directory_name
-    created_skill_dir = False
-    mcp_bundle: List[Dict[str, Any]] = []
-
-    try:
-        with tempfile.TemporaryDirectory(prefix="skill-zip-import-") as tmp:
-            src_dir = Path(tmp) / "skill"
-            src_dir.mkdir(parents=True, exist_ok=True)
-            for raw_name, rel_parts in normalized:
-                if len(rel_parts) == 1 and rel_parts[0].lower() == "mcp_servers.json":
-                    with zf.open(raw_name, "r") as rf:
-                        mcp_bundle = _parse_mcp_bundle_rows(rf.read())
-                    continue
-                if len(rel_parts) == 1 and rel_parts[0].lower() == "skill.md":
-                    dst = src_dir / "SKILL.md"
-                else:
-                    dst = src_dir / Path(*rel_parts)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(raw_name, "r") as rf:
-                    dst.write_bytes(rf.read())
-
-            if not (src_dir / "SKILL.md").is_file():
-                raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
-
-            src_fm, _src_body = _read_skill_file(src_dir)
-            incoming_name = str(src_fm.get("name") or "").strip() or fallback_seed
-            incoming_name_key = _normalized_name_key(incoming_name)
-            existing_same_name_directories: List[str] = []
-            for child in sorted(base.iterdir(), key=lambda p: p.name):
-                if not child.is_dir():
-                    continue
-                try:
-                    fm_existing, _body_existing = _read_skill_file(child)
-                except Exception:
-                    continue
-                existing_name = str(fm_existing.get("name") or "").strip() or child.name
-                if _normalized_name_key(existing_name) != incoming_name_key:
-                    continue
-                existing_same_name_directories.append(child.name)
-
-            if existing_same_name_directories:
-                directory_name = existing_same_name_directories[0]
-                skill_dir = base / directory_name
-                if skill_dir.exists():
-                    shutil.rmtree(skill_dir)
-                shutil.copytree(src_dir, skill_dir)
-                fm, body = _read_skill_file(skill_dir)
-                final_name = (str(fm.get("name") or "").strip() or incoming_name or directory_name)
-                final_desc = str(fm.get("description") or "")
-                tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-                fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
-                fm["name"] = final_name
-                fm["description"] = final_desc
-                _sanitize_skill_frontmatter_for_write(fm)
-                _write_skill_file(skill_dir, fm, body)
-                _refresh_skills_loader()
-                existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
-                imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
-                mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
-                mcp_skipped = len(kept_tool_names)
-                mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
-                if mcp_rows_to_import:
-                    merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
-                    save_mcp_config(merged_mcp)
-                    await _invalidate_mcp_runtime_after_config_change()
-                requirements_result = await _merge_imported_skill_requirements_and_prewarm([directory_name], base)
-                return {
-                    "status": "ok",
-                    "data": {
-                        "directory_name": directory_name,
-                        "name": final_name,
-                        "description": final_desc,
-                        "path": str(skill_dir),
-                        "allowed_tools": _normalized_allowed_tools_dict(fm),
-                        "skipped_by_name": False,
-                        "kept_by_name": False,
-                        "overwritten_by_name": True,
-                        "overwritten_directory_names": existing_same_name_directories,
-                        "kept_directory_names": [],
-                        "mcp_added": mcp_added,
-                        "mcp_skipped": mcp_skipped,
-                        "mcp_updated": mcp_updated,
-                        "tool_name_map": tool_name_map,
-                        "tool_kept_names": kept_tool_names,
-                        **requirements_result,
-                    },
-                }
-
-            shutil.copytree(src_dir, skill_dir)
-            created_skill_dir = True
-
-        fm, body = _read_skill_file(skill_dir)
-        # 目录名优先使用 SKILL.md frontmatter.name（若可用）
-        preferred_seed = _slugify(str(fm.get("name") or "").strip()) or fallback_seed
-        preferred_directory = directory_name if existing_same_name_directories else _next_available_directory_name(base, preferred_seed)
-        if preferred_directory != directory_name:
-            target_dir = base / preferred_directory
-            shutil.move(str(skill_dir), str(target_dir))
-            directory_name = preferred_directory
-            skill_dir = target_dir
-            fm, body = _read_skill_file(skill_dir)
-        final_name = (str(fm.get("name") or "").strip() or directory_name)
-        final_desc = str(fm.get("description") or "")
-        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
-        fm["name"] = final_name
-        fm["description"] = final_desc
-        _sanitize_skill_frontmatter_for_write(fm)
-        _write_skill_file(skill_dir, fm, body)
-        _refresh_skills_loader()
-        existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
-        imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
-        mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
-        mcp_skipped = len(kept_tool_names)
-        mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
-        if mcp_rows_to_import:
-            merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
-            save_mcp_config(merged_mcp)
-            await _invalidate_mcp_runtime_after_config_change()
-        requirements_result = await _merge_imported_skill_requirements_and_prewarm([directory_name], base)
-
-        return {
-            "status": "ok",
-            "data": {
-                "directory_name": directory_name,
-                "name": final_name,
-                "description": final_desc,
-                "path": str(skill_dir),
-                "allowed_tools": _normalized_allowed_tools_dict(fm),
-                "skipped_by_name": False,
-                "overwritten_directory_names": existing_same_name_directories,
-                "kept_directory_names": [],
-                "mcp_added": mcp_added,
-                "mcp_skipped": mcp_skipped,
-                "mcp_updated": mcp_updated,
-                "tool_name_map": tool_name_map,
-                "tool_kept_names": kept_tool_names,
-                **requirements_result,
-            },
-        }
-    except HTTPException:
-        if created_skill_dir and skill_dir.exists():
-            shutil.rmtree(skill_dir, ignore_errors=True)
-        raise
-    except Exception as e:
-        if created_skill_dir and skill_dir.exists():
-            shutil.rmtree(skill_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=f"ZIP 导入失败：{e}")
+    result = await _import_skill_from_bundle_bytes(raw, dry_run=False)
+    summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+    directory_name = str(result.get("imported_directory_name") or "")
+    data = {
+        **result,
+        "directory_name": directory_name,
+        "overwritten_by_name": bool(summary.get("overwritten_directory_names")),
+    }
+    return {"status": "ok", "data": data}
 
 def _content_disposition_attachment(filename: str) -> str:
     """下载文件名：HTTP 头须为 latin-1；含中文等非 ASCII 时用 RFC 5987 的 filename*。"""
@@ -833,11 +639,26 @@ def _content_disposition_attachment(filename: str) -> str:
 
 
 def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, Any]]] = None) -> bytes:
-    """将技能目录打包为 ZIP；根目录含 SKILL.md，可选携带 mcp_servers.json。"""
+    """将技能目录打包为当前资源包 ZIP。"""
     from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
 
+    directory_name = skill_dir.name
+    safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows or [])
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        manifest = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "bundle_type": "skill",
+            "root_resources": [{"type": "skill", "name": directory_name}],
+            "resource_counts": {
+                "scenarios": 0,
+                "agents": 0,
+                "skills": 1,
+                "tools": len(safe_mcp_rows),
+                "models": 0,
+            },
+        }
+        zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
         for fp in sorted(skill_dir.rglob("*")):
             if fp.is_dir():
                 continue
@@ -848,12 +669,10 @@ def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, An
             if ".git" in rel.parts:
                 continue
             arcname = "/".join(rel.parts)
-            if arcname == "mcp_servers.json":
-                continue
-            zf.write(fp, arcname)
-        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows or [])
-        if safe_mcp_rows:
-            zf.writestr("mcp_servers.json", json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
+            zf.write(fp, f"{SKILLS_DIR}/{directory_name}/{arcname}")
+        for row in safe_mcp_rows:
+            tool_dir = _resource_dir_name(row.get("name"), "tool")
+            zf.writestr(f"{TOOLS_DIR}/{tool_dir}/tool.json", json.dumps(row, ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
 
