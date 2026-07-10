@@ -122,11 +122,11 @@ async def session_chat_stream(session_id: str, request: GroupChatRequest):
 
 @router.post("/sessions/{session_id}/chat")
 async def session_chat_once(session_id: str, request: GroupChatRequest):
-    """会话非流式对话（兜底）：内部复用 SSE 逻辑并聚合最终事件。"""
+    """会话非流式对话：内部复用 SSE 逻辑并聚合最终事件。"""
     stream_resp = await group_chat_stream(session_id, request)
     body_iter = getattr(stream_resp, "body_iterator", None)
     if body_iter is None:
-        raise HTTPException(status_code=500, detail="chat fallback unavailable")
+        raise HTTPException(status_code=500, detail="chat stream aggregation unavailable")
 
     route_event: Optional[Dict[str, Any]] = None
     progress_events: List[Dict[str, Any]] = []

@@ -107,6 +107,15 @@ def test_chat_once_docs_only_advertise_current_aggregated_event_payloads():
         assert field in section
 
 
+def test_chat_once_runtime_is_not_named_as_fallback():
+    """The non-stream chat endpoint is a formal aggregation path, not fallback logic."""
+    text = (PROJECT_ROOT / "backend" / "app" / "api" / "sessions.py").read_text(encoding="utf-8")
+    section = text.split("async def session_chat_once", 1)[1].split("\n\n@router.", 1)[0]
+
+    assert "兜底" not in section
+    assert "fallback" not in section
+
+
 def test_runtime_docs_do_not_route_from_message_text():
     """Runtime routing docs must not reintroduce message-text control channels."""
     paths = [
