@@ -84,6 +84,53 @@ async def test_chat_stream_starts_with_start_event(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_keeps_missing_agent_references_in_session(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    async def _init_noop():
+        return None
+
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "等待用户",
+            "next_speaker": "user",
+            "next_action": "缺失专家引用应保留，等待用户手动修复。",
+            "suggested_add_agent_names": [],
+        }
+
+    monkeypatch.setattr(runtime, "ensure_mcp_and_skills_initialized", _init_noop)
+    monkeypatch.setattr(runtime, "load_agent_instances", lambda: [{"name": "存在专家"}])
+    monkeypatch.setattr(runtime, "load_app_settings", lambda: {"default_llm": "", "system_prompt": "", "host": {}})
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda _agent, _settings: object())
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    session_id = "s-missing-agent-ref"
+    state.save_session_definitions(
+        {
+            session_id: {
+                "title": "缺失引用",
+                "agent_names": ["存在专家", "已删除专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+    state.save_group_history(session_id, [])
+
+    response = await runtime.group_chat_stream(
+        session_id,
+        GroupChatRequest(message="继续", client_message_id="client-1"),
+    )
+    await _collect_stream_events(response)
+
+    saved = state.load_session_definitions()[session_id]
+    assert saved["agent_names"] == ["存在专家", "已删除专家"]
+
+
+@pytest.mark.asyncio
 async def test_session_events_stream_emits_snapshot_event_name_and_runtime_payload(monkeypatch, tmp_path):
     from app.agent import group_session_service
     from app.api import group_chat_state as state

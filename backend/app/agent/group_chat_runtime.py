@@ -192,11 +192,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     app_settings = load_app_settings()
     instances = [dict(item) for item in (load_agent_instances() or []) if isinstance(item, dict)]
     agent_map = {str(item.get("name") or "").strip(): item for item in instances if str(item.get("name") or "").strip()}
-    agent_names = [name for name in _dedupe_names(list(session_item.get("agent_names") or [])) if name in agent_map]
-    session_item["agent_names"] = list(agent_names)
+    session_agent_names = _dedupe_names(list(session_item.get("agent_names") or []))
+    agent_names = [name for name in session_agent_names if name in agent_map]
     if request.target_agent_name and request.target_agent_name not in agent_names:
         raise HTTPException(status_code=400, detail="target_agent_name is not in current agent_names")
-    save_session_definitions(session_definitions)
 
     messages = load_group_history(group_session_id)
     user_text = _request_user_text(request)
