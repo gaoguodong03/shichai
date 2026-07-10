@@ -82,6 +82,31 @@ def test_session_api_docs_do_not_advertise_host_skill_display_snapshot():
     assert '"skill_name"' not in section
 
 
+def test_chat_once_docs_only_advertise_current_aggregated_event_payloads():
+    """Non-stream chat docs must not reintroduce legacy response flags."""
+    text = (PROJECT_ROOT / "docs" / "design" / "interface-document.md").read_text(encoding="utf-8")
+    section = text.split("### 5.7 非流式对话", 1)[1].split("### 5.8 停止会话回复", 1)[0]
+
+    for field in [
+        '"interrupted"',
+        '"contents"',
+        '"content"',
+        '"meta"',
+        '"phase"',
+    ]:
+        assert field not in section
+
+    for field in [
+        '"route"',
+        '"progress"',
+        '"messages"',
+        '"message"',
+        '"end"',
+        '"error"',
+    ]:
+        assert field in section
+
+
 def test_runtime_docs_do_not_route_from_message_text():
     """Runtime routing docs must not reintroduce message-text control channels."""
     paths = [

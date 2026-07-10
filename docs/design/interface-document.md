@@ -309,8 +309,7 @@ POST /api/sessions/{session_id}/chat
     "messages": [],
     "message": {},
     "end": {},
-    "error": null,
-    "interrupted": false
+    "error": null
   }
 }
 ```
