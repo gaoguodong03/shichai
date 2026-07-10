@@ -344,7 +344,7 @@ def runtime_for_session(group_session_id: str, session_item: Dict[str, Any]) -> 
         failed_runtime = {"running": False, "phase": "failed"}
         write_group_runtime(group_session_id, None, notify_runtime=failed_runtime)
         return failed_runtime
-    return stored if isinstance(stored, dict) else {"running": False}
+    return _clean_runtime_state(stored) if isinstance(stored, dict) else {"running": False}
 
 
 async def register_group_run(group_session_id: str, *, user_id: str, task: asyncio.Task[Any]) -> str:
