@@ -111,7 +111,7 @@ async def expert_llm_pick_skill(
         debug["strategy"] = "expert_llm_pick_invalid_id"
         debug["invalid_pick"] = picked
     except Exception as e:
-        logger.warning("专家 Skill 选型 LLM 失败，将回退关键词路由: %s", e)
+        logger.warning("专家 Skill 选型 LLM 失败，按严格协议阻塞本轮专家执行: %s", e)
         debug["strategy"] = "expert_llm_pick_error"
         debug["error"] = str(e)
     return None, debug

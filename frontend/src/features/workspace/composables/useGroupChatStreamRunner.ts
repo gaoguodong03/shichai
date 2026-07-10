@@ -1,4 +1,4 @@
-import { chatOnceRequest, streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
+import { streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
 type StreamProgress = { text?: string; agent_name?: string; phase?: string; skill?: string }
@@ -52,7 +52,9 @@ export function createGroupChatStreamRunner(deps: {
           },
           onError: (error) => {
             streamServerErrored = true
-            console.error('SSE 事件解析失败', error)
+            console.error('SSE 事件失败', error)
+            const detail = error instanceof Error ? (error.message || '').trim() : String((error as Record<string, unknown>)?.error || (error as Record<string, unknown>)?.detail || '').trim()
+            failureHint = detail || failureHint
           },
         },
         signal,
@@ -62,58 +64,14 @@ export function createGroupChatStreamRunner(deps: {
         return false
       }
       streamFailed = true
-      console.error('SSE 请求失败，准备非流式补偿', error)
+      console.error('SSE 请求失败', error)
       failureHint = error instanceof Error ? (error.message || '').trim() : ''
     }
 
     if (signal?.aborted) return false
 
     if (!gotEnd || streamFailed || streamServerErrored) {
-      deps.setStreamingPhase('tool_running', sessionId)
-      try {
-        const fallback = await chatOnceRequest({ ...payload, session_id: sessionId })
-        if (fallback.status !== 'ok') {
-          const detail = String(fallback.error?.message || fallback.detail || '').trim()
-          failureHint = detail || failureHint
-          throw new Error(detail || 'chat once fallback failed')
-        }
-        const data = (fallback.data || {}) as {
-          route?: Record<string, unknown> | null
-          progress?: StreamProgress[]
-          messages?: Record<string, unknown>[]
-          message?: Record<string, unknown> | null
-          end?: Record<string, unknown> | null
-          error?: Record<string, unknown> | null
-        }
-        if (data.route) deps.updateAutoSwitchHint(data.route, sessionId)
-        if (Array.isArray(data.progress)) {
-          for (const chunk of data.progress) {
-            if (chunk?.text != null && chunk?.agent_name) {
-              if (deps.consumeStreamingStatusContent(chunk, sessionId)) continue
-              if (!isSelectedStreamSession()) continue
-              deps.appendStreamingContent(chunk.agent_name, chunk.text)
-            }
-          }
-        }
-        if (Array.isArray(data.messages)) {
-          for (const msg of data.messages) deps.handleStreamMessageEvent(msg, state, sessionId)
-        }
-        if (data.message) deps.handleStreamMessageEvent(data.message, state, sessionId)
-        if (data.end) {
-          deps.handleStreamEndEvent(data.end, state, sessionId)
-          shouldEmitMessageSent = true
-        }
-        if (!data.end && data.error) {
-          const errText = String(data.error?.error || data.error?.detail || '').trim()
-          failureHint = errText || failureHint
-          deps.setStreamingPhase('failed', sessionId)
-        }
-      } catch (fallbackError) {
-        console.error('非流式补偿失败', fallbackError)
-        const errText = fallbackError instanceof Error ? (fallbackError.message || '').trim() : ''
-        failureHint = failureHint || errText
-        deps.setStreamingPhase('failed', sessionId)
-      }
+      deps.setStreamingPhase('failed', sessionId)
     }
     if (!shouldEmitMessageSent && !gotEnd && isSelectedStreamSession()) {
       const visibleError = failureHint

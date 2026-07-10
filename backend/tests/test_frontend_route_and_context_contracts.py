@@ -164,6 +164,16 @@ def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
     assert "interrupted" not in combined
 
 
+def test_frontend_stream_runner_does_not_auto_fallback_to_chat_once():
+    runner = read("frontend/src/features/workspace/composables/useGroupChatStreamRunner.ts")
+
+    assert "chatOnceRequest" not in runner
+    assert "/chat once fallback" not in runner
+    assert "非流式补偿" not in runner
+    assert "SSE 请求失败，准备非流式补偿" not in runner
+    assert "deps.setStreamingPhase('failed', sessionId)" in runner
+
+
 def test_frontend_local_session_messages_include_created_at():
     composer = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
     time_format = read("frontend/src/features/workspace/messageTimeFormat.ts")

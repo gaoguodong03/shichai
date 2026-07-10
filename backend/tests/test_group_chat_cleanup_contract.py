@@ -57,6 +57,7 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "app/agent/scene_runtime.py",
         "app/agent/group_chat_hooks.py",
         "app/core/scene_scheduler.py",
+        "app/core/recruitment_helpers.py",
     ):
         assert not (ROOT / deleted_path).exists()
 
@@ -123,6 +124,13 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     assert "explicit_flag" not in host_decision
     assert "required_user_fields" not in tool_records
     assert "required_user_fields" not in tool_content
+
+
+def test_expert_skill_selection_does_not_advertise_keyword_fallback():
+    expert_runtime = _read("app/agent/expert_runtime.py")
+
+    assert "关键词路由" not in expert_runtime
+    assert "回退关键词" not in expert_runtime
 
 
 def test_frontend_e2e_mock_uses_current_resource_fields():

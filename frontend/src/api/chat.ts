@@ -135,7 +135,7 @@ export async function streamSessionEvents(
   )
 }
 
-/** POST /api/sessions/:id/chat（非流式兜底） */
+/** POST /api/sessions/:id/chat（非流式聚合） */
 export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promise<ApiResult<ChatOnceResponseData>> {
   const id = encodeURIComponent(payload.session_id || 'default')
   return apiFetch(`/sessions/${id}/chat`, {
