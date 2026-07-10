@@ -41,7 +41,6 @@ export function useGroupComposerActions(args: {
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
-  appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   clearAutoSwitchHint: () => void
@@ -65,7 +64,6 @@ export function useGroupComposerActions(args: {
     updateAutoSwitchHint: args.updateAutoSwitchHint,
     showStreamingRoutePlaceholder: args.showStreamingRoutePlaceholder,
     consumeStreamingStatusContent: args.consumeStreamingStatusContent,
-    appendStreamingContent: args.appendStreamingContent,
     handleStreamMessageEvent: args.handleStreamMessageEvent,
     handleStreamEndEvent: args.handleStreamEndEvent,
   })

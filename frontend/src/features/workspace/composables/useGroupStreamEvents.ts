@@ -152,33 +152,6 @@ export function useGroupStreamEvents(args: {
     })
   }
 
-  /** Append a progress text chunk to the current expert placeholder. */
-  function appendStreamingContent(agentName: string, text: string) {
-    const list = [...groupDisplayMessages.value]
-    const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
-    const appendToExisting =
-      speakerType(last) === 'expert' && speakerAgentName(last) === agentName && (last as { _streaming?: boolean })._streaming
-    if (appendToExisting) {
-      const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : messageContent(last) + text
-      const next = [...list.slice(0, -1), withMessageContent({ ...last, _streamingStatus: false } as GroupMessage, content)]
-      groupDisplayMessages.value = next
-    } else {
-      const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-      groupDisplayMessages.value = [
-        ...cleared,
-        {
-          speaker: { type: 'expert', agent_name: agentName },
-          message: { content: text },
-          _streaming: true,
-          _streamingStatus: false,
-        } as unknown as GroupMessage,
-      ]
-      scrollLatestAssistantRowToLowerMiddle()
-    }
-    scrollLatestAssistantRowToLowerMiddle()
-    nextTick(() => scheduleHydrateAuthImages())
-  }
-
   /** Replace the streaming placeholder with the complete assistant message. */
   function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
     const displayData = toDisplayMessage(data)
@@ -283,7 +256,6 @@ export function useGroupStreamEvents(args: {
   }
 
   return {
-    appendStreamingContent,
     showStreamingRoutePlaceholder,
     replaceOrPushAssistantMessage,
     clearStreamingPlaceholders,

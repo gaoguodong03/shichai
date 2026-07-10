@@ -532,6 +532,20 @@ def test_frontend_does_not_infer_runtime_phase_from_route_or_message_events():
     assert "patchGroupStreamState(activeSessionId(sessionId), { phase: 'assistant_generating' })" not in message_handler.group(0)
 
 
+def test_frontend_progress_events_do_not_append_message_body_text():
+    """Progress is runtime status only; final body text must arrive through message events."""
+    runner = read("frontend/src/features/workspace/composables/useGroupChatStreamRunner.ts")
+    stream_events = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+    composer = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
+    providers = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
+
+    assert "appendStreamingContent" not in runner
+    assert "appendStreamingContent" not in stream_events
+    assert "appendStreamingContent" not in composer
+    assert "appendStreamingContent" not in providers
+    assert "data?.text != null" not in runner
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

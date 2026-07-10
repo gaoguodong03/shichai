@@ -418,7 +418,6 @@ export function useWorkspaceContentProviders(args: {
     clearAutoSwitchHint,
   })
   const {
-    appendStreamingContent,
     showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
     handleStreamMessageEvent,
@@ -445,7 +444,6 @@ export function useWorkspaceContentProviders(args: {
     updateAutoSwitchHint,
     showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
-    appendStreamingContent,
     handleStreamMessageEvent,
     handleStreamEndEvent,
     clearAutoSwitchHint,

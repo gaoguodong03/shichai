@@ -11,7 +11,6 @@ export function createGroupChatStreamRunner(deps: {
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamProgress, sessionId: string) => boolean
-  appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
 }) {
@@ -36,11 +35,7 @@ export function createGroupChatStreamRunner(deps: {
             deps.showStreamingRoutePlaceholder(data, sessionId)
           },
           onProgress: (data) => {
-            if (data?.text != null && data?.agent_name) {
-              if (deps.consumeStreamingStatusContent(data, sessionId)) return
-              if (!isSelectedStreamSession()) return
-              deps.appendStreamingContent(data.agent_name, data.text)
-            }
+            deps.consumeStreamingStatusContent(data, sessionId)
           },
           onMessage: (data) => {
             deps.handleStreamMessageEvent(data, state, sessionId)
