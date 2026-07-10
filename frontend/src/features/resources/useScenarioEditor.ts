@@ -164,7 +164,7 @@ export function useScenarioEditor(options: {
     if (!raw || typeof raw !== 'object') return null
     const directoryName = String((raw as any).skill_directory || '').trim().replace(/^[/\\]+/, '')
     const name = String((raw as any).skill_name || '').trim()
-    if (!directoryName || !name) return null
+    if (!directoryName) return null
     const current = (skills.value || []).find((s) => s.directory_name === directoryName)
     return { name: name || current?.name || directoryName, directory_name: directoryName }
   }

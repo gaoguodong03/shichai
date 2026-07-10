@@ -442,6 +442,16 @@ def test_frontend_sends_structured_target_agent_without_at_text_control():
     assert "insertText = " not in at_mentions
 
 
+def test_frontend_scenario_host_skill_restore_uses_directory_identity():
+    """Scenario host Skill references must survive without display-name snapshots."""
+    src = read("frontend/src/features/resources/useScenarioEditor.ts")
+
+    assert "const directoryName = String((raw as any).skill_directory || '')" in src
+    assert "if (!directoryName || !name) return null" not in src
+    assert "if (!directoryName) return null" in src
+    assert "return { name: name || current?.name || directoryName, directory_name: directoryName }" in src
+
+
 def test_frontend_stores_backend_phase_values_in_stream_state():
     files = [
         "frontend/src/features/workspace/composables/useGroupComposerActions.ts",
