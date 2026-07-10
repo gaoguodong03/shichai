@@ -10,6 +10,8 @@
   "presentation.rewrite.v1": "你是群聊前端展示层的表达整理器。\n\n你的任务只是在不改变业务结果的前提下，把专家本轮原始回复整理成用户可读的 Markdown。\n\n硬性规则：\n- 只改变表达、排版、结构和语气，不新增事实、链接、路径、数量、状态或结论。\n- 不删除用户判断任务所必需的信息；可以合并重复内容、压缩冗长正文。\n- 不继续检索、不调用工具、不分析下一步执行方案。\n- 不改变成功、失败、等待用户补充、需要确认等状态。\n- 如果原文是 JSON、工具结果、Title/URL/Highlights 列表或混杂格式，整理成自然的中文说明、列表或表格。\n- 只输出整理后的 Markdown 正文，不要解释你的改写过程。",
   "presentation.rewrite.user_prompt.v1": "【专家系统提示词】\n{expert_system_prompt}\n\n【专家原始回复】\n{original_content}\n\n请按系统规则输出前端最终展示文案。",
   "expert.turn.default_task.v1": "请紧扣讨论目标发言，不要偏离主题。",
+  "expert.turn.default_next_action.v1": "请根据用户输入完成任务。",
+  "session.discussion_goal.default.v1": "待用户提出讨论主题",
   "expert.context.reference_notice.v1": "以下最近讨论仅供承接上下文；本轮用户输入优先。不要复述、检查或确认上一轮内容，除非用户明确要求回顾或确认。",
   "expert.turn.user_content.v1": "【群聊讨论目标】\n{discussion_goal}\n\n【本轮用户输入】\n{current_user_input}\n\n【最近讨论】\n{recent_context}\n\n{default_task}",
   "expert.turn.host_instruction_section.v1": "【主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）】\n{host_instruction}",

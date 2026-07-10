@@ -218,7 +218,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         target_agent_name=request.target_agent_name,
     )
     messages = load_group_history(group_session_id)
-    discussion_goal = normalize_discussion_goal(_last_user_message_text(messages)) or normalize_discussion_goal(user_text) or "待用户提出讨论主题"
+    discussion_goal = (
+        normalize_discussion_goal(_last_user_message_text(messages))
+        or normalize_discussion_goal(user_text)
+        or render_platform_prompt("session.discussion_goal.default.v1", {})
+    )
     stream_user = (get_current_user().username or "").strip()
 
     async def run_events() -> AsyncIterator[str]:
@@ -318,7 +322,7 @@ async def _run_contract_events(
     orchestration_state = load_group_orchestration_state(group_session_id)
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
-    next_action = user_text or "请根据用户输入完成任务。"
+    next_action = user_text or render_platform_prompt("expert.turn.default_next_action.v1", {})
     entry_route, route_state_changed = resolve_group_entry_route(
         request=request,
         orchestration_state=orchestration_state,

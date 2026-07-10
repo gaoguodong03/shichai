@@ -9,6 +9,7 @@ from app.agent.platform_prompts import render_platform_prompt
 
 
 DEFAULT_EXPERT_TASK = render_platform_prompt("expert.turn.default_task.v1", {})
+DEFAULT_DISCUSSION_GOAL = render_platform_prompt("session.discussion_goal.default.v1", {})
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def build_expert_turn_prompt(
         user_content = render_platform_prompt(
             "expert.turn.user_content.v1",
             {
-                "discussion_goal": (discussion_goal or "").strip() or "待用户提出讨论主题",
+                "discussion_goal": (discussion_goal or "").strip() or DEFAULT_DISCUSSION_GOAL,
                 "current_user_input": current_user_input,
                 "recent_context": context_text,
                 "default_task": DEFAULT_EXPERT_TASK,

@@ -226,6 +226,22 @@ def test_expert_turn_missing_sections_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_default_expert_turn_text_uses_platform_prompt_registry():
+    """Fallback text that enters LLM prompts must come from the platform prompt registry."""
+    runtime_text = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
+    builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
+
+    assert "请根据用户输入完成任务。" not in runtime_text
+    assert "待用户提出讨论主题" not in runtime_text
+    assert "待用户提出讨论主题" not in builder_text
+
+    for prompt_id in [
+        "expert.turn.default_next_action.v1",
+        "session.discussion_goal.default.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
     files = [
         ROOT / "backend/app/agent/platform_prompts.py",
