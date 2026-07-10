@@ -408,16 +408,17 @@ async def cancel_group_session_run(group_session_id: str, *, reason: str) -> boo
 
 def build_session_payload(session_id: str, session_item: Dict[str, Any]) -> Dict[str, Any]:
     """Build the stable response shape used by the sessions API."""
-    names = list(session_item.get("agent_names", []))
+    clean_item = _clean_session_definition(session_item)
+    names = list(clean_item.get("agent_names", []))
     out = {
         "id": session_id,
-        "title": session_item.get("title", "新对话"),
-        "title_auto_generated": session_item.get("title_auto_generated"),
+        "title": clean_item.get("title", "新对话"),
+        "title_auto_generated": clean_item.get("title_auto_generated"),
         "agent_names": names,
-        "host": dict(session_item.get("host") or {}),
-        "created_at": session_item.get("created_at", ""),
-        "updated_at": session_item.get("updated_at", ""),
-        "runtime": runtime_for_session(session_id, session_item),
+        "host": dict(clean_item.get("host") or {}),
+        "created_at": clean_item.get("created_at", ""),
+        "updated_at": clean_item.get("updated_at", ""),
+        "runtime": runtime_for_session(session_id, clean_item),
     }
     return out
 

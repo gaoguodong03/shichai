@@ -148,6 +148,35 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
     assert "agent_ids" not in updated
 
 
+def test_session_created_from_default_host_omits_display_only_skill_name(client: TestClient):
+    host_resp = client.put(
+        "/api/settings/host-profile",
+        json={
+            "name": "默认主持人",
+            "llm_name": "qwen3-max",
+            "skill_name": "主持人展示 Skill",
+            "skill_directory": "group-host",
+        },
+    )
+    assert host_resp.status_code == 200
+
+    create_resp = client.post("/api/sessions", json={"title": "默认主持人会话"})
+    assert create_resp.status_code == 200
+    created = create_resp.json()["data"]
+
+    assert created["host"] == {
+        "name": "默认主持人",
+        "llm_name": "qwen3-max",
+        "system_prompt": "",
+        "skill_directory": "group-host",
+    }
+    assert "skill_name" not in created["host"]
+
+    detail_resp = client.get(f"/api/sessions/{created['id']}")
+    assert detail_resp.status_code == 200
+    assert "skill_name" not in detail_resp.json()["data"]["host"]
+
+
 def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):
     from app.api import sessions
 
