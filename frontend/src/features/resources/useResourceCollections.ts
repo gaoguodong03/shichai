@@ -287,18 +287,17 @@ export function useResourceCollections(args: {
 
     const nextProviders = { ...llmProviders.value }
     delete nextProviders[modelName]
-    const nextDefault = llmDefault.value === modelName ? Object.keys(nextProviders)[0] || 'qwen3-max' : llmDefault.value
     const r = await apiRequest('/settings/app', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        default_llm: nextDefault,
+        default_llm: llmDefault.value,
         llm_providers: nextProviders,
       }),
     })
     const j = await r.json()
     if (j.status === 'ok') {
-      if (selectedId.value === modelName) selectedId.value = nextDefault && nextProviders[nextDefault] ? nextDefault : null
+      if (selectedId.value === modelName) selectedId.value = Object.keys(nextProviders)[0] || null
       await fetchLLM()
     } else {
       await appAlert({ title: '删除模型失败', message: j.detail || '删除失败', variant: 'danger' })

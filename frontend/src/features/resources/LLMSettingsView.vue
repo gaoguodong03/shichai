@@ -871,13 +871,7 @@ async function removeProvider() {
 
   form.value.llm_providers = next
 
-  if (form.value.default_llm === pid) {
-
-    form.value.default_llm = Object.keys(next)[0] || 'qwen3-max'
-
-  }
-
-  await saveAll(form.value.default_llm)
+  await saveAll(Object.keys(next)[0] || undefined)
 
 }
 
