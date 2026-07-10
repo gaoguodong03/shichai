@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { bootLoggedInApp, createE2eState, expectMainShell, loginByStorage, mockApi } from './fixtures/mockApi'
 
 test.describe('验收 2/6：工作空间会话与文件', () => {
-  test('用户可以新建会话、发送消息并看到专家回复', async ({ page }) => {
+  test('用户可以新建空会话、发送消息并看到主持人推荐专家', async ({ page }) => {
     await bootLoggedInApp(page)
 
     await page.getByRole('button', { name: '新建会话' }).click()
@@ -12,7 +12,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByPlaceholder('输入 @ 可指定专家').fill('请回答这条 UI 自动化消息')
     await page.getByRole('button', { name: '发送' }).click()
 
-    await expect(page.getByText('自动化测试回复：需求已收到。')).toBeVisible()
+    await expect(page.getByText('建议先邀请问答专家加入会话。')).toBeVisible()
   })
 
   test('新建会话菜单提供空会话和场景入口', async ({ page }) => {

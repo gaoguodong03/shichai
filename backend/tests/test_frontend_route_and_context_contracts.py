@@ -235,20 +235,21 @@ def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallba
     assert request_type is not None
     assert "client_message_id: string" in request_type.group(1)
     assert "client_message_id?: string" not in request_type.group(1)
-    assert "if (!body.client_message_id) return json(route, { detail: 'client_message_id is required' }, 422)" in chat_handler.group(1)
+    assert "const clientMessageId = String(body.client_message_id || '').trim()" in chat_handler.group(1)
+    assert "if (!clientMessageId) return json(route, { detail: 'client_message_id is required' }, 422)" in chat_handler.group(1)
 
     persisted_user_message = re.search(
         r"session\.messages\.push\(\{[\s\S]*?speaker: \{ type: 'user' \},[\s\S]*?created_at: now,[\s\S]*?\n\s*\}\)",
         chat_handler.group(1),
     )
     assert persisted_user_message is not None
-    assert "client_message_id: body.client_message_id," in persisted_user_message.group(0)
+    assert "client_message_id: clientMessageId," in persisted_user_message.group(0)
     assert "body.client_message_id ||" not in persisted_user_message.group(0)
     assert "client-${Date.now()}" not in persisted_user_message.group(0)
     assert "attachments: body.attachments || []" not in persisted_user_message.group(0)
     assert "target_agent_name: body.target_agent_name || null" not in persisted_user_message.group(0)
     assert "if (body.attachments?.length) messageBody.attachments = body.attachments" in chat_handler.group(1)
-    assert "if (body.target_agent_name) messageBody.target_agent_name = body.target_agent_name" in chat_handler.group(1)
+    assert "if (targetAgentName) messageBody.target_agent_name = targetAgentName" in chat_handler.group(1)
 
 
 def test_e2e_host_profile_mock_uses_host_name_not_display_name():
@@ -443,6 +444,29 @@ def test_frontend_sends_structured_target_agent_without_at_text_control():
     assert "groupTargetAgentName.value = opt.id" in at_mentions
     assert "`@${" not in at_mentions
     assert "insertText = " not in at_mentions
+
+
+def test_e2e_mock_rejects_legacy_runtime_request_fields():
+    mock_api = read("frontend/e2e/fixtures/mockApi.ts")
+
+    assert "function rejectUnexpectedKeys(" in mock_api
+    assert "function validateChatAttachments(" in mock_api
+    assert "attachment.type !== 'workspace_file'" in mock_api
+    assert "path.startsWith('/') || path.split('/').includes('..')" in mock_api
+    assert "Attachment does not exist" in mock_api
+    assert "rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'host'])" in mock_api
+    assert "rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'add_agent_names', 'remove_agent_names', 'host'])" in mock_api
+    assert "rejectUnexpectedKeys(route, body, ['message', 'client_message_id', 'attachments', 'target_agent_name'])" in mock_api
+    assert "if (validateChatAttachments(route, state, id, body.attachments || [])) return" in mock_api
+    assert "const clientMessageId = String(body.client_message_id || '').trim()" in mock_api
+    assert "client_message_id: clientMessageId" in mock_api
+    assert "const targetAgentName = String(body.target_agent_name || '').trim()" in mock_api
+    assert "const activeAgentNames = (session.agent_names || []).filter((name) => state.agents.some((agent) => agent.name === name))" in mock_api
+    assert "if (targetAgentName && !activeAgentNames.includes(targetAgentName))" in mock_api
+    assert "messageBody.target_agent_name = targetAgentName" in mock_api
+    assert "if (!activeAgentNames.length)" in mock_api
+    assert "suggested_add_agent_names: suggestedAddAgentNames" in mock_api
+    assert "speaker: { type: 'host', agent_name: hostName }" in mock_api
 
 
 def test_frontend_scenario_host_skill_restore_uses_directory_identity():

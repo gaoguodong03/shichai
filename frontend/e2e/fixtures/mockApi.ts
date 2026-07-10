@@ -250,6 +250,42 @@ function readBody<T extends Record<string, unknown>>(route: Route): T {
   }
 }
 
+function rejectUnexpectedKeys(route: Route, body: Record<string, unknown>, allowedKeys: string[]): boolean {
+  const allowed = new Set(allowedKeys)
+  const unexpected = Object.keys(body || {}).filter((key) => !allowed.has(key))
+  if (!unexpected.length) return false
+  json(route, { detail: `unexpected fields: ${unexpected.join(', ')}` }, 422)
+  return true
+}
+
+function validateChatAttachments(
+  route: Route,
+  state: E2eState,
+  workspaceId: string,
+  attachments: Array<{ type?: string; path?: string; name?: string }>,
+): boolean {
+  for (const attachment of attachments || []) {
+    if (attachment.type !== 'workspace_file') {
+      json(route, { detail: 'Attachment type must be workspace_file' }, 400)
+      return true
+    }
+    const path = String(attachment.path || '').trim()
+    if (!path || path.startsWith('/') || path.split('/').includes('..')) {
+      json(route, { detail: 'Attachment path must stay inside the session workspace' }, 400)
+      return true
+    }
+    const existsInContent = Object.prototype.hasOwnProperty.call(state.fileContent, fileKey(workspaceId, path))
+    const existsInListing = Object.entries(state.files).some(([key, items]) =>
+      key.startsWith(`${workspaceId}:`) && items.some((item) => !item.is_dir && item.path === path),
+    )
+    if (!existsInContent && !existsInListing) {
+      json(route, { detail: `Attachment does not exist: ${path}` }, 400)
+      return true
+    }
+  }
+  return false
+}
+
 function sessionResponse(session: Session, state: E2eState) {
   const response: Record<string, unknown> = {
     id: session.id,
@@ -321,6 +357,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     if (path === '/sessions' && method === 'POST') {
       const body = readBody<{ title?: string; agent_names?: unknown[]; host?: Record<string, unknown> }>(route)
+      if (rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'host'])) return
       const next: Session = {
         id: `session-new-${state.sessions.length + 1}`,
         title: String(body.title || '新对话'),
@@ -344,6 +381,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const session = state.sessions.find((s) => s.id === decodeURIComponent(sessionMatch[1]))
       if (!session) return notFound(route)
       const body = readBody<Record<string, unknown>>(route)
+      if (rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'add_agent_names', 'remove_agent_names', 'host'])) return
       if (typeof body.title === 'string') session.title = body.title
       if (Array.isArray(body.agent_names)) session.agent_names = body.agent_names.map(String)
       if (Array.isArray(body.add_agent_names)) {
@@ -374,34 +412,69 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
         target_agent_name?: string | null
       }>(route)
-      if (!body.client_message_id) return json(route, { detail: 'client_message_id is required' }, 422)
+      if (rejectUnexpectedKeys(route, body, ['message', 'client_message_id', 'attachments', 'target_agent_name'])) return
+      const clientMessageId = String(body.client_message_id || '').trim()
+      if (!clientMessageId) return json(route, { detail: 'client_message_id is required' }, 422)
       const session = state.sessions.find((s) => s.id === id)
-      const answer = '自动化测试回复：需求已收到。'
-      if (session) {
-        session.agent_names = session.agent_names?.length ? session.agent_names : ['问答专家']
-        const messageBody: E2eMessage['message'] = { content: body.message || '' }
-        if (body.attachments?.length) messageBody.attachments = body.attachments
-        if (body.target_agent_name) messageBody.target_agent_name = body.target_agent_name
-        session.messages.push({
-          message_id: `user-${session.messages.length + 1}`,
-          speaker: { type: 'user' },
-          message: messageBody,
-          client_message_id: body.client_message_id,
-          created_at: now,
-        })
-        session.messages.push({
-          message_id: `assistant-${session.messages.length + 1}`,
-          speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
-          message: { content: answer },
-          created_at: now,
-          skill_result: {
-            execution_status: 'succeeded',
-            content: answer,
-            artifacts: [],
-            next_action: { agent_turn: 'respond', skill_session: 'release' },
-          },
-        })
+      if (!session) return notFound(route)
+      if (validateChatAttachments(route, state, id, body.attachments || [])) return
+      const targetAgentName = String(body.target_agent_name || '').trim()
+      const activeAgentNames = (session.agent_names || []).filter((name) => state.agents.some((agent) => agent.name === name))
+      if (targetAgentName && !activeAgentNames.includes(targetAgentName)) {
+        return json(route, { detail: 'target_agent_name is not in current agent_names' }, 400)
       }
+      const messageBody: E2eMessage['message'] = { content: body.message || '' }
+      if (body.attachments?.length) messageBody.attachments = body.attachments
+      if (targetAgentName) messageBody.target_agent_name = targetAgentName
+      session.messages.push({
+        message_id: `user-${session.messages.length + 1}`,
+        speaker: { type: 'user' },
+        message: messageBody,
+        client_message_id: clientMessageId,
+        created_at: now,
+      })
+      if (!activeAgentNames.length) {
+        const hostName = String((session.host as { name?: unknown } | undefined)?.name || state.hostProfile.name || '四九')
+        const suggestedAddAgentNames = state.agents.map((agent) => agent.name).filter(Boolean).slice(0, 1)
+        const hostContent = suggestedAddAgentNames.length
+          ? `建议先邀请${suggestedAddAgentNames.join('、')}加入会话。`
+          : '当前会话还没有专家，请先在资源中心创建或邀请专家。'
+        session.messages.push({
+          message_id: `host-${session.messages.length + 1}`,
+          speaker: { type: 'host', agent_name: hostName },
+          message: { content: hostContent },
+          created_at: now,
+        })
+        return eventStream(route, [
+          ['start', { type: 'start', run_id: 'run-e2e' }],
+          ['message', {
+            message_id: 'host-stream',
+            speaker: { type: 'host', agent_name: hostName },
+            message: { content: hostContent },
+            created_at: now,
+          }],
+          ['end', {
+            type: 'end',
+            run_id: 'run-e2e',
+            phase: suggestedAddAgentNames.length ? 'recruiting' : 'awaiting_user',
+            waiting_for_user: true,
+            suggested_add_agent_names: suggestedAddAgentNames,
+          }],
+        ])
+      }
+      const answer = '自动化测试回复：需求已收到。'
+      session.messages.push({
+        message_id: `assistant-${session.messages.length + 1}`,
+        speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+        message: { content: answer },
+        created_at: now,
+        skill_result: {
+          execution_status: 'succeeded',
+          content: answer,
+          artifacts: [],
+          next_action: { agent_turn: 'respond', skill_session: 'release' },
+        },
+      })
       return eventStream(route, [
         ['start', { type: 'start', run_id: 'run-e2e' }],
         ['route', { type: 'route', run_id: 'run-e2e', agent_name: '问答专家', skill: 'skill-qa' }],
