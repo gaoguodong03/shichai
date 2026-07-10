@@ -165,6 +165,47 @@ def test_scene_bundle_import_overwrites_same_name_resources(monkeypatch, tmp_pat
     assert imported_scene["host"]["skill_directory"] == "skill-local"
 
 
+def test_scene_bundle_import_rejects_skip_name_conflict(monkeypatch, tmp_path: Path):
+    from app.api import settings_presets as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+    from app.main import app
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+
+    token = set_current_username("u1")
+    try:
+        ctx = get_current_user_context(default_fallback=False)
+        assert ctx is not None
+        api._mirror_session_presets_to_resources(
+            [{"name": "Scene A", "agent_names": ["Expert A"], "host": {"name": "主持人"}}]
+        )
+    finally:
+        reset_current_username(token)
+
+    raw = build_scenario_bundle_zip_bytes(
+        {"name": "Scene A", "agent_names": ["Expert A"], "host": {"name": "主持人"}},
+        [{"name": "Expert A", "description": "imported"}],
+        [],
+        tmp_path / "missing-skills",
+        [],
+    )
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/settings/session-presets/import-bundle",
+        data={"dry_run": "true", "name_conflict": "skip"},
+        files={"file": ("scene.zip", raw, "application/zip")},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400
+    assert "只支持同名覆盖" in response.json()["detail"]
+
+
 def test_expert_bundle_preview_uses_skill_display_names(monkeypatch, tmp_path: Path):
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username

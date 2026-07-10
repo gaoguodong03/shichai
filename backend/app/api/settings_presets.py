@@ -323,8 +323,6 @@ def _prepare_import_scene_by_name_identity(
     existing_mcp: List[Dict[str, Any]],
 ) -> Tuple[
     Dict[str, Any],
-    bool,
-    List[str],
     List[Dict[str, Any]],
     List[Dict[str, Any]],
     Dict[str, str],
@@ -347,12 +345,8 @@ def _prepare_import_scene_by_name_identity(
     )
     remapped_preset = _remap_scene_references(norm, agent_name_map, skill_directory_map)
 
-    kept_scene_names: List[str] = []
-    keep_preset = False
     return (
         remapped_preset,
-        keep_preset,
-        kept_scene_names,
         agent_rows_to_import,
         mcp_rows_to_import,
         skill_directory_map,
@@ -365,11 +359,11 @@ def _prepare_import_scene_by_name_identity(
 
 
 def _merge_session_presets_into_file(
-    normalized_rows: List[Dict[str, Any]], name_conflict: str
-) -> Tuple[List[Dict[str, Any]], List[str], List[str], List[str]]:
+    normalized_rows: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
     """将已规范化的场景行合并写入 resources/scenarios。
 
-    返回 (合并后列表, 本次写入的 preset name 列表, 因兼容 skip 模式跳过的名称, 被同名覆盖的旧 name 列表)。
+    返回 (合并后列表, 本次写入的 preset name 列表, 被同名覆盖的旧 name 列表)。
     """
     existing_rows = _load_session_preset_rows_from_resource_files()
     by_name: Dict[str, Dict[str, Any]] = {str(r["name"]): dict(r) for r in existing_rows if r.get("name")}
@@ -385,7 +379,6 @@ def _merge_session_presets_into_file(
         name_to_existing_names.setdefault(nk, []).append(existing_name)
 
     imported_names: List[str] = []
-    skipped_by_name: List[str] = []
     overwritten_existing_names: List[str] = []
     overwritten_name_keys: set[str] = set()
     for norm in normalized_rows:
@@ -395,9 +388,6 @@ def _merge_session_presets_into_file(
             continue
         same_names = [name for name in name_to_existing_names.get(_normalized_name_key(incoming_name), []) if name in by_name]
         if same_names:
-            if name_conflict == "skip":
-                skipped_by_name.append(incoming_name)
-                continue
             for name in same_names:
                 by_name.pop(name, None)
             overwritten_existing_names.extend(same_names)
@@ -422,7 +412,7 @@ def _merge_session_presets_into_file(
         if name not in used:
             merged.append(row)
     _mirror_session_presets_to_resources(merged)
-    return merged, imported_names, skipped_by_name, overwritten_existing_names
+    return merged, imported_names, overwritten_existing_names
 
 
 def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
@@ -568,9 +558,8 @@ async def import_session_preset_bundle(
         raise HTTPException(status_code=400, detail="上传文件为空")
 
     conflict = str(name_conflict or "overwrite").strip().lower()
-    if conflict not in ("overwrite", "skip"):
-        logging.getLogger(__name__).warning("unknown name_conflict=%s, fallback to overwrite", conflict)
-        conflict = "overwrite"
+    if conflict != "overwrite":
+        raise HTTPException(status_code=400, detail="当前场景资源包导入只支持同名覆盖")
 
     tmp: Optional[Path] = None
     try:
@@ -657,7 +646,6 @@ async def import_session_preset_bundle(
                         "would_skip_tools": [],
                         "would_overwrite_experts": expert_conflicts,
                         "name_conflict_existing_names": preset_name_conflicts,
-                        "name_conflict_mode": conflict,
                         "missing_references": missing_references,
                     },
                     "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹；同名资源按当前契约覆盖。",
@@ -670,7 +658,6 @@ async def import_session_preset_bundle(
         summary = dict(helper_result.get("summary") or {})
         merged_presets = _load_session_preset_rows_from_resource_files()
         imported_names = list(summary.get("preset_imported_names") or [])
-        skipped_by_name = list(summary.get("skipped_by_name") or [])
         overwritten_existing_names = list(summary.get("overwritten_existing_names") or [])
         val_after = _session_preset_validation_payload(
             next((row for row in merged_presets if str(row.get("name") or "") in imported_names), norm)
@@ -678,7 +665,7 @@ async def import_session_preset_bundle(
         meta = _request_log_meta(request)
         user_ctx = get_current_user_context(default_fallback=False)
         logger.info(
-            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s skipped_by_name=%s resource_names_before=%s resource_names_after=%s skills_imported=%s skills_failed=%s mcp_added=%s mcp_updated=%s mcp_failed=%s referer=%s",
+            "scenario_bundle_import_commit user=%s username=%s client=%s preset_name=%s before_names=%s after_names=%s imported_names=%s overwritten_names=%s resource_names_before=%s resource_names_after=%s skills_imported=%s skills_failed=%s mcp_added=%s mcp_updated=%s mcp_failed=%s referer=%s",
             user_ctx.user_id if user_ctx else "",
             user_ctx.username if user_ctx else get_current_username() or "",
             meta["client"],
@@ -687,7 +674,6 @@ async def import_session_preset_bundle(
             _preset_names(merged_presets),
             imported_names,
             overwritten_existing_names,
-            skipped_by_name,
             before_import_resource_names,
             _scenario_resource_names(),
             summary.get("skills_imported") or [],
@@ -789,8 +775,6 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             }
         (
             norm,
-            keep_preset,
-            kept_scene_names,
             agent_rows_to_import,
             mcp_rows_to_import,
             skill_directory_map,
@@ -831,20 +815,11 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
-        if keep_preset:
-            imported_names: List[str] = []
-            skipped_by_name: List[str] = []
-            overwritten_existing_names: List[str] = []
-            _mirror_session_presets_to_resources(_load_session_preset_rows_from_resource_files())
-        else:
-            _merged_presets, imported_names, skipped_by_name, overwritten_existing_names = _merge_session_presets_into_file(
-                [norm], "overwrite"
-            )
+        _merged_presets, imported_names, overwritten_existing_names = _merge_session_presets_into_file([norm])
         return {
             "object_type": "scene",
             "summary": {
                 "preset_imported_names": imported_names,
-                "skipped_by_name": skipped_by_name,
                 "overwritten_existing_names": overwritten_existing_names,
                 "skills_imported": imported_skills,
                 "skills_overwritten": overwritten_skills,

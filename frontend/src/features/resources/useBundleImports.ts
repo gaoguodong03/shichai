@@ -38,7 +38,6 @@ type ScenarioBundlePreview = {
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
     name_conflict_existing_names?: string[]
-    name_conflict_mode?: 'skip' | 'overwrite'
     would_overwrite_experts?: Record<string, string[]>
     would_remap_skills?: Record<string, string>
     would_remap_tools?: Record<string, string>
@@ -56,7 +55,6 @@ type AgentBundlePreview = {
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
     name_conflict_existing_names?: string[]
-    name_conflict_mode?: 'skip' | 'overwrite'
     would_remap_skills?: Record<string, string>
     would_remap_tools?: Record<string, string>
     would_overwrite_tools?: string[]
@@ -291,7 +289,6 @@ export function useBundleImports(options: {
             skills_overwritten?: string[]
             agent_imported_names?: string[]
             overwritten_agent_names?: string[]
-            skipped_by_name?: string[]
             overwritten_existing_names?: string[]
             mcp_added?: number
             mcp_updated?: number
