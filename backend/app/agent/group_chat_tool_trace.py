@@ -246,14 +246,14 @@ def guard_unverified_delivery_claims(
         return content
 
     parts = [
-        "本轮没有确认文件生成成功。",
-        "平台没有捕获到成功的文件、图片或工作区写入工具结果，因此不能把专家回复中的生成/保存声明视为已完成。",
+        render_platform_prompt("delivery.guard.unverified_title.v1", {}),
+        render_platform_prompt("delivery.guard.unverified_reason.v1", {}),
     ]
     if mentioned_paths:
-        parts.append("原回复提到的路径或链接：\n" + "\n".join(f"- {path}" for path in mentioned_paths))
+        parts.append(render_platform_prompt("delivery.guard.mentioned_paths_header.v1", {}) + "\n" + "\n".join(f"- {path}" for path in mentioned_paths))
     summary = _tool_failure_summary(output_texts)
     if summary:
-        parts.append("本轮工具返回摘要：\n" + summary)
+        parts.append(render_platform_prompt("delivery.guard.tool_summary_header.v1", {}) + "\n" + summary)
     if calls:
         parts.append(render_platform_prompt("delivery.guard.retry_after_tool_call.v1", {}))
     else:
