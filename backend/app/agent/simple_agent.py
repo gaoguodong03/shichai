@@ -330,7 +330,7 @@ class SimpleAgent:
                     duplicate_msgs = _missing_tool_response_messages(
                         tool_calls,
                         [],
-                        "重复的工作区写入已忽略",
+                        render_platform_prompt("agent.duplicate_workspace_write_guard.v1", {}),
                     )
                     messages.extend(duplicate_msgs)
                     yield {
@@ -844,7 +844,7 @@ class SimpleAgent:
                         _missing_tool_response_messages(
                             tool_calls,
                             [],
-                            "重复的工作区写入已忽略",
+                            render_platform_prompt("agent.duplicate_workspace_write_guard.v1", {}),
                         )
                     )
                     continue
