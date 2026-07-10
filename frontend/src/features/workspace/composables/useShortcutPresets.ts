@@ -13,6 +13,13 @@ export type ShortcutHostConfig = {
   skill_directory?: string
 }
 
+type SessionHostSnapshot = {
+  name?: string
+  system_prompt?: string
+  llm_name?: string
+  skill_directory?: string
+}
+
 export type ShortcutPreset = {
   name: string
   agent_names: string[]
@@ -64,6 +71,18 @@ export function useShortcutPresets(args: {
       skill_directory: skillDirectory,
     }
     return out.name || out.llm_name || out.system_prompt || out.skill_name || out.skill_directory ? out : undefined
+  }
+
+  function sessionHostFromScenarioPreset(hc: ShortcutHostConfig | undefined): SessionHostSnapshot | undefined {
+    if (!hc) return undefined
+    const skillDirectory = String(hc.skill_directory || '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
+    const out: SessionHostSnapshot = {
+      name: String(hc.name || '').trim(),
+      llm_name: String(hc.llm_name || '').trim(),
+      system_prompt: String(hc.system_prompt || ''),
+      skill_directory: skillDirectory,
+    }
+    return out.name || out.llm_name || out.system_prompt || out.skill_directory ? out : undefined
   }
 
   function getCurrentUserShortcutStorageKey(): string {
@@ -212,7 +231,7 @@ export function useShortcutPresets(args: {
     const body: Record<string, unknown> = {
       title,
       agent_names: targetExperts,
-      host: p.host,
+      host: sessionHostFromScenarioPreset(p.host),
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {

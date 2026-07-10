@@ -485,6 +485,18 @@ def test_frontend_scenario_host_skill_restore_uses_directory_identity():
     assert "return { name: name || current?.name || directoryName, directory_name: directoryName }" in src
 
 
+def test_frontend_scenario_session_create_strips_display_only_host_skill_name():
+    """Scenario resources keep host.skill_name, but session creation host snapshots do not."""
+    src = read("frontend/src/features/workspace/composables/useShortcutPresets.ts")
+    helper = re.search(r"function sessionHostFromScenarioPreset[\s\S]*?\n  \}", src)
+
+    assert helper is not None
+    assert "skill_directory" in helper.group(0)
+    assert "skill_name" not in helper.group(0)
+    assert "host: sessionHostFromScenarioPreset(p.host)" in src
+    assert "host: p.host" not in src
+
+
 def test_frontend_stores_backend_phase_values_in_stream_state():
     files = [
         "frontend/src/features/workspace/composables/useGroupComposerActions.ts",
