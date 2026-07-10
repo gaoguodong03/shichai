@@ -378,6 +378,23 @@ def test_skill_workspace_tool_lines_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_unverified_delivery_guard_messages_use_platform_prompt_registry():
+    """Platform-authored delivery guard messages belong in the shared prompt registry."""
+    module_text = (ROOT / "backend/app/agent/group_chat_tool_trace.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "请重新发起生成，或让专家先完成真实工具调用后再交付文件链接。",
+        "请重新发起生成，或启用对应专家的文件/图片生成工具后再试。",
+    ]:
+        assert phrase not in module_text
+
+    for prompt_id in [
+        "delivery.guard.retry_after_tool_call.v1",
+        "delivery.guard.retry_after_missing_tool.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry():
     """ToolSpec descriptions and field schema text are LLM-visible prompt material."""
     files = [

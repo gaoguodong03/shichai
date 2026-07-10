@@ -88,6 +88,8 @@
   "agent.text_tool_protocol.retry.v1": "上一步没有产生可执行的工具调用，平台未执行任何文件操作。请重新选择可用文件工具并填写参数完成任务。",
   "agent.text_tool_protocol.failure.v1": "本轮工具调用格式不符合要求，平台未执行文件操作；如果需要保存或修改文件，请重新发起任务。",
   "agent.tool_call.missing_response.v1": "工具 {tool_name} 未继续执行：{reason}",
+  "delivery.guard.retry_after_tool_call.v1": "请重新发起生成，或让专家先完成真实工具调用后再交付文件链接。",
+  "delivery.guard.retry_after_missing_tool.v1": "请重新发起生成，或启用对应专家的文件/图片生成工具后再试。",
   "expert.select_skill.user_prompt.v1": "请按系统提示选择本轮唯一 Skill。",
   "title.group_topic.user_messages.v1": "最近用户发言：\n{user_messages}",
   "expert.self_awareness.v1": "## 你当前绑定的 Skill\n若用户询问你有哪些 skill、能力或工具包，必须依据下列清单回答，不要编造清单外的名称；本轮实际执行时仍以上文完整技能说明为准。\n\n{skill_lines}"

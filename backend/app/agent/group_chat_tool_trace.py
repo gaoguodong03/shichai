@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, unquote, urlparse
 
+from app.agent.platform_prompts import render_platform_prompt
+
 
 _WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/sessions/[^\s)\"'<>]+/workspace/files/download\?path=[^\s)\"'<>]+")
 _WORKSPACE_WRITE_SUCCESS_RE = re.compile(r"已写入当前(?:\s*Chat)?\s*工作区文件[:：]\s*([^\s]+)")
@@ -253,9 +255,9 @@ def guard_unverified_delivery_claims(
     if summary:
         parts.append("本轮工具返回摘要：\n" + summary)
     if calls:
-        parts.append("请重新发起生成，或让专家先完成真实工具调用后再交付文件链接。")
+        parts.append(render_platform_prompt("delivery.guard.retry_after_tool_call.v1", {}))
     else:
-        parts.append("请重新发起生成，或启用对应专家的文件/图片生成工具后再试。")
+        parts.append(render_platform_prompt("delivery.guard.retry_after_missing_tool.v1", {}))
     return "\n\n".join(parts).strip()
 
 
