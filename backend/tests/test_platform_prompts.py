@@ -345,6 +345,14 @@ def test_read_workspace_file_tool_messages_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_simple_agent_missing_tool_response_uses_platform_prompt_registry():
+    """ToolMessage content returned to the LLM belongs in the shared prompt registry."""
+    module_text = (ROOT / "backend/app/agent/simple_agent_tool_ids.py").read_text(encoding="utf-8")
+
+    assert "未继续执行" not in module_text
+    assert "agent.tool_call.missing_response.v1" in PLATFORM_PROMPTS
+
+
 def test_skill_workspace_tool_lines_use_platform_prompt_registry():
     """LLM-visible workspace tool descriptions belong in the shared prompt registry."""
     runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")

@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.agent.messages import BaseMessage, ToolMessage
+from app.agent.platform_prompts import render_platform_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,10 @@ def _missing_tool_response_messages(tool_calls: list[Any], existing_messages: li
             continue
         missing.append(
             ToolMessage(
-                content=f"工具 {_tool_call_name(tool_call)} 未继续执行：{reason}",
+                content=render_platform_prompt(
+                    "agent.tool_call.missing_response.v1",
+                    {"tool_name": _tool_call_name(tool_call), "reason": reason},
+                ),
                 tool_call_id=tcid,
             )
         )
