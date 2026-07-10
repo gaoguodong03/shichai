@@ -191,6 +191,15 @@ def test_frontend_stream_runner_does_not_auto_fallback_to_chat_once():
     assert "deps.setStreamingPhase('failed', sessionId)" in runner
 
 
+def test_frontend_chat_api_omits_empty_optional_request_fields():
+    src = read("frontend/src/api/chat.ts")
+
+    assert "attachments: payload.attachments || []" not in src
+    assert "target_agent_name: payload.target_agent_name || null" not in src
+    assert "if (payload.attachments?.length) body.attachments = payload.attachments" in src
+    assert "if (targetAgentName) body.target_agent_name = targetAgentName" in src
+
+
 def test_frontend_local_session_messages_include_created_at():
     composer = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
     time_format = read("frontend/src/features/workspace/messageTimeFormat.ts")

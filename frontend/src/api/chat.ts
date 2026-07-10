@@ -35,6 +35,22 @@ interface ChatOnceResponseData {
   error?: Record<string, unknown> | null
 }
 
+function chatRequestBody(payload: ChatStreamRequestPayload) {
+  const body: {
+    message: string
+    client_message_id: string
+    attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    target_agent_name?: string
+  } = {
+    message: payload.message ?? '',
+    client_message_id: payload.client_message_id,
+  }
+  const targetAgentName = String(payload.target_agent_name || '').trim()
+  if (payload.attachments?.length) body.attachments = payload.attachments
+  if (targetAgentName) body.target_agent_name = targetAgentName
+  return body
+}
+
 async function readEventStream(
   response: Response,
   dispatch: (eventType: string, data: Record<string, unknown>) => void,
@@ -81,16 +97,10 @@ export async function streamSessionChat(
   signal?: AbortSignal,
 ): Promise<void> {
   const sessionId = encodeURIComponent(payload.session_id || 'default')
-  const body = {
-    message: payload.message ?? '',
-    client_message_id: payload.client_message_id,
-    attachments: payload.attachments || [],
-    target_agent_name: payload.target_agent_name || null,
-  }
   const response = await fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(chatRequestBody(payload)),
     signal,
   })
   if (!response.ok) throw new Error(response.statusText || `HTTP ${response.status}`)
@@ -140,11 +150,6 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
   const id = encodeURIComponent(payload.session_id || 'default')
   return apiFetch(`/sessions/${id}/chat`, {
     method: 'POST',
-    body: JSON.stringify({
-      message: payload.message ?? '',
-      client_message_id: payload.client_message_id,
-      attachments: payload.attachments || [],
-      target_agent_name: payload.target_agent_name || null,
-    }),
+    body: JSON.stringify(chatRequestBody(payload)),
   })
 }
