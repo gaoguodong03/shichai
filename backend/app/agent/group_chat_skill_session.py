@@ -101,6 +101,20 @@ def _flow_payloads_conflict(first: SkillScriptStdoutPayload, second: SkillScript
     return first.model_dump() != second.model_dump()
 
 
+def _skill_result_display_content(
+    *,
+    visible_content: str,
+    script_payload: SkillScriptStdoutPayload | None,
+    flow_payload: SkillScriptStdoutPayload | None,
+) -> str:
+    """Select the message fact content without letting script output be LLM-rewritten."""
+    if script_payload is not None:
+        return script_payload.content or "无可展示内容。"
+    if flow_payload is not None:
+        return visible_content or flow_payload.content or "无可展示内容。"
+    return visible_content or "无可展示内容。"
+
+
 def skill_result_from_content(
     *,
     status: str,
@@ -121,7 +135,11 @@ def skill_result_from_content(
         normalized = flow_payload.execution_status
     next_action = flow_payload.next_action.model_dump() if flow_payload is not None else dict(_DEFAULT_NEXT_ACTION)
     problem_content = problem_tool_result_content(tool_results)
-    display_content = visible_content or (flow_payload.content if flow_payload is not None else "") or "无可展示内容。"
+    display_content = _skill_result_display_content(
+        visible_content=visible_content,
+        script_payload=script_payload,
+        flow_payload=flow_payload,
+    )
     if protocol_error:
         normalized = "failed"
         display_content = protocol_error
