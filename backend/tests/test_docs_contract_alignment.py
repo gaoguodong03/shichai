@@ -463,6 +463,7 @@ def test_resource_import_docs_use_skill_directory_identity():
         PROJECT_ROOT / "docs" / "design" / "interface-document.md",
         PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md",
         PROJECT_ROOT / "docs" / "architecture" / "scenario-bundle-export.md",
+        PROJECT_ROOT / "docs" / "architecture" / "user-resource-store" / "storage-standard.md",
     ]
 
     for path in paths:
@@ -471,6 +472,7 @@ def test_resource_import_docs_use_skill_directory_identity():
             "同名 Skill",
             "frontmatter `name` 判断",
             "导入同名判断",
+            "同名展示名 Skill",
             "Skill 同名覆盖",
         ]:
             assert forbidden not in text, path
@@ -486,3 +488,16 @@ def test_name_based_resource_helpers_do_not_keep_skill_display_name_directory_pl
         "def _normalize_skill_folder",
     ]:
         assert forbidden not in text
+
+
+def test_data_structure_contract_does_not_use_skill_display_name_for_import_identity():
+    """The field contract must state Skill name is display-only for import identity."""
+    text = (PROJECT_ROOT / "docs" / "contracts" / "data-structure-and-field-logic.md").read_text(encoding="utf-8")
+    section = text.split("## 5. Skill 字段", 1)[1].split("## 6. 工具字段", 1)[0]
+
+    for forbidden in [
+        "也用于同名导入判断",
+        "导入冲突",
+        "同名导入判断",
+    ]:
+        assert forbidden not in section

@@ -180,7 +180,7 @@ allowed-tools:
 | 字段 | 类型 | 谁写 | 谁读 | 运行时影响 |
 |------|------|------|------|------------|
 | `directory_name` | 目录名 | 创建/导入逻辑 | 专家配置、主持人配置、Skill loader | Skill 的唯一加载键和磁盘目录名。 |
-| `name` | string | Skill 编辑器 | 列表、专家配置、导入冲突 | 展示名，也用于同名导入判断；不参与运行时加载。 |
+| `name` | string | Skill 编辑器 | 列表、专家配置、选择说明 | 展示名；不参与导入身份判断或运行时加载。 |
 | `description` | string | Skill 编辑器 | Skill 选择逻辑 | 多 Skill 时参与专家 Skill 选型。 |
 | `allowed-tools.mcp` | string[] | Skill 编辑器 | `get_mcp_servers_for_skill()` | 决定本轮允许加载哪些 MCP Server。 |
 | `allowed-tools.http_api` | string[] | Skill 编辑器 | `build_tools_for_group_chat()` | 决定本轮注入哪些 HTTP API 工具。 |
@@ -832,7 +832,7 @@ flowchart TD
 
 | 字段 | 风险 |
 |------|------|
-| `name` | 资源身份字段，改名会影响引用和导入冲突。 |
+| `name` | 非 Skill 资源身份字段，改名会影响引用和导入冲突。 |
 | `directory_name` | Skill 加载主键，错误会导致专家找不到 Skill。 |
 | `allowed-tools` | 工具权限边界，错误会导致工具不加载或加载过多。 |
 | `system_prompt` | 分全局、场景、主持人、专家四层，容易混淆注入位置。 |
