@@ -5,13 +5,11 @@ from typing import Any
 from app.agent.messages import AIMessage, BaseMessage
 
 from app.agent.simple_agent_finalization import (
-    _align_final_response_with_written_workspace_paths,
     _compact_multiline_text,
-    _deterministic_tool_summary_message,
     _json_loads_maybe,
 )
 from app.agent.simple_agent_introspection import _WRAPPED_USER_CONTEXT_MARKERS, _section_text
-from app.agent.simple_agent_messages import _last_user_text, _looks_like_text_tool_call_protocol
+from app.agent.simple_agent_messages import _last_user_text
 from app.agent.simple_agent_tool_ids import _tool_call_args
 
 
@@ -169,23 +167,3 @@ def _tool_error_direct_final_message(
             continue
         return AIMessage(content=f"当前步骤失败：{label}\n\n{_compact_multiline_text(error_text, limit=2400)}")
     return None
-
-
-def _final_response_or_tool_summary(
-    response: BaseMessage,
-    raw_outputs: list[str],
-    tool_attempt_debug: list[dict[str, Any]],
-) -> BaseMessage:
-    if not _looks_like_text_tool_call_protocol(response):
-        return _align_final_response_with_written_workspace_paths(response, raw_outputs)
-    tool_attempt_debug.append(
-        {
-            "source": "text_tool_call_protocol_final_summary",
-            "matched": True,
-            "content_preview": str(getattr(response, "content", "") or "").strip()[:240],
-        }
-    )
-    return _align_final_response_with_written_workspace_paths(
-        _deterministic_tool_summary_message(raw_outputs),
-        raw_outputs,
-    )

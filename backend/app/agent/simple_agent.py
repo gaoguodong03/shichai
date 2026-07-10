@@ -32,10 +32,10 @@ from app.agent.simple_agent_messages import (
     _max_output_continuations,
 )
 from app.agent.simple_agent_tool_errors import (
-    _final_response_or_tool_summary,
     _terminal_tool_failure_message,
     _tool_error_direct_final_message,
 )
+from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary
 from app.agent.simple_agent_tool_flow import (
     all_workspace_write_calls_already_succeeded as _all_workspace_write_calls_already_succeeded,
     has_successful_workspace_write_output as _has_successful_workspace_write_output,
