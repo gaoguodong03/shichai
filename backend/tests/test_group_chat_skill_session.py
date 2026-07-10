@@ -173,6 +173,34 @@ def test_failed_tool_message_becomes_skill_result_content():
     assert result["next_action"] == {"agent_turn": "respond", "skill_session": "release"}
 
 
+def test_failed_tool_result_content_excludes_execution_log_fields():
+    result = skill_result_from_content(
+        status="failed",
+        content="模型没有返回可展示的文字内容。",
+        artifacts=[],
+        tool_results=[
+            {
+                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
+                "execution_status": "failed",
+                "message": "脚本执行失败，请检查 Skill 输出协议。",
+                "error_log": {
+                    "message": "脚本执行失败，请检查 Skill 输出协议。",
+                    "detail": "ValueError",
+                    "stdout": "private stdout should stay in runtime logs",
+                    "stderr": "private stderr should stay in runtime logs",
+                    "raw_output": "private raw output should stay in runtime logs",
+                },
+            }
+        ],
+    )
+
+    assert result["execution_status"] == "failed"
+    assert result["content"] == "当前步骤失败：run_skill_script\n\n脚本执行失败，请检查 Skill 输出协议。"
+    assert "stdout" not in result["content"]
+    assert "stderr" not in result["content"]
+    assert "raw_output" not in result["content"]
+
+
 def test_keep_skill_session_writes_continuation_from_skill_result():
     orchestration_state = {}
     skill_result = {

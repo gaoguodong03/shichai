@@ -818,24 +818,18 @@ class OpenSandboxAdapter:
             return 0.0
 
     @staticmethod
-    def _is_managed_sandbox(item: Dict[str, Any], *, known_images: set[str], include_legacy_image_match: bool) -> bool:
+    def _is_managed_sandbox(item: Dict[str, Any]) -> bool:
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        if str(metadata.get("managed_by") or "") == "st49" or str(metadata.get("app") or "") == "shichai":
-            return True
-        image_ref = str(item.get("image_ref") or "").strip()
-        return bool(include_legacy_image_match and image_ref and image_ref in known_images)
+        return str(metadata.get("managed_by") or "") == "st49" or str(metadata.get("app") or "") == "shichai"
 
     async def cleanup_orphan_sandboxes(
         self,
         *,
         active_sandbox_ids: set[str] | None = None,
-        known_images: set[str] | None = None,
         min_age_sec: int = 60,
-        include_legacy_image_match: bool = True,
         page_size: int = 100,
     ) -> Dict[str, Any]:
         active_ids = {str(x).strip() for x in (active_sandbox_ids or set()) if str(x).strip()}
-        images = {str(x).strip() for x in (known_images or set()) if str(x).strip()}
         now = time.time()
         scanned = 0
         skipped_active = 0
@@ -858,11 +852,7 @@ class OpenSandboxAdapter:
                 if sandbox_id in active_ids:
                     skipped_active += 1
                     continue
-                if not self._is_managed_sandbox(
-                    item,
-                    known_images=images,
-                    include_legacy_image_match=include_legacy_image_match,
-                ):
+                if not self._is_managed_sandbox(item):
                     skipped_unmanaged += 1
                     continue
                 created_at = self._created_at_epoch(item.get("created_at"))

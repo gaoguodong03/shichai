@@ -1528,7 +1528,7 @@ async def test_simple_agent_synthesizes_immediately_after_configured_read_file_p
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_direct_final_for_large_script_success_without_second_llm():
+async def test_simple_agent_does_not_direct_final_from_large_script_stdout():
     script_call = AIMessage(
         content="",
         tool_calls=[
@@ -1539,7 +1539,7 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
             }
         ],
     )
-    should_not_call = AIMessage(content="不应该为了大体积脚本日志再次调用模型")
+    final_answer = AIMessage(content="模型按协议总结脚本执行结果。")
     raw_payload = {
         "ok": True,
         "code": "script_executed",
@@ -1562,7 +1562,7 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([script_call, should_not_call]),
+        llm=_FakeLLM([script_call, final_answer]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -1572,10 +1572,10 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
     out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
 
     final_text = str(out["messages"][-1].content)
-    assert "本轮岗位数：55 个" in final_text
-    assert "不应该" not in final_text
+    assert final_text == "模型按协议总结脚本执行结果。"
+    assert "本轮岗位数：55 个" not in final_text
     assert "fetch log" not in final_text
-    assert any(
+    assert not any(
         item.get("source") == "large_run_skill_script_success_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )

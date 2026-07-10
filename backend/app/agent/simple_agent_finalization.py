@@ -102,14 +102,6 @@ def _run_skill_script_stdout_direct_final_message(tool_out: dict[str, Any]) -> A
     return None
 
 
-def _large_script_success_min_raw_chars() -> int:
-    raw = (os.getenv("SKILL_AGENT_LARGE_SCRIPT_SUCCESS_DIRECT_FINAL_MIN_CHARS") or "8000").strip()
-    try:
-        return max(0, int(raw))
-    except Exception:
-        return 8000
-
-
 def _compact_multiline_text(text: str, *, limit: int = 6000) -> str:
     text = str(text or "").strip()
     if len(text) <= limit:
@@ -121,39 +113,6 @@ def _compact_multiline_text(text: str, *, limit: int = 6000) -> str:
         + "\n\n...（中间内容已省略）...\n\n"
         + text[-tail_len:].lstrip()
     )[:limit].rstrip()
-
-
-def _large_run_skill_script_success_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
-    if not _env_truthy("SKILL_AGENT_DIRECT_FINAL_ON_LARGE_SCRIPT_SUCCESS", "1"):
-        return None
-    if not _has_run_skill_script_call(tool_out):
-        return None
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list):
-        return None
-    if sum(len(str(item or "")) for item in raw_outputs) < _large_script_success_min_raw_chars():
-        return None
-    payload = _successful_tool_payload(tool_out)
-    if payload is None:
-        return None
-    stdout = str(payload.get("stdout") or "").strip()
-    stderr = str(payload.get("stderr") or "").strip()
-    script = str(payload.get("script") or "").strip()
-    if not stdout and not stderr:
-        return None
-
-    parts = ["脚本执行成功。"]
-    if script:
-        parts.append(f"脚本：{script}")
-    if stdout:
-        parsed_stdout = _json_loads_maybe(stdout)
-        if isinstance(parsed_stdout, (dict, list)):
-            stdout = json.dumps(parsed_stdout, ensure_ascii=False, indent=2)
-        parts.append(_compact_multiline_text(stdout))
-    elif stderr:
-        parts.append("stdout 为空，以下是 stderr 摘要：")
-        parts.append(_compact_multiline_text(stderr, limit=2400))
-    return AIMessage(content="\n\n".join(part for part in parts if part).strip())
 
 
 def _script_dependency_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:

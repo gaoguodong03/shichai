@@ -17,7 +17,6 @@ from app.agent.simple_agent_finalization import (
     _deterministic_tool_fallback_message,
     _fallback_after_llm_failure_message,
     _final_synthesis_instruction,
-    _large_run_skill_script_success_direct_final_message,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
     _run_skill_script_stdout_direct_final_message,
@@ -464,18 +463,6 @@ class SimpleAgent:
                         }
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": mcp_direct_final_message}
-                    break
-                large_script_final_message = _large_run_skill_script_success_direct_final_message(tool_out)
-                if large_script_final_message is not None:
-                    messages.append(large_script_final_message)
-                    tool_attempt_debug.append(
-                        {
-                            "source": "large_run_skill_script_success_direct_final",
-                            "matched": True,
-                            "content_preview": _extract_text_content(large_script_final_message)[:240],
-                        }
-                    )
-                    yield {"type": "agent_step", "step": step + 2, "message": large_script_final_message}
                     break
                 if _is_run_skill_script_workflow_step(tool_out):
                     tool_attempt_debug.append(
@@ -966,17 +953,6 @@ class SimpleAgent:
                             "source": "mcp_tool_result_direct_final",
                             "matched": True,
                             "content_preview": _extract_text_content(mcp_direct_final_message)[:240],
-                        }
-                    )
-                    break
-                large_script_final_message = _large_run_skill_script_success_direct_final_message(tool_out)
-                if large_script_final_message is not None:
-                    messages.append(large_script_final_message)
-                    tool_attempt_debug.append(
-                        {
-                            "source": "large_run_skill_script_success_direct_final",
-                            "matched": True,
-                            "content_preview": _extract_text_content(large_script_final_message)[:240],
                         }
                     )
                     break

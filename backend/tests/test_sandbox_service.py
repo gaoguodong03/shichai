@@ -650,7 +650,19 @@ def test_opensandbox_metadata_value_is_label_safe_and_short():
     assert all(ch.isalnum() or ch in {"-", "_", "."} for ch in value)
 
 
-async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeypatch, tmp_path):
+def test_opensandbox_managed_sandbox_detection_uses_metadata_only():
+    assert OpenSandboxAdapter._is_managed_sandbox(
+        {"metadata": {"managed_by": "st49"}, "image_ref": "other"},
+    )
+    assert OpenSandboxAdapter._is_managed_sandbox(
+        {"metadata": {"app": "shichai"}, "image_ref": "other"},
+    )
+    assert not OpenSandboxAdapter._is_managed_sandbox(
+        {"metadata": {}, "image_ref": "example/sandbox:latest"},
+    )
+
+
+async def test_startup_orphan_cleanup_passes_active_ids_without_legacy_image_matching(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", "120")
     user_root = tmp_path / "alice"
@@ -666,9 +678,8 @@ async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeyp
     call = adapter.cleanup_calls[-1]
     assert call["active_sandbox_ids"] == {"sb-alice"}
     assert call["min_age_sec"] == 120
-    assert call["include_legacy_image_match"] is True
-    assert any(str(image).endswith("-standard") for image in call["known_images"])
-    assert any(str(image).endswith("-playwright") for image in call["known_images"])
+    assert "include_legacy_image_match" not in call
+    assert "known_images" not in call
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", raising=False)
 

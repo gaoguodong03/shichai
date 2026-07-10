@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any, Dict, List
 
 from app.agent.sandbox_adapter import OpenSandboxAdapter
-from app.agent.sandbox_image_policy import configured_sandbox_images
 from app.agent.sandbox_policy_builder import (
     apply_fixed_resource_policy,
     apply_user_image_policy,
@@ -141,7 +140,6 @@ class SandboxPrewarmMixin:
                     "failed": [],
                 }
         min_age_sec = env_int("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC") or 60
-        include_legacy = env_truthy("SANDBOX_ORPHAN_CLEANUP_LEGACY_IMAGE_MATCH", default="1")
         async with self._lock:
             active_ids = {
                 str((handle.metadata or {}).get("sandbox_id") or "").strip()
@@ -149,24 +147,15 @@ class SandboxPrewarmMixin:
                 if isinstance(handle.metadata, dict)
             }
         active_ids.discard("")
-        known_images = {
-            str(value or "").strip()
-            for value in configured_sandbox_images().values()
-            if str(value or "").strip()
-        }
         logger.info(
-            "sandbox_orphan_cleanup_start backend=%s active_count=%s known_image_count=%s min_age_sec=%s legacy_image_match=%s",
+            "sandbox_orphan_cleanup_start backend=%s active_count=%s min_age_sec=%s",
             self.backend_label(),
             len(active_ids),
-            len(known_images),
             min_age_sec,
-            include_legacy,
         )
         result = await self._adapter.cleanup_orphan_sandboxes(
             active_sandbox_ids=active_ids,
-            known_images=known_images,
             min_age_sec=min_age_sec,
-            include_legacy_image_match=include_legacy,
         )
         deleted = list((result or {}).get("deleted") or [])
         failed = list((result or {}).get("failed") or [])
