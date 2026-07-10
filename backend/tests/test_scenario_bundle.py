@@ -112,6 +112,37 @@ def test_roundtrip_zip_manifest():
         shutil.rmtree(skills_root, ignore_errors=True)
 
 
+def test_read_bundle_rejects_resource_identity_fields():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "bundle.json",
+            json.dumps(
+                {
+                    "exported_at": "2026-07-09T00:00:00Z",
+                    "bundle_type": "scenario",
+                    "root_resources": [{"type": "scenario", "name": "P"}],
+                    "resource_counts": {"scenarios": 1, "agents": 1, "skills": 0, "tools": 0, "models": 0},
+                },
+                ensure_ascii=False,
+            ),
+        )
+        zf.writestr("resources/scenarios/P/scenario.json", json.dumps({"name": "P", "agent_names": ["E"]}))
+        zf.writestr("resources/agents/E/agent.json", json.dumps({"agent_id": "old-id", "name": "E"}))
+
+    ext = extract_scenario_bundle_dir(buf.getvalue())
+    try:
+        try:
+            read_bundle_manifest_and_lists(ext)
+        except ValueError as exc:
+            assert "removed_resource_identity_field" in str(exc)
+            assert "agent_id" in str(exc)
+        else:
+            raise AssertionError("resource id fields must be rejected")
+    finally:
+        shutil.rmtree(ext, ignore_errors=True)
+
+
 def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
     preset = {"id": "p1", "name": "P", "agent_ids": []}
     mcps = [
@@ -140,6 +171,48 @@ def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
             assert env["ENV_API_KEY"] == "${env:SCENARIO_API_KEY}"
             assert env["MODEL"] == "qwen3-asr-1.7b"
             assert "sk-live-secret" not in raw.decode("latin-1")
+        finally:
+            shutil.rmtree(ext, ignore_errors=True)
+    finally:
+        shutil.rmtree(skills_root, ignore_errors=True)
+
+
+def test_scenario_bundle_only_preserves_platform_env_placeholders():
+    preset = {"id": "p1", "name": "P", "agent_ids": []}
+    mcps = [
+        {
+            "id": "x1",
+            "name": "M",
+            "transport": {
+                "type": "http",
+                "base_url": "https://mcp.example.test/mcp?token=${OLD_TOKEN}&ok=${env:REMOTE_TOKEN}",
+                "headers": {
+                    "Authorization": "Bearer ${OLD_AUTH_TOKEN}",
+                    "X-Api-Key": "${OLD_API_KEY}",
+                    "X-Env-Key": "${env:HEADER_KEY}",
+                },
+                "env": {
+                    "OLD_API_KEY": "${OLD_API_KEY}",
+                    "ENV_API_KEY": "${env:SCENARIO_API_KEY}",
+                },
+            },
+        }
+    ]
+    skills_root = Path(tempfile.mkdtemp())
+    try:
+        raw = build_scenario_bundle_zip_bytes(preset, [], mcps, skills_root, [])
+        ext = extract_scenario_bundle_dir(raw)
+        try:
+            _man, _p, _agents, mcp = read_bundle_manifest_and_lists(ext)
+            server_config = json.loads(mcp[0]["server_config"])
+            transport = server_config["mcpServers"]["M"]
+            assert transport["base_url"] == "https://mcp.example.test/mcp?token=&ok=${env:REMOTE_TOKEN}"
+            assert transport["headers"]["Authorization"] == ""
+            assert transport["headers"]["X-Api-Key"] == ""
+            assert transport["headers"]["X-Env-Key"] == "${env:HEADER_KEY}"
+            assert transport["env"]["OLD_API_KEY"] == ""
+            assert transport["env"]["ENV_API_KEY"] == "${env:SCENARIO_API_KEY}"
+            assert "${OLD_" not in raw.decode("latin-1")
         finally:
             shutil.rmtree(ext, ignore_errors=True)
     finally:

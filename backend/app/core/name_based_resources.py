@@ -39,6 +39,27 @@ def strip_resource_ids(value: Any) -> Any:
     return value
 
 
+def removed_resource_identity_fields(value: Any) -> List[str]:
+    """Return removed resource identity fields found in a nested payload."""
+    found: List[str] = []
+
+    def walk(item: Any) -> None:
+        if isinstance(item, list):
+            for child in item:
+                walk(child)
+            return
+        if not isinstance(item, dict):
+            return
+        for key, child in item.items():
+            key_text = str(key)
+            if key_text in _ID_KEYS and key_text not in found:
+                found.append(key_text)
+            walk(child)
+
+    walk(value)
+    return found
+
+
 def normalize_tool_type(raw: Any) -> str:
     value = str(raw or "").strip().casefold().replace("-", "_").replace(" ", "_")
     if value == "mcp":

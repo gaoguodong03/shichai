@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import unquote_plus, urlsplit
 
 from app.core.host_profile_contract import normalize_host_profile_dict
-from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
+from app.core.name_based_resources import normalize_tool_row, removed_resource_identity_fields, strip_resource_ids
 
 MANIFEST_NAME = "bundle.json"
 RESOURCES_DIR = "resources"
@@ -36,7 +36,7 @@ _SENSITIVE_CONFIG_TOKENS = {
     "secret",
     "token",
 }
-_ENV_REF_RE = re.compile(r"\$\{env:[A-Za-z_][A-Za-z0-9_]*\}|\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_ENV_REF_RE = re.compile(r"\$\{env:[A-Za-z_][A-Za-z0-9_]*\}")
 _SANITIZABLE_URL_SCHEMES = {"http", "https", "ws", "wss"}
 _PLACEHOLDER_VALUE_TOKENS = {
     "api_key",
@@ -375,6 +375,9 @@ def _read_resource_rows(root: Path, filename: str) -> List[Dict[str, Any]]:
             continue
         raw = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(raw, dict):
+            removed_fields = removed_resource_identity_fields(raw)
+            if removed_fields:
+                raise ValueError(f"removed_resource_identity_field:{','.join(removed_fields)}")
             rows.append(raw)
     return rows
 
