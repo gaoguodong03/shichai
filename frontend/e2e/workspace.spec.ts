@@ -241,6 +241,27 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(row.getByText('产物已经写入工作区。')).toBeVisible()
   })
 
+  test('mock 后端按 target_agent_name 路由到用户选择的专家', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].agent_names = ['问答专家', '写作专家']
+    state.sessions[0].messages = []
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    const input = page.getByPlaceholder('输入 @ 可指定专家')
+    await input.fill('@写')
+    await page.locator('.group-chat-at-dropdown').getByText('写作专家', { exact: true }).click()
+    await expect(page.getByText('指定：写作专家')).toBeVisible()
+    await input.fill('请按指定专家处理')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.locator('.group-chat-msg-row-other').filter({ hasText: '写作专家' }).last()).toBeVisible()
+    await expect(page.locator('.group-chat-msg-row-other').filter({ hasText: '问答专家' })).toHaveCount(0)
+  })
+
   test('专家运行时先显示占位气泡并随状态更新', async ({ page }) => {
     const state = createE2eState()
     state.sessions[0].agent_names = ['问答专家', '写作专家']

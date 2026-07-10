@@ -423,7 +423,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       if (targetAgentName && !activeAgentNames.includes(targetAgentName)) {
         return json(route, { detail: 'target_agent_name is not in current agent_names' }, 400)
       }
-      const messageBody: E2eMessage['message'] = { content: body.message || '' }
+      const messageBody: Message['message'] = { content: body.message || '' }
       if (body.attachments?.length) messageBody.attachments = body.attachments
       if (targetAgentName) messageBody.target_agent_name = targetAgentName
       session.messages.push({
@@ -461,10 +461,17 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           }],
         ])
       }
+      const routedAgentName = targetAgentName || activeAgentNames[0]
+      const routedAgent = state.agents.find((agent) => agent.name === routedAgentName)
+      const routedSkill = routedAgent?.skills?.[0]?.directory_name || undefined
+      const expertSpeaker: Message['speaker'] = { type: 'expert', agent_name: routedAgentName }
+      if (routedSkill) expertSpeaker.skill = routedSkill
+      const routePayload = { type: 'route', run_id: 'run-e2e', agent_name: routedAgentName, ...(routedSkill ? { skill: routedSkill } : {}) }
+      const progressPayload = { type: 'progress', run_id: 'run-e2e', phase: 'executing', agent_name: routedAgentName, ...(routedSkill ? { skill: routedSkill } : {}) }
       const answer = '自动化测试回复：需求已收到。'
       session.messages.push({
         message_id: `assistant-${session.messages.length + 1}`,
-        speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+        speaker: expertSpeaker,
         message: { content: answer },
         created_at: now,
         skill_result: {
@@ -475,11 +482,11 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         },
       })
       return eventStream(route, [
-        ['route', { type: 'route', run_id: 'run-e2e', agent_name: '问答专家', skill: 'skill-qa' }],
-        ['progress', { type: 'progress', run_id: 'run-e2e', phase: 'executing', agent_name: '问答专家', skill: 'skill-qa' }],
+        ['route', routePayload],
+        ['progress', progressPayload],
         ['message', {
           message_id: 'assistant-stream',
-          speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+          speaker: expertSpeaker,
           message: { content: answer },
           created_at: now,
           skill_result: {
