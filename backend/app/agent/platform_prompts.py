@@ -70,6 +70,12 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 只允许输出上述字段；不要输出任何额外字段或解释文本。
         """,
     ),
+    "host.previous_speaker.v1": _prompt(
+        "host.previous_speaker.v1",
+        """
+上一位专家：{last_speaker_agent_name}
+        """,
+    ),
     "expert.select_skill.v1": _prompt(
         "expert.select_skill.v1",
         """
@@ -151,6 +157,12 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
         "expert.turn.default_task.v1",
         """
 请紧扣讨论目标发言，不要偏离主题。
+        """,
+    ),
+    "expert.context.reference_notice.v1": _prompt(
+        "expert.context.reference_notice.v1",
+        """
+以下最近讨论仅供承接上下文；本轮用户输入优先。不要复述、检查或确认上一轮内容，除非用户明确要求回顾或确认。
         """,
     ),
     "expert.turn.user_content.v1": _prompt(

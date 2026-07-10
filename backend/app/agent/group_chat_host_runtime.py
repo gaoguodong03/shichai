@@ -134,7 +134,10 @@ async def _host_decide_by_agent(
         },
     )
     if last_speaker_agent_name:
-        prompt += f"\n\n上一位专家：{last_speaker_agent_name}"
+        prompt += "\n\n" + render_platform_prompt(
+            "host.previous_speaker.v1",
+            {"last_speaker_agent_name": last_speaker_agent_name},
+        )
 
     response = await llm.get_client().ainvoke([SystemMessage(content=system_content), HumanMessage(content=prompt)])
     raw = response.content if hasattr(response, "content") else str(response)

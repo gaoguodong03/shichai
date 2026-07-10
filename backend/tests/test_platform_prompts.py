@@ -35,6 +35,7 @@ def test_prompt_render_rejects_missing_variables():
 def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
     runtime_files = [
         ROOT / "backend/app/agent/group_chat_host_runtime.py",
+        ROOT / "backend/app/agent/group_context.py",
         ROOT / "backend/app/agent/group_chat_memory_prompt.py",
         ROOT / "backend/app/agent/group_chat_prompt_builder.py",
         ROOT / "backend/app/agent/group_chat_presentation_rewriter.py",
@@ -61,6 +62,8 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "非脚本 Skill、MCP / HTTP / workspace 工具后的流程判断",
         "上一步没有产生可执行的工具调用，平台未执行任何文件操作。",
         "本轮工具调用格式不符合要求，平台未执行文件操作；",
+        "以下最近讨论仅供承接上下文；本轮用户输入优先。",
+        "上一位专家：",
     ]:
         assert phrase not in combined
     for prompt_id in [
@@ -82,6 +85,8 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "skill.session.state_instruction.v1",
         "agent.text_tool_protocol.retry.v1",
         "agent.text_tool_protocol.failure.v1",
+        "expert.context.reference_notice.v1",
+        "host.previous_speaker.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 
