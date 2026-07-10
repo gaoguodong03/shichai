@@ -29,13 +29,7 @@ def _subst_placeholders(value: str, env_vars: Dict[str, str]) -> str:
         name = match.group(1)
         return env_vars.get(name, "") or os.environ.get(name, "")
 
-    def repl_env(match: re.Match[str]) -> str:
-        name = match.group(1)
-        return os.environ.get(name) or env_vars.get(name, "")
-
-    out = re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", repl_platform_env, value)
-    out = re.sub(r"\$\{(\w+)\}", repl_env, out)
-    return out
+    return re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", repl_platform_env, value)
 
 
 def _subst_jsonish(value: Any, env_vars: Dict[str, str]) -> Any:

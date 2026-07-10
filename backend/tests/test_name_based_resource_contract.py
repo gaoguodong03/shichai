@@ -139,6 +139,39 @@ def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
     assert called["timeout_seconds"] == 12
 
 
+def test_saved_http_api_tool_only_resolves_platform_env_syntax(monkeypatch):
+    from app.tools import call_api as call_api_mod
+    from app.tools.http_api_tool import create_http_api_tool
+
+    called = {}
+
+    def fake_call_api(**kwargs):
+        called.update(kwargs)
+        return "ok"
+
+    monkeypatch.setenv("EXA_API_KEY", "host-secret")
+    monkeypatch.setattr(call_api_mod, "_call_api_impl", fake_call_api)
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_impl", fake_call_api)
+    tool = create_http_api_tool(
+        {
+            "name": "Exa 搜索",
+            "type": "http_api",
+            "config": {
+                "type": "GET",
+                "base_url": "https://api.example.com/${EXA_API_KEY}",
+                "header": {"Authorization": "Bearer ${EXA_API_KEY}"},
+            },
+        },
+        env_vars={"EXA_API_KEY": "user-secret"},
+    )
+
+    assert tool.invoke({}) == "ok"
+    assert called["url"] == "https://api.example.com/${EXA_API_KEY}"
+    assert json.loads(called["headers_json"]) == {"Authorization": "Bearer ${EXA_API_KEY}"}
+
+
 def test_next_available_skill_folder_uses_new_skill_path_when_folder_conflicts_with_different_name(tmp_path: Path):
     existing = tmp_path / "skill-abc12345"
     existing.mkdir()

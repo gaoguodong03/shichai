@@ -313,15 +313,7 @@ def _subst_mcp_placeholders(val: str, env_vars: Optional[Dict[str, str]] = None)
         name = m.group(1)
         return env_vars.get(name, "") or os.environ.get(name, "")
 
-    def repl_env(m: re.Match) -> str:
-        name = m.group(1)
-        v = os.environ.get(name, "")
-        if v:
-            return v
-        return env_vars.get(name, "")
-
     s = re.sub(r"\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}", repl_platform_env, s)
-    s = re.sub(r"\$\{(\w+)\}", repl_env, s)
     return s
 
 
@@ -335,11 +327,6 @@ def _missing_mcp_placeholders(val: Any, env_vars: Optional[Dict[str, str]] = Non
         name = match.group(1)
         if not env_vars.get(name) and not os.environ.get(name):
             missing.append(f"env:{name}")
-
-    for match in re.finditer(r"\$\{(\w+)\}", s):
-        name = match.group(1)
-        if not os.environ.get(name) and not env_vars.get(name):
-            missing.append(name)
 
     return missing
 

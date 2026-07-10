@@ -21,6 +21,7 @@ from app.agent.tool_spec import ToolSpec
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
+from app.tools.skill_script_env import collect_sandbox_passthrough_env, subprocess_base_env
 from app.tools.skill_script_manifest import (
     ALLOWED_SCRIPT_SUFFIX as _ALLOWED_SCRIPT_SUFFIX,
     input_schema_from_manifest as _input_schema_from_manifest,
@@ -38,15 +39,6 @@ from app.tools.skill_script_sandbox_request import (
 logger = logging.getLogger(__name__)
 
 _SCRIPT_GATEWAY: Optional[UnifiedToolGateway] = None
-_SANDBOX_ENV_PASSTHROUGH_KEYS = (
-    "JENIYA_API_KEY",
-    "JENIYA_IMAGE_BASE_URL",
-    "JENIYA_IMAGE_MODEL",
-    "QWEN_AUDIO_CHUNK_SECONDS",
-    "QWEN_AUDIO_REQUEST_TIMEOUT_SEC",
-    "PLAYWRIGHT_BROWSERS_PATH",
-)
-_DEFAULT_PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
 
 
 def _get_script_gateway() -> UnifiedToolGateway:
@@ -54,26 +46,6 @@ def _get_script_gateway() -> UnifiedToolGateway:
     if _SCRIPT_GATEWAY is None:
         _SCRIPT_GATEWAY = UnifiedToolGateway()
     return _SCRIPT_GATEWAY
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _collect_sandbox_passthrough_env() -> dict[str, str]:
-    """将宿主进程中的少量必要变量透传到沙箱命令环境。"""
-    out: dict[str, str] = {}
-    missing_keys: list[str] = []
-    for key in _SANDBOX_ENV_PASSTHROUGH_KEYS:
-        val = (os.environ.get(key) or "").strip()
-        if val:
-            out[key] = val
-        else:
-            missing_keys.append(key)
-    out.setdefault("PLAYWRIGHT_BROWSERS_PATH", _DEFAULT_PLAYWRIGHT_BROWSERS_PATH)
-    logger.debug(
-        "st49_skill_env_passthrough code=skill_env_passthrough present_keys=%s missing_keys=%s",
-        sorted(out.keys()),
-        sorted(missing_keys),
-    )
-    return out
 
 
 def _get_skills_dir() -> Path:
@@ -220,7 +192,7 @@ def _execute_script_subprocess(
             text=True,
             timeout=timeout_sec,
             env={
-                **os.environ,
+                **subprocess_base_env(),
                 "SKILL_ID": directory_name,
                 "SKILL_WRITE_MODE": write_mode,
                 "SKILL_WORKSPACE_ID": workspace_id,
@@ -229,15 +201,6 @@ def _execute_script_subprocess(
                     f"{SANDBOX_SKILLS_ROOT}/{directory_name}/scripts"
                     if run_in_sandbox
                     else str(script_root)
-                ),
-                # 确保用户目录中的 skill 脚本也能 import app.*
-                "PYTHONPATH": (
-                    str(_BACKEND_ROOT)
-                    + (
-                        os.pathsep + os.environ.get("PYTHONPATH", "")
-                        if os.environ.get("PYTHONPATH")
-                        else ""
-                    )
                 ),
             },
         )
@@ -419,7 +382,7 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
             "SKILL_REQUIREMENTS_B64": requirements_b64,
             "SKILL_REQUIREMENTS_HASH": requirements_hash if requirements_b64 else "",
             **sandbox_extra_env,
-            **_collect_sandbox_passthrough_env(),
+            **collect_sandbox_passthrough_env(),
         }
         sandbox_command = _inline_shell_env(sandbox_command, sandbox_env)
         gw = await _get_script_gateway().execute(

@@ -158,6 +158,28 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     assert env["ST49_MCP_USERNAME"] == "user-runtime"
 
 
+def test_mcp_placeholders_only_resolve_platform_env_syntax(monkeypatch):
+    import app.mcp.manager as mcp_manager
+
+    monkeypatch.setenv("LEGACY_API_KEY", "host-legacy")
+
+    assert (
+        mcp_manager._subst_mcp_placeholders(
+            "Bearer ${env:LEGACY_API_KEY}",
+            {"LEGACY_API_KEY": "user-env"},
+        )
+        == "Bearer user-env"
+    )
+    assert (
+        mcp_manager._subst_mcp_placeholders(
+            "Bearer ${LEGACY_API_KEY}",
+            {"LEGACY_API_KEY": "user-env"},
+        )
+        == "Bearer ${LEGACY_API_KEY}"
+    )
+    assert mcp_manager._missing_mcp_placeholders("${LEGACY_API_KEY}", {}) == []
+
+
 def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     from app.agent import skill_agent_runtime as runtime
     from app.agent.tool_spec import ToolSpec
@@ -619,6 +641,50 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     assert "ok" in str(out.get("stdout") or "")
 
 
+def test_run_skill_script_subprocess_does_not_inherit_unrelated_host_env(monkeypatch, tmp_path):
+    from app.tools import run_skill_script as rss
+
+    ws_root = tmp_path / "ws"
+    ws_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(rss, "_get_workspace_root", lambda _wid: ws_root)
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-leak")
+
+    script_root = tmp_path / "skill" / "scripts"
+    script_root.mkdir(parents=True, exist_ok=True)
+    script_path = script_root / "probe.py"
+    script_path.write_text(
+        "import os\nprint(os.environ.get('UNRELATED_SECRET', 'absent'))\n",
+        encoding="utf-8",
+    )
+
+    out = rss._execute_script_subprocess(
+        script_full_path=script_path,
+        script_path="probe.py",
+        directory_name="probe-skill",
+        workspace_id="sess-probe",
+        write_mode="workspace_all",
+        cli_argv=[],
+        script_root=script_root,
+        timeout_sec=10,
+    )
+
+    assert out.get("ok") is True
+    assert str(out.get("stdout") or "") == "absent"
+
+
+def test_skill_script_sandbox_passthrough_does_not_inject_user_secrets(monkeypatch):
+    from app.tools.skill_script_env import collect_sandbox_passthrough_env
+
+    monkeypatch.setenv("JENIYA_API_KEY", "host-secret")
+    monkeypatch.setenv("QWEN_AUDIO_REQUEST_TIMEOUT_SEC", "30")
+
+    env = collect_sandbox_passthrough_env()
+
+    assert "JENIYA_API_KEY" not in env
+    assert "QWEN_AUDIO_REQUEST_TIMEOUT_SEC" not in env
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == "/ms-playwright"
+
+
 def test_run_skill_script_subprocess_executes_shell_script(monkeypatch, tmp_path):
     from app.tools import run_skill_script as rss
 
@@ -1046,7 +1112,7 @@ async def test_mcp_streamable_http_missing_placeholder_fails_before_connect(monk
         "name": "Linkup抓取网页",
         "transport": {
             "type": "http",
-            "base_url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}",
+            "base_url": "https://mcp.linkup.so/mcp?apiKey=${env:LINKUP_API_KEY}",
         },
     }
 
