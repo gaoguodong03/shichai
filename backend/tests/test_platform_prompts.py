@@ -242,6 +242,22 @@ def test_default_expert_turn_text_uses_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_workspace_visibility_tool_messages_use_platform_prompt_registry():
+    """LLM-visible workspace tool guidance belongs in the central prompt registry."""
+    visibility_text = (ROOT / "backend/app/agent/workspace_visibility.py").read_text(encoding="utf-8")
+
+    assert "请读取用户明确提供的工作区文件" not in visibility_text
+    assert "调度任务会由平台直接放在本轮提示词中" not in visibility_text
+
+    rendered = render_platform_prompt(
+        "workspace.visibility.internal_diagnostic_path_error.v1",
+        {"path": "memory/messages/trace.jsonl"},
+    )
+
+    assert "memory/messages/trace.jsonl" in rendered
+    assert "请读取用户明确提供的工作区文件" in rendered
+
+
 def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
     files = [
         ROOT / "backend/app/agent/platform_prompts.py",

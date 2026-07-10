@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from app.agent.platform_prompts import render_platform_prompt
+
 
 _INTERNAL_DIAGNOSTIC_FILES: set[str] = set()
 
@@ -76,9 +78,9 @@ def is_internal_diagnostic_workspace_path(path: str) -> bool:
 
 def internal_diagnostic_path_error(path: str) -> str:
     rel = normalize_workspace_rel_path(path)
-    return (
-        f"错误：{rel or path} 是平台内部排障日志，不作为专家工作区输入。"
-        "请读取用户明确提供的工作区文件；调度任务会由平台直接放在本轮提示词中。"
+    return render_platform_prompt(
+        "workspace.visibility.internal_diagnostic_path_error.v1",
+        {"path": rel or path},
     )
 
 

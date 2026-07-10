@@ -18,6 +18,7 @@
   "expert.turn.user_input_section.v1": "【本轮用户输入】\n{current_user_input}",
   "expert.turn.recent_context_section.v1": "【最近讨论】\n{recent_context}",
   "user.attachments.section.v1": "【工作区附件】\n{attachment_lines}",
+  "workspace.visibility.internal_diagnostic_path_error.v1": "错误：{path} 是平台内部排障日志，不作为专家工作区输入。请读取用户明确提供的工作区文件；调度任务会由平台直接放在本轮提示词中。",
   "expert.action.default.v1": "【群聊讨论目标】\n{discussion_goal}\n\n【最近几轮讨论内容（按时间顺序，含用户与各位专家的发言要点）】\n{recent_history}\n\n【你这一轮的任务】\n1. 直接进入你的角色发言或交付结果，不要先写任务说明。\n2. 结合你的角色与专长，完成本轮的 1～2 个具体子任务；可从上方「最近几轮讨论内容」中摘取关键信息（链接、主题、用户偏好、已有文案等）直接使用。\n3. 若涉及生成图片/配图/封面：请根据讨论中的文案或要点确定配图主题与风格，并说明所需尺寸或数量（若已提及）。\n4. 仅输出你本轮可交付结果，不要在正文中安排下一位角色。\n\n【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行；不要用任务说明式开头。",
   "expert.action.memory.v1": "{host_instruction_block}\n\n【群聊讨论目标】\n{discussion_goal}\n\n【任务要求】\n直接进入本轮角色发言或可执行结果，不要先说明当前子任务；若信息不足，先提出最小补充问题（最多 2 个）。\n\n{memory_prompt}\n\n【输出要求】\n聚焦执行，不复读整段历史；不要在正文中指定下一位角色。",
   "expert.action.structured_missing.v1": "{host_instruction_block}\n\n【群聊讨论目标】\n{discussion_goal}\n\n【输入依据】\n{input_prompt}\n\n【你本轮要完成的事情】\n1. 直接输出本轮角色发言或可执行结果，不要先说明你理解的子任务；\n2. 聚焦具体内容，不要泛泛解释；\n3. 只交付本轮结果，不要在正文中指定下一位角色。\n\n【输出格式】\n- 使用分点输出；\n- 每点尽量包含“动作 + 结果”；\n- 涉及链接/参数请显式写出。\n\n【边界条件】\n- 信息不足时，仅提出最多 2 个最小补充问题；\n- 不要复读整段历史，不要偏离讨论目标。\n\n【交付标准】\n- 结论清晰、可执行。",
