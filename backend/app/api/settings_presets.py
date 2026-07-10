@@ -32,12 +32,14 @@ from app.core.session_preset_validate import (
     validation_to_api_dict,
 )
 from app.core.settings_bundle_import import (
+    agent_name_conflicts,
     bundle_skill_display_name_map as _bundle_skill_display_name_map,
     collect_mcp_refs_from_skill_dirs,
-    copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     mcp_rows_for_bundle_refs,
     mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
+    normalized_name_key,
+    prepare_scene_import_by_name_identity,
     skill_name_identity_import_plan as _skill_name_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
@@ -219,146 +221,6 @@ def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetI
         return None
 
 
-def _normalized_name_key(raw: Any) -> str:
-    return str(raw or "").strip().lower()
-
-
-def _agent_name_identity_import_plan(
-    existing_agents: List[Dict[str, Any]],
-    bundle_agents: List[Dict[str, Any]],
-) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
-    existing_names: Set[str] = set()
-    for row in existing_agents:
-        name_key = _normalized_name_key(row.get("name"))
-        if name_key:
-            existing_names.add(name_key)
-
-    name_map: Dict[str, str] = {}
-    rows_to_import: List[Dict[str, Any]] = []
-    overwritten_existing_names: List[str] = []
-    for incoming in bundle_agents:
-        incoming_name = str(incoming.get("name") or "").strip()
-        name_key = _normalized_name_key(incoming.get("name"))
-        if not incoming_name or not name_key:
-            continue
-        copied = strip_agent_row_for_disk(dict(incoming))
-        name_map[incoming_name] = incoming_name
-        if name_key in existing_names:
-            overwritten_existing_names.append(incoming_name)
-            rows_to_import.append(copied)
-            continue
-        rows_to_import.append(copied)
-        existing_names.add(name_key)
-    return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
-
-
-def _agent_name_conflicts(
-    existing_agents: List[Dict[str, Any]],
-    bundle_agents: List[Dict[str, Any]],
-) -> Dict[str, List[str]]:
-    existing_name_to_names: Dict[str, List[str]] = {}
-    for row in existing_agents:
-        name = str(row.get("name") or "").strip()
-        name_key = _normalized_name_key(row.get("name"))
-        if name and name_key:
-            existing_name_to_names.setdefault(name_key, []).append(name)
-
-    conflicts: Dict[str, List[str]] = {}
-    for incoming in bundle_agents:
-        incoming_name = str(incoming.get("name") or "").strip()
-        incoming_name_key = _normalized_name_key(incoming.get("name"))
-        if not incoming_name or not incoming_name_key:
-            continue
-        names = existing_name_to_names.get(incoming_name_key) or []
-        if names:
-            conflicts[incoming_name] = list(dict.fromkeys(names))
-    return conflicts
-
-
-def _remap_scene_references(
-    preset: Dict[str, Any],
-    agent_name_map: Dict[str, str],
-    skill_directory_map: Dict[str, str],
-) -> Dict[str, Any]:
-    """Rewrite bundle-local references to the current account's resource names."""
-    work = dict(preset)
-    if isinstance(work.get("agent_names"), list):
-        work["agent_names"] = [
-            agent_name_map.get(str(name or "").strip(), str(name or "").strip())
-            for name in work.get("agent_names") or []
-            if str(name or "").strip()
-        ]
-    host = dict(work.get("host") or {}) if isinstance(work.get("host"), dict) else {}
-    skill_directory = str(host.get("skill_directory") or "").strip()
-    if skill_directory and skill_directory in skill_directory_map:
-        host["skill_directory"] = skill_directory_map[skill_directory]
-    if host:
-        work["host"] = host
-    return work
-
-
-def _remap_agent_skill_references(agent: Dict[str, Any], skill_directory_map: Dict[str, str]) -> Dict[str, Any]:
-    """Rewrite agent Skill directory references after bundle Skill import planning."""
-    work = strip_agent_row_for_disk(dict(agent))
-    skills = []
-    for item in work.get("skills") or []:
-        if isinstance(item, dict):
-            row = dict(item)
-            directory_name = str(row.get("directory_name") or "").strip()
-            if directory_name and directory_name in skill_directory_map:
-                row["directory_name"] = skill_directory_map[directory_name]
-            skills.append(row)
-        elif isinstance(item, str) and item.strip():
-            skills.append(skill_directory_map.get(item.strip(), item.strip()))
-    work["skills"] = skills
-    return work
-
-
-def _prepare_import_scene_by_name_identity(
-    norm: Dict[str, Any],
-    agent_bundle: List[Dict[str, Any]],
-    mcp_bundle: List[Dict[str, Any]],
-    tmp: Path,
-    user_skills: Path,
-    existing_agents: List[Dict[str, Any]],
-    existing_mcp: List[Dict[str, Any]],
-) -> Tuple[
-    Dict[str, Any],
-    List[Dict[str, Any]],
-    List[Dict[str, Any]],
-    Dict[str, str],
-    Dict[str, str],
-    Dict[str, str],
-    List[str],
-    List[str],
-    List[str],
-]:
-    imported_skills, overwritten_skills, skill_directory_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
-    tool_name_map, mcp_rows_to_import, _overwritten_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
-    remapped_agents = [
-        _remap_agent_skill_references(row, skill_directory_map)
-        for row in agent_bundle
-        if isinstance(row, dict)
-    ]
-    agent_name_map, agent_rows_to_import, overwritten_agent_names = _agent_name_identity_import_plan(
-        existing_agents,
-        remapped_agents,
-    )
-    remapped_preset = _remap_scene_references(norm, agent_name_map, skill_directory_map)
-
-    return (
-        remapped_preset,
-        agent_rows_to_import,
-        mcp_rows_to_import,
-        skill_directory_map,
-        tool_name_map,
-        agent_name_map,
-        imported_skills,
-        overwritten_agent_names,
-        overwritten_skills,
-    )
-
-
 def _merge_session_presets_into_file(
     normalized_rows: List[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
@@ -374,7 +236,7 @@ def _merge_session_presets_into_file(
         existing_name = str(r.get("name") or "").strip()
         if not existing_name:
             continue
-        nk = _normalized_name_key(r.get("name"))
+        nk = normalized_name_key(r.get("name"))
         if not nk:
             continue
         name_to_existing_names.setdefault(nk, []).append(existing_name)
@@ -387,12 +249,12 @@ def _merge_session_presets_into_file(
         incoming_name = str(work.get("name") or "").strip()
         if not incoming_name:
             continue
-        same_names = [name for name in name_to_existing_names.get(_normalized_name_key(incoming_name), []) if name in by_name]
+        same_names = [name for name in name_to_existing_names.get(normalized_name_key(incoming_name), []) if name in by_name]
         if same_names:
             for name in same_names:
                 by_name.pop(name, None)
             overwritten_existing_names.extend(same_names)
-            overwritten_name_keys.add(_normalized_name_key(incoming_name))
+            overwritten_name_keys.add(normalized_name_key(incoming_name))
         item = _dict_to_session_preset_item(work)
         if item is None:
             continue
@@ -404,11 +266,11 @@ def _merge_session_presets_into_file(
 
     merged: List[Dict[str, Any]] = []
     for name in original_names:
-        if _normalized_name_key(name) in overwritten_name_keys:
+        if normalized_name_key(name) in overwritten_name_keys:
             continue
         if name in by_name:
             merged.append(by_name[name])
-    used = {name for name in original_names if _normalized_name_key(name) not in overwritten_name_keys}
+    used = {name for name in original_names if normalized_name_key(name) not in overwritten_name_keys}
     for name, row in by_name.items():
         if name not in used:
             merged.append(row)
@@ -587,13 +449,13 @@ async def import_session_preset_bundle(
         preset_name_conflicts = [
             str(r.get("name") or "")
             for r in existing_presets
-            if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
+            if normalized_name_key(r.get("name")) == normalized_name_key(norm.get("name"))
             and str(r.get("name") or "").strip()
         ]
         existing_agents = load_agent_instances()
         existing_mcp = load_mcp_config()
         tool_name_map, _mcp_rows_to_import, would_overwrite_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
-        expert_conflicts = _agent_name_conflicts(existing_agents, agent_bundle)
+        expert_conflicts = agent_name_conflicts(existing_agents, agent_bundle)
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
             agent_bundle,
@@ -724,11 +586,11 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         preset_name_conflicts = [
             str(r.get("name") or "")
             for r in existing_presets
-            if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
+            if normalized_name_key(r.get("name")) == normalized_name_key(norm.get("name"))
             and str(r.get("name") or "").strip()
         ]
         existing_experts = load_agent_instances()
-        expert_conflicts = _agent_name_conflicts(existing_experts, agent_bundle)
+        expert_conflicts = agent_name_conflicts(existing_experts, agent_bundle)
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
             agent_bundle,
@@ -771,7 +633,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             imported_skills,
             overwritten_agent_names,
             overwritten_skills,
-        ) = _prepare_import_scene_by_name_identity(
+        ) = prepare_scene_import_by_name_identity(
             norm,
             agent_bundle,
             mcp_bundle,

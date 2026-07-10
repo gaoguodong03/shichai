@@ -10,7 +10,11 @@ import yaml
 
 from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row
-from app.core.scenario_bundle import bundle_skills_root, list_skill_directories_in_bundle_skills_dir
+from app.core.scenario_bundle import (
+    bundle_skills_root,
+    list_skill_directories_in_bundle_skills_dir,
+    strip_agent_row_for_disk,
+)
 
 
 def normalized_name_key(raw: Any) -> str:
@@ -53,6 +57,145 @@ def mcp_name_identity_import_plan(
         name_map[incoming_name] = incoming_name
         rows_to_import.append(copied)
     return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
+
+
+def agent_name_identity_import_plan(
+    existing_agents: List[Dict[str, Any]],
+    bundle_agents: List[Dict[str, Any]],
+) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
+    """Plan expert import by display name; same name overwrites local content."""
+    existing_names: Set[str] = set()
+    for row in existing_agents:
+        name_key = normalized_name_key(row.get("name"))
+        if name_key:
+            existing_names.add(name_key)
+
+    name_map: Dict[str, str] = {}
+    rows_to_import: List[Dict[str, Any]] = []
+    overwritten_existing_names: List[str] = []
+    for incoming in bundle_agents:
+        incoming_name = str(incoming.get("name") or "").strip()
+        name_key = normalized_name_key(incoming.get("name"))
+        if not incoming_name or not name_key:
+            continue
+        copied = strip_agent_row_for_disk(dict(incoming))
+        name_map[incoming_name] = incoming_name
+        if name_key in existing_names:
+            overwritten_existing_names.append(incoming_name)
+            rows_to_import.append(copied)
+            continue
+        rows_to_import.append(copied)
+        existing_names.add(name_key)
+    return name_map, rows_to_import, list(dict.fromkeys(overwritten_existing_names))
+
+
+def agent_name_conflicts(
+    existing_agents: List[Dict[str, Any]],
+    bundle_agents: List[Dict[str, Any]],
+) -> Dict[str, List[str]]:
+    """Return incoming expert names that will overwrite existing expert names."""
+    existing_name_to_names: Dict[str, List[str]] = {}
+    for row in existing_agents:
+        name = str(row.get("name") or "").strip()
+        name_key = normalized_name_key(row.get("name"))
+        if name and name_key:
+            existing_name_to_names.setdefault(name_key, []).append(name)
+
+    conflicts: Dict[str, List[str]] = {}
+    for incoming in bundle_agents:
+        incoming_name = str(incoming.get("name") or "").strip()
+        incoming_name_key = normalized_name_key(incoming.get("name"))
+        if not incoming_name or not incoming_name_key:
+            continue
+        names = existing_name_to_names.get(incoming_name_key) or []
+        if names:
+            conflicts[incoming_name] = list(dict.fromkeys(names))
+    return conflicts
+
+
+def remap_scene_references(
+    preset: Dict[str, Any],
+    agent_name_map: Dict[str, str],
+    skill_directory_map: Dict[str, str],
+) -> Dict[str, Any]:
+    """Rewrite bundle-local scene references to current account resource names."""
+    work = dict(preset)
+    if isinstance(work.get("agent_names"), list):
+        work["agent_names"] = [
+            agent_name_map.get(str(name or "").strip(), str(name or "").strip())
+            for name in work.get("agent_names") or []
+            if str(name or "").strip()
+        ]
+    host = dict(work.get("host") or {}) if isinstance(work.get("host"), dict) else {}
+    skill_directory = str(host.get("skill_directory") or "").strip()
+    if skill_directory and skill_directory in skill_directory_map:
+        host["skill_directory"] = skill_directory_map[skill_directory]
+    if host:
+        work["host"] = host
+    return work
+
+
+def remap_agent_skill_references(agent: Dict[str, Any], skill_directory_map: Dict[str, str]) -> Dict[str, Any]:
+    """Rewrite expert Skill directory references after bundle Skill import planning."""
+    work = strip_agent_row_for_disk(dict(agent))
+    skills = []
+    for item in work.get("skills") or []:
+        if isinstance(item, dict):
+            row = dict(item)
+            directory_name = str(row.get("directory_name") or "").strip()
+            if directory_name and directory_name in skill_directory_map:
+                row["directory_name"] = skill_directory_map[directory_name]
+            skills.append(row)
+        elif isinstance(item, str) and item.strip():
+            skills.append(skill_directory_map.get(item.strip(), item.strip()))
+    work["skills"] = skills
+    return work
+
+
+def prepare_scene_import_by_name_identity(
+    norm: Dict[str, Any],
+    agent_bundle: List[Dict[str, Any]],
+    mcp_bundle: List[Dict[str, Any]],
+    bundle_dir: Path,
+    user_skills_dir: Path,
+    existing_agents: List[Dict[str, Any]],
+    existing_mcp: List[Dict[str, Any]],
+) -> Tuple[
+    Dict[str, Any],
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    List[str],
+    List[str],
+    List[str],
+]:
+    """Prepare scene, expert, Skill, and tool rows for name-based bundle import."""
+    imported_skills, overwritten_skills, skill_directory_map = copy_bundle_skills_to_user_by_name(bundle_dir, user_skills_dir)
+    tool_name_map, mcp_rows_to_import, _overwritten_mcp = mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
+    remapped_agents = [
+        remap_agent_skill_references(row, skill_directory_map)
+        for row in agent_bundle
+        if isinstance(row, dict)
+    ]
+    agent_name_map, agent_rows_to_import, overwritten_agent_names = agent_name_identity_import_plan(
+        existing_agents,
+        remapped_agents,
+    )
+    remapped_preset = remap_scene_references(norm, agent_name_map, skill_directory_map)
+
+    return (
+        remapped_preset,
+        agent_rows_to_import,
+        mcp_rows_to_import,
+        skill_directory_map,
+        tool_name_map,
+        agent_name_map,
+        imported_skills,
+        overwritten_agent_names,
+        overwritten_skills,
+    )
 
 
 def upsert_rows_by_name(

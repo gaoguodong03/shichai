@@ -161,6 +161,30 @@ def test_skill_script_manifest_has_independent_module_boundary():
         assert old_private_definition not in runner_text
 
 
+def test_scene_bundle_import_planning_has_core_module_boundary():
+    """Scene bundle import planning belongs in core, not in the scene API route."""
+    api_text = (PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py").read_text(encoding="utf-8")
+    module_text = (PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py").read_text(encoding="utf-8")
+
+    for expected in [
+        "def agent_name_identity_import_plan",
+        "def agent_name_conflicts",
+        "def remap_scene_references",
+        "def remap_agent_skill_references",
+        "def prepare_scene_import_by_name_identity",
+    ]:
+        assert expected in module_text
+
+    for forbidden in [
+        "def _agent_name_identity_import_plan",
+        "def _agent_name_conflicts",
+        "def _remap_scene_references",
+        "def _remap_agent_skill_references",
+        "def _prepare_import_scene_by_name_identity",
+    ]:
+        assert forbidden not in api_text
+
+
 def test_group_chat_archive_has_independent_module_boundary():
     """Archive segmentation is presentation logic, not session state storage."""
     archive_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_archive.py"
