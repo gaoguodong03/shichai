@@ -35,9 +35,9 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(toolDelete).toHaveCSS('opacity', '1')
 
     await page.getByRole('button', { name: '模型', exact: true }).click()
-    const modelItem = sidebar.getByRole('button', { name: /Qwen.*qwen3-max/ })
+    const modelItem = sidebar.getByRole('button', { name: /^qwen3-max 默认 qwen3-max$/ })
     await expect(modelItem).toBeVisible()
-    const modelDelete = sidebar.getByRole('button', { name: '删除模型 Qwen' })
+    const modelDelete = sidebar.getByRole('button', { name: '删除模型 qwen3-max' })
     await expect(modelDelete).toHaveCSS('opacity', '0')
     await modelItem.hover()
     await expect(modelDelete).toHaveCSS('opacity', '1')
@@ -49,7 +49,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await page.getByRole('button', { name: '资源中心' }).click()
     await page.getByRole('button', { name: '技能', exact: true }).click()
 
-    await expect(page.getByText('问答技能')).toBeVisible()
+    await expect(page.getByRole('complementary').getByRole('button', { name: /问答技能.*用于前端点击验收/ })).toBeVisible()
     await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
     await expect(skillToolSectionTitle(page)).toBeVisible()
     await expect(page.getByText('技能运行时依赖')).toHaveCount(0)
@@ -252,7 +252,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await page.goto('/resources/llm')
     await page.getByRole('button', { name: '新建模型' }).click()
     await page.getByRole('button', { name: '新建', exact: true }).click()
-    await expectAlert(page, '无法保存模型', '模型标识不能为空')
+    await expectAlert(page, '无法保存模型', '模型型号不能为空')
     expect(llmSaveCount).toBe(0)
   })
 

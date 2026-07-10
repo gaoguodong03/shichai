@@ -123,7 +123,7 @@ export function createE2eState(): E2eState {
             created_at: now,
           },
         ],
-        host: { name: '四九', llm_name: 'qwen', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
+        host: { name: '四九', llm_name: 'qwen3-max', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
       },
     ],
     agents: [
@@ -145,7 +145,7 @@ export function createE2eState(): E2eState {
         directory_name: 'skill-qa',
         name: '问答技能',
         description: '用于前端点击验收',
-        allowed_tools: { mcp: ['mcp-files'], python: 'requests==2.31.0\npandas==2.2.2\n' },
+        allowed_tools: { mcp: ['文件系统工具'], python: 'requests==2.31.0\npandas==2.2.2\n' },
       },
       {
         directory_name: 'skill-write',
@@ -168,7 +168,7 @@ export function createE2eState(): E2eState {
         description: '用于 UI 自动化验收',
         system_prompt: '场景级项目规则',
         agent_names: ['问答专家', '写作专家'],
-        host: { name: '四九', llm_name: 'qwen', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
+        host: { name: '四九', llm_name: 'qwen3-max', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
         updated_at: now,
       },
     ],
@@ -191,10 +191,10 @@ export function createE2eState(): E2eState {
       'session-new:brief.md': '# 新会话文件\n',
     },
     appSettings: {
-      default_llm: 'qwen',
+      default_llm: 'qwen3-max',
       system_prompt: '全局项目规则',
       llm_providers: {
-        qwen: {
+        'qwen3-max': {
           provider: 'openai_compatible',
           base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
           model: 'qwen3-max',
@@ -208,7 +208,7 @@ export function createE2eState(): E2eState {
     },
     hostProfile: {
       name: '四九',
-      llm_name: 'qwen',
+      llm_name: 'qwen3-max',
       system_prompt: '你是群聊主持人，只负责调度专家。',
       skill_name: '问答技能',
       skill_directory: 'skill-qa',
@@ -327,7 +327,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         updated_at: now,
         agent_names: Array.isArray(body.agent_names) ? body.agent_names.map(String) : [],
         messages: [],
-        host: body.host || { name: '四九', llm_name: 'qwen', skill_directory: 'skill-qa' },
+        host: body.host || { name: '四九', llm_name: 'qwen3-max', skill_directory: 'skill-qa' },
       }
       state.sessions = [next, ...state.sessions.filter((s) => s.id !== next.id)]
       state.files[fileKey(next.id, '')] = state.files[fileKey(next.id, '')] || [
