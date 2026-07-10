@@ -253,7 +253,7 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     assert "executing" in progress_phases
     assert "finalizing" in update_phases
     message_payloads = [payload for event, payload in events if event == "message"]
-    assert message_payloads[-1]["message"] == {"content": "专家回答", "attachments": []}
+    assert message_payloads[-1]["message"] == {"content": "专家回答"}
 
 
 @pytest.mark.asyncio

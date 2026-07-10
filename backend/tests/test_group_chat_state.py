@@ -210,7 +210,7 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
     assert raw[0] == {
         "message_id": "u1",
         "speaker": {"type": "user"},
-        "message": {"content": "你好", "attachments": []},
+        "message": {"content": "你好"},
         "created_at": "2026062908104800",
         "client_message_id": "c1",
     }
@@ -304,7 +304,7 @@ def test_group_history_load_drops_invalid_messages(tmp_path, monkeypatch):
     assert loaded == [
         {
             **valid_message,
-            "message": {"content": "新消息", "attachments": []},
+            "message": {"content": "新消息"},
         }
     ]
     assert json.loads(history_path.read_text(encoding="utf-8")) == loaded
@@ -352,7 +352,7 @@ def test_frontend_history_message_keeps_canonical_content(tmp_path, monkeypatch)
 
     assert state.frontend_history_message(msg) == {
         **msg,
-        "message": {"content": "最终展示内容", "attachments": []},
+        "message": {"content": "最终展示内容"},
     }
 
 

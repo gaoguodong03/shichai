@@ -46,6 +46,8 @@ def test_expert_message_record_uses_current_skill_result_shape():
 
     dumped = message.model_dump(exclude_none=True)
     assert dumped["message"]["content"] == "大纲已完成"
+    assert "attachments" not in dumped["message"]
+    assert "target_agent_name" not in dumped["message"]
     assert dumped["skill_result"]["artifacts"][0]["path"] == "outline.md"
 
 

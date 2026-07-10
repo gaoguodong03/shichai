@@ -40,7 +40,7 @@ class WorkspaceAttachment(StrictContractModel):
 
 class MessageBody(StrictContractModel):
     content: str = ""
-    attachments: list[WorkspaceAttachment] = Field(default_factory=list)
+    attachments: list[WorkspaceAttachment] | None = None
     target_agent_name: str | None = Field(default=None, min_length=1)
 
 
