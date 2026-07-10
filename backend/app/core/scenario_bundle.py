@@ -404,7 +404,7 @@ def copy_bundle_skills_to_user(
     bundle_dir: Path,
     user_skills_dir: Path,
 ) -> List[str]:
-    """将 bundle_dir/skills/<id>/ 复制到用户技能目录，目录名即 skill_directory。"""
+    """将 bundle_dir/skills/{directory_name}/ 复制到用户技能目录。"""
     imported: List[str] = []
     skills_root = bundle_skills_root(bundle_dir)
     if not skills_root.is_dir():

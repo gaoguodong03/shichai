@@ -316,6 +316,14 @@ def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
             assert not re.match(r"\s+#", line), f"{path}:{lineno}"
 
 
+def test_resource_import_comments_use_directory_name_not_id_language():
+    """Resource import code comments must not reintroduce id-based Skill identity wording."""
+    text = (PROJECT_ROOT / "backend" / "app" / "core" / "scenario_bundle.py").read_text(encoding="utf-8")
+
+    assert "bundle_dir/skills/<id>/" not in text
+    assert "bundle_dir/skills/{directory_name}/" in text
+
+
 def test_group_chat_archive_has_independent_module_boundary():
     """Archive segmentation is presentation logic, not session state storage."""
     archive_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_archive.py"
