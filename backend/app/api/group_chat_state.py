@@ -437,7 +437,7 @@ def load_session_definitions() -> Dict[str, Dict[str, Any]]:
         except Exception:
             continue
         if isinstance(item, dict):
-            out[child.name] = item
+            out[child.name] = _clean_session_definition(item)
     return out
 
 

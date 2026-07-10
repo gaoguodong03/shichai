@@ -186,7 +186,8 @@ def test_frontend_local_session_messages_include_created_at():
     )
     assert optimistic_user is not None
     assert "created_at:" in optimistic_user.group(0)
-    assert "{ message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content }, created_at: createdAt }" in composer
+    assert "speaker: { type: 'host', agent_name: '系统主持人' }" in composer
+    assert "speaker: { type: 'host' }, message: { content }" not in composer
 
 
 def test_frontend_does_not_parse_file_references_from_message_content():

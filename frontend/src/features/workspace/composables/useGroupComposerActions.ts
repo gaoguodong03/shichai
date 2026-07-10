@@ -59,7 +59,7 @@ export function useGroupComposerActions(args: {
       const createdAt = currentStorageTimestamp()
       args.groupDisplayMessages.value = [
         ...args.groupDisplayMessages.value,
-        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content }, created_at: createdAt } as GroupMessage,
+        { message_id: `msg-${Date.now()}`, speaker: { type: 'host', agent_name: '系统主持人' }, message: { content }, created_at: createdAt } as GroupMessage,
       ]
     },
     updateAutoSwitchHint: args.updateAutoSwitchHint,

@@ -110,6 +110,20 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():
+    """Prompt templates must not ask the model to reason from raw tool stdout/stderr fields."""
+    template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
+
+    for phrase in [
+        "基于上方工具结果中的 stdout",
+        "stdout/stderr",
+        "returncode",
+        "stdout_block",
+        "stderr_block",
+    ]:
+        assert phrase not in template_text
+
+
 def test_expert_turn_missing_sections_use_platform_prompt_registry():
     builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
 

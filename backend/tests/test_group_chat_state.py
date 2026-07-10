@@ -48,6 +48,47 @@ def test_session_definitions_read_session_json_only(tmp_path, monkeypatch):
     assert state.load_session_definitions()["s1"]["title"] == "新会话目录标题"
 
 
+def test_session_definitions_load_filters_legacy_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    (tmp_path / "s1").mkdir(parents=True)
+    (tmp_path / "s1" / "session.json").write_text(
+        json.dumps(
+            {
+                "title": "会话",
+                "title_auto_generated": True,
+                "agent_names": ["专家A"],
+                "host": {
+                    "name": "四九",
+                    "skill_directory": "group-host",
+                    "skill_name": "展示名",
+                    "leader_agent_name": "旧主持",
+                },
+                "created_at": "2026062908104800",
+                "updated_at": "2026062908104900",
+                "scenario_name": "旧场景",
+                "leader_agent_name": "旧主持",
+                "runtime_state": {"running": True},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = state.load_session_definitions()["s1"]
+
+    assert loaded == {
+        "title": "会话",
+        "title_auto_generated": True,
+        "agent_names": ["专家A"],
+        "host": {
+            "name": "四九",
+            "skill_directory": "group-host",
+        },
+        "created_at": "2026062908104800",
+        "updated_at": "2026062908104900",
+    }
+
+
 def test_session_definitions_ignore_legacy_meta_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     (tmp_path / "s1").mkdir(parents=True)
