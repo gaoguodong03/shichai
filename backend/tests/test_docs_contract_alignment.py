@@ -82,6 +82,26 @@ def test_session_api_docs_do_not_advertise_host_skill_display_snapshot():
     assert '"skill_name"' not in section
 
 
+def test_runtime_docs_do_not_route_from_message_text():
+    """Runtime routing docs must not reintroduce message-text control channels."""
+    paths = [
+        PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md",
+        PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md",
+    ]
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for forbidden in [
+            "用户要求结束 Skill 会话",
+            "用户未要求主持人接管",
+            "主持人接管意图",
+            "请主持人接管",
+            "换专家",
+            "结束当前技能",
+        ]:
+            assert forbidden not in text, path
+
+
 def test_skill_script_manifest_has_independent_module_boundary():
     """Script manifest parsing belongs outside the sandbox execution entrypoint."""
     manifest_module = PROJECT_ROOT / "backend" / "app" / "tools" / "skill_script_manifest.py"

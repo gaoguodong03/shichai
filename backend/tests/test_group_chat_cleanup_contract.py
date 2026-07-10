@@ -108,6 +108,19 @@ def test_group_chat_title_meta_does_not_infer_required_user_fields():
     assert "required_user_fields" not in title_meta
 
 
+def test_group_chat_runtime_does_not_route_from_message_text():
+    runtime = _read("app/agent/group_chat_runtime.py")
+
+    for forbidden in [
+        "HOST_TAKEOVER_TEXT_MARKERS",
+        "_message_requests_host_scheduler_takeover",
+        "请主持人接管",
+        "主持人接管",
+        "结束当前技能",
+    ]:
+        assert forbidden not in runtime
+
+
 def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     skill_session = _read("app/agent/skill_session_contract.py")
     host_messages = _read("app/agent/group_chat_host_messages.py")

@@ -122,9 +122,9 @@ start -> message? -> error? -> end
 | 优先级 | 条件 | 后端动作 | 关键字段 |
 | --- | --- | --- | --- |
 | 1 | 会话内 0 个专家 | 主持人回复并推荐专家，直接 `end` | `agent_names`, `suggested_add_agent_names` |
-| 2 | 用户要求结束 Skill 会话 | 清理短期续跑状态，回主持人调度 | `orchestration_state.json.continuation` |
-| 3 | 请求指定了 `target_agent_name` | 清理短期续跑状态，直达该专家 | `target_agent_name` |
-| 4 | 有效短期续跑状态且用户未要求主持人接管 | 跳过主持人，直达续跑专家 | `orchestration_state.json.continuation` |
+| 2 | 请求指定了 `target_agent_name` | 清理短期续跑状态，直达该专家 | `target_agent_name` |
+| 3 | `host_scheduler.next_speaker` 是场内专家 | 按主持人调度状态，直达该专家 | `orchestration_state.json.host_scheduler` |
+| 4 | 有效短期续跑状态 | 跳过主持人，直达续跑专家 | `orchestration_state.json.continuation` |
 | 5 | 以上都不命中 | 调用主持人调度 | `next_speaker`, `next_action` |
 
 `message` 正文不再承担路由控制职责。`@专家`、自然语言点名、`host_takeover_requested`、`ignore_auto_agent_name`、`ignore_auto_skill`、`action` 都不是当前请求契约；如出现在请求体顶层，应按非法字段拒绝。
@@ -189,7 +189,7 @@ start -> message? -> error? -> end
 | `continuation.skill_policy == "keep"` | 直达 owner，并锁定 `continuation.skill` |
 | `continuation.skill_policy == "release"` | 直达 owner，但不锁定 Skill，由专家重新选择 Skill |
 
-用户明确说“交给主持人”“请主持人接管”“换专家”“结束当前技能”等时，`group_chat_runtime.py` 会在调用入口路由之前清理 `continuation`，再进入主持人调度；这类控制只来自 `message` 文本意图，不再使用隐藏请求字段。
+`message` 文本不清理 `continuation`，也不触发主持人接管。需要指定本轮专家时使用请求字段 `target_agent_name`；需要跨轮回到主持人或改变续跑状态时，由后端根据 `skill_result.next_action` 和 `orchestration_state.json` 的结构化字段决定。
 
 这表示：`next_speaker=user` 和 `continuation` 不是一回事。`next_speaker=user` 只是本轮等用户；`continuation` 表示下一轮用户消息要接回哪个专家，以及是否继续锁定 Skill。
 

@@ -284,7 +284,7 @@ POST /api/sessions/{session_id}/chat/stream
 主要流程：
 
 1. 运行时读取当前会话成员和场景配置。
-2. 判断是否存在 `target_agent_name`、Skill 续跑或主持人接管意图。
+2. 判断是否存在 `target_agent_name`、主持人调度状态或 Skill 续跑状态。
 3. 若命中强制路由，直接交给对应专家。
 4. 否则调用主持人生成结构化调度决策，主持人只输出 `current_phase`、`next_speaker`、`next_action` 和可选 `suggested_add_agent_names`。
 5. 决策通过严格结构校验后进入专家执行、等待用户、邀请专家或结束。
