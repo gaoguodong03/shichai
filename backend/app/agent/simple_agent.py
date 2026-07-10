@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 class SimpleAgent:
     """
     一个不依赖外部编排框架的极简 agent：
-    - 仅使用 LLM 的结构化 tool_calls 进行工具调用（删除历史 content-json 回退）
+    - 仅使用 LLM 的结构化 tool_calls 进行工具调用
     - 直到模型不再请求工具，返回累计 messages
     """
 
@@ -1104,7 +1104,6 @@ class SimpleAgent:
                     break
                 continue
 
-            # 2) 回退：content 中的 tool_call JSON
             # no tool calls → finish
             content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():

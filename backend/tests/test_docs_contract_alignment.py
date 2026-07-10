@@ -85,6 +85,17 @@ def test_simple_agent_tool_summary_has_independent_module_boundary():
     assert "from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary" in agent_text
 
 
+def test_simple_agent_does_not_advertise_content_tool_call_fallback():
+    """SimpleAgent documentation must not reintroduce legacy content-json tool-call fallback."""
+    text = (PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py").read_text(encoding="utf-8")
+
+    for forbidden in [
+        "content-json 回退",
+        "content 中的 tool_call JSON",
+    ]:
+        assert forbidden not in text
+
+
 def test_architecture_docs_do_not_advertise_session_index_contract():
     """Architecture docs must not reintroduce sessions/index.json after the contract removed it."""
     docs = [
