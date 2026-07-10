@@ -194,17 +194,17 @@ async def list_sessions_with_workspace_files(
     return {"status": "ok", "data": {"sessions": sessions}}
 
 
-@router.post("/workspaces/{workspace_id}/files/mkdir")
+@router.post("/sessions/{session_id}/workspace/files/mkdir")
 async def create_workspace_dir(
-    workspace_id: str,
+    session_id: str,
     body: DirCreateBody,
     path: str = "",
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
-    """在指定 workspace 内新建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
+    """在指定会话 workspace 内新建子目录。"""
     dirname = _normalize_workspace_filename(body.dirname)
     try:
-        parent = _resolve_workspace_path(workspace_id, path or "", current_user)
+        parent = _resolve_workspace_path(session_id, path or "", current_user)
     except HTTPException:
         raise
     if not parent.exists():
@@ -216,37 +216,37 @@ async def create_workspace_dir(
         new_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    ws_root = get_workspace_root(workspace_id, user=current_user)
+    ws_root = get_workspace_root(session_id, user=current_user)
     rel = str(new_dir.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
-@router.get("/workspaces/{workspace_id}/files")
+@router.get("/sessions/{session_id}/workspace/files")
 async def list_workspace_files(
-    workspace_id: str,
+    session_id: str,
     path: str = "",
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """
     列出指定 workspace 下的文件/子目录。
-    - workspace_id 通常与 Chat / Group Session ID 对应；
+    - session_id 与 Chat / Group Session ID 对应；
     - path 为 workspace 内相对路径，空表示该 workspace 根目录；
     - 工作区根目录未新建时（用户尚未使用过该工作区）直接返回空列表，不新建目录。
     """
-    ws_root_path = get_workspace_root_path(workspace_id, user=current_user)
+    ws_root_path = get_workspace_root_path(session_id, user=current_user)
     if (path or "").strip() == "":
         if not ws_root_path.exists() or not ws_root_path.is_dir():
             return {"status": "ok", "data": {"path": "/", "entries": []}}
     try:
-        target = _resolve_workspace_path(workspace_id, path or "", current_user)
+        target = _resolve_workspace_path(session_id, path or "", current_user)
     except HTTPException:
         raise
     if not target.exists():
         raise HTTPException(status_code=404, detail="Path not found")
     if not target.is_dir():
         raise HTTPException(status_code=400, detail="Path is not a directory")
-    ws_root = get_workspace_root(workspace_id, user=current_user)
+    ws_root = get_workspace_root(session_id, user=current_user)
     entries = []
     for p in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
         try:
@@ -267,9 +267,9 @@ async def list_workspace_files(
     return {"status": "ok", "data": {"path": path or "/", "entries": entries}}
 
 
-@router.get("/workspaces/{workspace_id}/files/download")
+@router.get("/sessions/{session_id}/workspace/files/download")
 async def download_workspace_file(
-    workspace_id: str,
+    session_id: str,
     path: str,
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
@@ -277,7 +277,7 @@ async def download_workspace_file(
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path, current_user)
+        target = _resolve_workspace_path(session_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -296,9 +296,9 @@ class FileContentBody(StrictRequestModel):
     content: str = ""
 
 
-@router.get("/workspaces/{workspace_id}/files/content")
+@router.get("/sessions/{session_id}/workspace/files/content")
 async def get_workspace_file_content(
-    workspace_id: str,
+    session_id: str,
     path: str,
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
@@ -306,7 +306,7 @@ async def get_workspace_file_content(
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path, current_user)
+        target = _resolve_workspace_path(session_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -329,12 +329,12 @@ class FileCreateBody(StrictRequestModel):
 
 
 class FileRenameBody(StrictRequestModel):
-    new_name: str
+    target_path: str
 
 
-@router.put("/workspaces/{workspace_id}/files/content")
+@router.put("/sessions/{session_id}/workspace/files/content")
 async def update_workspace_file_content(
-    workspace_id: str,
+    session_id: str,
     path: str,
     body: FileContentBody,
     current_user: CurrentUser = Depends(user_context_dependency),
@@ -343,20 +343,20 @@ async def update_workspace_file_content(
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path, current_user)
+        target = _resolve_workspace_path(session_id, path, current_user)
     except HTTPException:
         raise
     if target.exists() and target.is_dir():
         raise HTTPException(status_code=400, detail="Cannot edit a directory")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body.content or "", encoding="utf-8")
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": path}}
 
 
-@router.delete("/workspaces/{workspace_id}/files/content")
+@router.delete("/sessions/{session_id}/workspace/files/content")
 async def delete_workspace_file(
-    workspace_id: str,
+    session_id: str,
     path: str,
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
@@ -364,7 +364,7 @@ async def delete_workspace_file(
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path, current_user)
+        target = _resolve_workspace_path(session_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -381,13 +381,13 @@ async def delete_workspace_file(
             target.unlink()
         except OSError as e:
             raise HTTPException(status_code=500, detail=str(e))
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": path, "deleted": True}}
 
 
-@router.post("/workspaces/{workspace_id}/files")
+@router.post("/sessions/{session_id}/workspace/files")
 async def create_workspace_file(
-    workspace_id: str,
+    session_id: str,
     body: FileCreateBody,
     path: str = "",
     current_user: CurrentUser = Depends(user_context_dependency),
@@ -395,26 +395,26 @@ async def create_workspace_file(
     """在指定 workspace 内新建新文件（path 为 workspace 内目录相对路径，body.filename 为文件名）"""
     fn = _normalize_workspace_filename(body.filename)
     try:
-        dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
+        dir_path = _resolve_workspace_path(session_id, path or "", current_user)
     except HTTPException:
         raise
     if not dir_path.is_dir():
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
-    ws_root = get_workspace_root(workspace_id, user=current_user)
+    ws_root = get_workspace_root(session_id, user=current_user)
     try:
         target.relative_to(ws_root)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
-@router.post("/workspaces/{workspace_id}/files/upload")
+@router.post("/sessions/{session_id}/workspace/files/upload")
 async def upload_workspace_file(
-    workspace_id: str,
+    session_id: str,
     path: str = "",
     file: UploadFile = File(...),
     current_user: CurrentUser = Depends(user_context_dependency),
@@ -422,13 +422,13 @@ async def upload_workspace_file(
     """向指定 workspace 目录上传文件（path 为 workspace 内相对路径，空表示该 workspace 根目录）"""
     fn = _normalize_workspace_filename(file.filename or "")
     try:
-        dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
+        dir_path = _resolve_workspace_path(session_id, path or "", current_user)
     except HTTPException:
         raise
     if not dir_path.is_dir():
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
-    ws_root = get_workspace_root(workspace_id, user=current_user)
+    ws_root = get_workspace_root(session_id, user=current_user)
     try:
         target.relative_to(ws_root)
     except ValueError:
@@ -449,47 +449,43 @@ async def upload_workspace_file(
     finally:
         await file.close()
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
-@router.put("/workspaces/{workspace_id}/files/rename")
+@router.put("/sessions/{session_id}/workspace/files/rename")
 async def rename_workspace_file(
-    workspace_id: str,
+    session_id: str,
     path: str,
     body: FileRenameBody,
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
-    """重命名/移动 workspace 中文件（path 为原相对路径，body.new_name 可为新文件名或新相对路径）"""
+    """重命名/移动 workspace 中文件。"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
-    new_name = (body.new_name or "").strip().replace("\\", "/")
-    if not new_name:
-        raise HTTPException(status_code=400, detail="new_name is required")
+    target_path = (body.target_path or "").strip().replace("\\", "/")
+    if not target_path:
+        raise HTTPException(status_code=400, detail="target_path is required")
     try:
-        normalized_new_name = normalize_public_workspace_path(new_name)
+        normalized_target_path = normalize_public_workspace_path(target_path)
     except WorkspacePathError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     try:
-        target = _resolve_workspace_path(workspace_id, path, current_user)
+        target = _resolve_workspace_path(session_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
         raise HTTPException(status_code=404, detail="File not found")
     if target.is_dir():
         raise HTTPException(status_code=400, detail="Cannot rename a directory")
-    ws_root = get_workspace_root(workspace_id, user=current_user)
-    # 兼容：若仅传文件名，沿用“同目录重命名”；若包含 /，视为工作区内目标相对路径（可移动）。
-    if "/" in normalized_new_name:
-        new_path = (ws_root / normalized_new_name).resolve()
-    else:
-        new_path = (target.parent / normalized_new_name).resolve()
+    ws_root = get_workspace_root(session_id, user=current_user)
+    new_path = (ws_root / normalized_target_path).resolve()
     try:
         new_path.relative_to(ws_root)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid new_name")
+        raise HTTPException(status_code=400, detail="Invalid target_path")
     new_path.parent.mkdir(parents=True, exist_ok=True)
     target.rename(new_path)
     rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
+    _auto_checkpoint_workspace(session_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}

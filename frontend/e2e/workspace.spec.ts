@@ -148,7 +148,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:5173' })
     await loginByStorage(page)
     await mockApi(page, state)
-    await page.route('**/api/workspaces/session-existing/files', async (route) => {
+    await page.route('**/api/sessions/session-existing/workspace/files', async (route) => {
       if (route.request().method() === 'POST') workspaceFilePostCount += 1
       await route.fallback()
     })
@@ -298,7 +298,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     const uploadPathParams: string[] = []
     await loginByStorage(page)
     await mockApi(page, state)
-    await page.route('**/api/workspaces/session-existing/files/upload**', async (route) => {
+    await page.route('**/api/sessions/session-existing/workspace/files/upload**', async (route) => {
       const url = new URL(route.request().url())
       uploadPathParams.push(url.searchParams.get('path') || '')
       await route.fulfill({

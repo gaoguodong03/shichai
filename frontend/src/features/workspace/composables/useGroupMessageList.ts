@@ -274,7 +274,7 @@ export function useGroupMessageList(args: {
     const filename = promptValue.trim() || defaultName
     if (!filename) return
     try {
-      const response = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files`, {
+      const response = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, content }),

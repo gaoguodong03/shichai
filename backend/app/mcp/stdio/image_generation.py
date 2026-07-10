@@ -110,7 +110,7 @@ def _save_data_url(result: str, *, workspace_id: str, output_subdir: str) -> dic
     if wid:
         workspace_root = _workspace_root_for_mcp(wid)
         output_dir = workspace_root / safe_dir
-        download_prefix = f"/api/workspaces/{wid}/files/download?path="
+        download_prefix = f"/api/sessions/{wid}/workspace/files/download?path="
     else:
         workspace_root = DEFAULT_OUTPUT_ROOT.resolve()
         output_dir = workspace_root / safe_dir

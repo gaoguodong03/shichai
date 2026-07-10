@@ -250,7 +250,7 @@ def test_multiuser_isolation_by_token_headers(env_and_client):
 
     # Alice 在同一个 workspace_id 写入文件
     r = client.post(
-        f"/api/workspaces/{ws_id}/files",
+        f"/api/sessions/{ws_id}/workspace/files",
         headers=headers_a,
         json={"filename": "a.txt", "content": "content-from-alice"},
     )
@@ -258,21 +258,21 @@ def test_multiuser_isolation_by_token_headers(env_and_client):
     assert r.json()["status"] == "ok"
 
     # Bob 列出同一 workspace_id：应为空（物理隔离）
-    r = client.get(f"/api/workspaces/{ws_id}/files", headers=headers_b)
+    r = client.get(f"/api/sessions/{ws_id}/workspace/files", headers=headers_b)
     assert r.status_code == 200
     entries_b = r.json()["data"]["entries"]
     assert entries_b == []
 
     # Bob 再写入文件
     r = client.post(
-        f"/api/workspaces/{ws_id}/files",
+        f"/api/sessions/{ws_id}/workspace/files",
         headers=headers_b,
         json={"filename": "b.txt", "content": "content-from-bob"},
     )
     assert r.status_code == 200
 
     # Alice 再次列出：不应看到 Bob 的文件
-    r = client.get(f"/api/workspaces/{ws_id}/files", headers=headers_a)
+    r = client.get(f"/api/sessions/{ws_id}/workspace/files", headers=headers_a)
     assert r.status_code == 200
     entries_a = r.json()["data"]["entries"]
     names_a = sorted([e["name"] for e in entries_a])
@@ -311,7 +311,7 @@ def test_change_account_and_password(env_and_client):
     ws_id = "ws-account-change"
     headers = {"Authorization": f"Bearer {token}"}
     r = client.post(
-        f"/api/workspaces/{ws_id}/files",
+        f"/api/sessions/{ws_id}/workspace/files",
         headers=headers,
         json={"filename": "keep.txt", "content": "before-rename"},
     )
@@ -337,7 +337,7 @@ def test_change_account_and_password(env_and_client):
     assert r.status_code == 200
 
     # 改账号后仍可访问之前工作区文件（说明用户目录已迁移）
-    r = client.get(f"/api/workspaces/{ws_id}/files", headers=headers2)
+    r = client.get(f"/api/sessions/{ws_id}/workspace/files", headers=headers2)
     assert r.status_code == 200
     entries = r.json()["data"]["entries"]
     names = sorted([e["name"] for e in entries])

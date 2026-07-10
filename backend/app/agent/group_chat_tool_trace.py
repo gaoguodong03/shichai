@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 
-_WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/workspaces/[^\s)\"'<>]+/files/download\?path=[^\s)\"'<>]+")
+_WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/sessions/[^\s)\"'<>]+/workspace/files/download\?path=[^\s)\"'<>]+")
 _WORKSPACE_WRITE_SUCCESS_RE = re.compile(r"已写入当前(?:\s*Chat)?\s*工作区文件[:：]\s*([^\s]+)")
 _WORKSPACE_FILE_EXTENSIONS = (
     ".md",
@@ -64,7 +64,7 @@ def _normalize_workspace_path(value: Any) -> str:
     text = str(value or "").strip().replace("\\", "/")
     if not text:
         return ""
-    if text.startswith("/api/workspaces/"):
+    if text.startswith("/api/sessions/"):
         try:
             parsed = urlparse(text)
             paths = parse_qs(parsed.query).get("path") or []

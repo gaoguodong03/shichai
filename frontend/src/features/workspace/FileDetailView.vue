@@ -164,7 +164,7 @@ const emit = defineEmits<{
 
 const downloadUrl = computed(() => {
   const p = currentPath.value
-  return apiUrl(`/workspaces/${encodeURIComponent(props.workspaceId)}/files/download?path=${encodeURIComponent(p)}`)
+  return apiUrl(`/sessions/${encodeURIComponent(props.workspaceId)}/workspace/files/download?path=${encodeURIComponent(p)}`)
 })
 
 const imageExtensions = /\.(jpe?g|png|gif|webp|bmp|svg)$/i
@@ -458,11 +458,13 @@ async function saveName() {
   }
   try {
     const path = currentPath.value
-    const url = `/workspaces/${encodeURIComponent(props.workspaceId)}/files/rename?path=${encodeURIComponent(path)}`
+    const parentPath = path.includes('/') ? path.split('/').slice(0, -1).join('/') : ''
+    const targetPath = parentPath ? `${parentPath}/${newName}` : newName
+    const url = `/sessions/${encodeURIComponent(props.workspaceId)}/workspace/files/rename?path=${encodeURIComponent(path)}`
     const r = await apiRequest(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ new_name: newName }),
+      body: JSON.stringify({ target_path: targetPath }),
     })
     const j = await r.json()
     if (j.status === 'ok' && j.data?.path) {
@@ -489,7 +491,7 @@ function cancelEditContent() {
 async function saveContent() {
   try {
     const path = currentPath.value
-    const url = `/workspaces/${encodeURIComponent(props.workspaceId)}/files/content?path=${encodeURIComponent(path)}`
+    const url = `/sessions/${encodeURIComponent(props.workspaceId)}/workspace/files/content?path=${encodeURIComponent(path)}`
     const r = await apiRequest(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

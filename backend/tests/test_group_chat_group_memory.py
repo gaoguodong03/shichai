@@ -177,14 +177,14 @@ def test_append_workspace_image_preview_markdown_keeps_non_image_content():
 def test_append_workspace_image_preview_markdown_appends_image_links():
     gc = _get_tool_trace_module()
     base = "已生成图片。"
-    raw = ['下载链接：/api/workspaces/s1/files/download?path=generated_images/a.jpg']
+    raw = ['下载链接：/api/sessions/s1/workspace/files/download?path=generated_images/a.jpg']
     out = gc.append_workspace_image_preview_markdown(base, raw)
-    assert "![生成图片1](/api/workspaces/s1/files/download?path=generated_images/a.jpg)" in out
+    assert "![生成图片1](/api/sessions/s1/workspace/files/download?path=generated_images/a.jpg)" in out
 
 
 def test_append_workspace_image_preview_markdown_skips_image_already_in_content_from_json_artifact():
     gc = _get_tool_trace_module()
-    url = "/api/workspaces/s1/files/download?path=generated_images/a.jpg"
+    url = "/api/sessions/s1/workspace/files/download?path=generated_images/a.jpg"
     base = f"已生成图片。\n\n![AI配图]({url})"
     raw = [
         (
@@ -203,7 +203,7 @@ def test_append_workspace_image_preview_markdown_skips_image_already_in_content_
 
 def test_append_workspace_image_preview_markdown_trims_json_delimiters_from_image_url():
     gc = _get_tool_trace_module()
-    url = "/api/workspaces/s1/files/download?path=generated_images/a.jpg"
+    url = "/api/sessions/s1/workspace/files/download?path=generated_images/a.jpg"
     raw = [
         (
             '{"execution_status":"succeeded","artifacts":{'

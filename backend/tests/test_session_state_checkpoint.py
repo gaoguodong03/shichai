@@ -82,7 +82,7 @@ def test_checkpoint_object_uses_contract_fields_without_secondary_markdown_snaps
     session_id = create_resp.json()["data"]["id"]
 
     client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         json={"filename": "note.txt", "content": "checkpoint"},
     )
     token = _set_user()
@@ -162,7 +162,7 @@ def test_clone_reuses_blob_objects(client: TestClient):
     session_id = create_resp.json()["data"]["id"]
 
     client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         json={"filename": "shared.txt", "content": "dedup-me"},
     )
     client.post(f"/api/sessions/{session_id}/snapshot")
@@ -198,7 +198,7 @@ def test_session_layout_is_per_session_directory(client: TestClient):
     session_id = create_resp.json()["data"]["id"]
 
     client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         json={"filename": "note.txt", "content": "layout"},
     )
 
@@ -217,7 +217,7 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     session_id = create_resp.json()["data"]["id"]
 
     file_resp = client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         json={"filename": "note.txt", "content": "hello clone"},
     )
     assert file_resp.status_code == 200
@@ -245,7 +245,7 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     assert detail["messages"][0]["message"]["content"] == "先记录一条消息"
 
     content_resp = client.get(
-        f"/api/workspaces/{cloned_session_id}/files/content",
+        f"/api/sessions/{cloned_session_id}/workspace/files/content",
         params={"path": "note.txt"},
     )
     assert content_resp.status_code == 200
@@ -354,7 +354,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     session_id = create_resp.json()["data"]["id"]
 
     client.put(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "draft.txt"},
         json={"content": "version-1"},
     )
@@ -371,7 +371,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     cp1 = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["checkpoint_id"]
 
     client.put(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "draft.txt"},
         json={"content": "version-2"},
     )
@@ -398,7 +398,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     assert rollback_checkpoint_id not in {cp1, cp2}
 
     content_resp = client.get(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "draft.txt"},
     )
     assert content_resp.status_code == 200

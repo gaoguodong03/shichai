@@ -84,7 +84,7 @@ async function fetchFileSessionsFallback(): Promise<FileSessionRow[]> {
   }>
   const withFiles: FileSessionRow[] = []
   for (const s of sessions) {
-    const fr = await apiRequest(`/workspaces/${encodeURIComponent(s.id)}/files`)
+    const fr = await apiRequest(`/sessions/${encodeURIComponent(s.id)}/workspace/files`)
     if (!fr.ok) continue
     const fj = await fr.json()
     const entries = (fj?.status === 'ok' ? (fj?.data?.entries || []) : []) as Array<{ is_dir?: boolean }>

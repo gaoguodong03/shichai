@@ -144,7 +144,7 @@ async function listDir(path: string): Promise<Entry[]> {
   const id = props.sessionId
   if (!id) return []
   const query = path ? `?path=${encodeURIComponent(path)}` : ''
-  const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${query}`)
+  const r = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files${query}`)
   const j = await r.json()
   if (j?.status !== 'ok') throw new Error(j?.detail || '加载失败')
   return (j?.data?.entries || []) as Entry[]
@@ -208,7 +208,7 @@ async function createFile() {
   }))?.trim()
   if (!filename) return
   const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
-  const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${query}`, {
+  const r = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, content: '' }),
@@ -233,7 +233,7 @@ async function createFolder() {
   }))?.trim()
   if (!dirname) return
   const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
-  const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/mkdir${query}`, {
+  const r = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files/mkdir${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dirname }),
@@ -285,7 +285,7 @@ async function deleteSelectedFile() {
     confirmText: '删除',
   })
   if (!ok) return
-  const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`, {
+  const r = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files/content?path=${encodeURIComponent(path)}`, {
     method: 'DELETE',
   })
   const j = await r.json()

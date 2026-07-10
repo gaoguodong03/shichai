@@ -86,7 +86,7 @@ export function useGroupFileReferences(args: {
     insertFileEntries.value = []
     try {
       const query = insertFileBrowsePath.value ? `?path=${encodeURIComponent(insertFileBrowsePath.value)}` : ''
-      const response = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${query}`)
+      const response = await apiRequest(`/sessions/${encodeURIComponent(id)}/workspace/files${query}`)
       const payload = await response.json().catch(() => null)
       const raw = (payload?.status === 'ok' && Array.isArray(payload?.data?.entries)) ? payload.data.entries : []
       insertFileEntries.value = (raw as { name: string; path: string; is_dir?: boolean }[])

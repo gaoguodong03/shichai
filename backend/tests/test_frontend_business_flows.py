@@ -317,14 +317,14 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert stop.status_code == 200
 
     mkdir = client.post(
-        f"/api/workspaces/{session_id}/files/mkdir",
+        f"/api/sessions/{session_id}/workspace/files/mkdir",
         json={"dirname": "docs"},
         headers=headers,
     )
     assert mkdir.status_code == 200
 
     created_file = client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         params={"path": "docs"},
         json={"filename": "brief.md", "content": "# Brief\n"},
         headers=headers,
@@ -333,7 +333,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert created_file.json()["data"]["path"] == "docs/brief.md"
 
     content = client.get(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "docs/brief.md"},
         headers=headers,
     )
@@ -341,7 +341,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert content.json()["data"]["content"] == "# Brief\n"
 
     saved = client.put(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "docs/brief.md"},
         json={"content": "# Brief\nupdated\n"},
         headers=headers,
@@ -349,7 +349,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert saved.status_code == 200
 
     uploaded = client.post(
-        f"/api/workspaces/{session_id}/files/upload",
+        f"/api/sessions/{session_id}/workspace/files/upload",
         files={"file": ("recording.wav", b"audio-bytes")},
         headers=headers,
     )
@@ -357,22 +357,22 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert uploaded.json()["data"]["path"] == "recording.wav"
 
     media_dir = client.post(
-        f"/api/workspaces/{session_id}/files/mkdir",
+        f"/api/sessions/{session_id}/workspace/files/mkdir",
         json={"dirname": "media"},
         headers=headers,
     )
     assert media_dir.status_code == 200
 
     renamed = client.put(
-        f"/api/workspaces/{session_id}/files/rename",
+        f"/api/sessions/{session_id}/workspace/files/rename",
         params={"path": "recording.wav"},
-        json={"new_name": "media/recording.wav"},
+        json={"target_path": "media/recording.wav"},
         headers=headers,
     )
     assert renamed.status_code == 200
     assert renamed.json()["data"]["path"] == "media/recording.wav"
 
-    files = client.get(f"/api/workspaces/{session_id}/files", headers=headers)
+    files = client.get(f"/api/sessions/{session_id}/workspace/files", headers=headers)
     assert files.status_code == 200
     paths = {x["path"] for x in files.json()["data"]["entries"]}
     assert "docs" in paths
@@ -383,7 +383,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
     assert "会话无消息" in exported.json()["detail"]
 
     deleted_file = client.delete(
-        f"/api/workspaces/{session_id}/files/content",
+        f"/api/sessions/{session_id}/workspace/files/content",
         params={"path": "docs/brief.md"},
         headers=headers,
     )
@@ -462,7 +462,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
 
     exported = client.post(f"/api/sessions/{session_id}/export", headers=headers)
     assert exported.status_code == 200
-    assert exported.json()["data"]["download_url"].startswith(f"/api/workspaces/{session_id}/files/download")
+    assert exported.json()["data"]["download_url"].startswith(f"/api/sessions/{session_id}/workspace/files/download")
 
     assert client.delete(f"/api/settings/skills/{skill_id}", headers=headers).status_code == 200
 

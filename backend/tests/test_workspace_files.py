@@ -44,7 +44,7 @@ def test_global_files_removed(client):
 
 def test_workspace_list_empty(client):
     """空 workspace 列表返回空 entries"""
-    r = client.get("/api/workspaces/test-session-1/files")
+    r = client.get("/api/sessions/test-session-1/workspace/files")
     assert r.status_code == 200
     j = r.json()
     assert j.get("status") == "ok"
@@ -54,12 +54,12 @@ def test_workspace_list_empty(client):
 def test_workspace_create_and_list(client):
     """workspace 内新建文件后能列出"""
     r = client.post(
-        "/api/workspaces/ws1/files",
+        "/api/sessions/ws1/workspace/files",
         json={"filename": "hello.md", "content": "# Hello"},
     )
     assert r.status_code == 200
     assert r.json().get("data", {}).get("path") == "hello.md"
-    r = client.get("/api/workspaces/ws1/files")
+    r = client.get("/api/sessions/ws1/workspace/files")
     assert r.status_code == 200
     entries = r.json().get("data", {}).get("entries", [])
     by_name = {e["name"]: e for e in entries}
@@ -74,7 +74,7 @@ def test_sessions_with_workspace_files_lists_sessions_that_have_files(client):
     session_id = create_resp.json()["data"]["id"]
 
     file_resp = client.post(
-        f"/api/workspaces/{session_id}/files",
+        f"/api/sessions/{session_id}/workspace/files",
         json={"filename": "brief.md", "content": "# Brief"},
     )
     assert file_resp.status_code == 200
@@ -112,10 +112,10 @@ def test_sessions_with_workspace_files_includes_unindexed_session_dirs(client):
 def test_workspace_download(client):
     """workspace 内文件可下载"""
     client.post(
-        "/api/workspaces/ws2/files",
+        "/api/sessions/ws2/workspace/files",
         json={"filename": "a.txt", "content": "content"},
     )
-    r = client.get("/api/workspaces/ws2/files/download", params={"path": "a.txt"})
+    r = client.get("/api/sessions/ws2/workspace/files/download", params={"path": "a.txt"})
     assert r.status_code == 200
     assert r.text == "content"
 
@@ -123,21 +123,21 @@ def test_workspace_download(client):
 def test_workspace_text_responses_disable_browser_cache(client):
     """工作区文本预览/下载不能被浏览器缓存成旧内容。"""
     client.post(
-        "/api/workspaces/ws-cache/files",
+        "/api/sessions/ws-cache/workspace/files",
         json={"filename": "facts.md", "content": "before"},
     )
     client.put(
-        "/api/workspaces/ws-cache/files/content",
+        "/api/sessions/ws-cache/workspace/files/content",
         params={"path": "facts.md"},
         json={"content": "after"},
     )
 
-    content = client.get("/api/workspaces/ws-cache/files/content", params={"path": "facts.md"})
+    content = client.get("/api/sessions/ws-cache/workspace/files/content", params={"path": "facts.md"})
     assert content.status_code == 200
     assert content.headers.get("Cache-Control") == "no-store"
     assert content.json()["data"]["content"] == "after"
 
-    download = client.get("/api/workspaces/ws-cache/files/download", params={"path": "facts.md"})
+    download = client.get("/api/sessions/ws-cache/workspace/files/download", params={"path": "facts.md"})
     assert download.status_code == 200
     assert download.headers.get("Cache-Control") == "no-store"
     assert download.text == "after"
@@ -146,19 +146,19 @@ def test_workspace_text_responses_disable_browser_cache(client):
 def test_workspace_upload_and_rename(client):
     """workspace 上传、重命名"""
     r = client.post(
-        "/api/workspaces/ws3/files/upload",
+        "/api/sessions/ws3/workspace/files/upload",
         files={"file": ("b.txt", b"uploaded")},
     )
     assert r.status_code == 200
     assert r.json().get("data", {}).get("path") == "b.txt"
     r = client.put(
-        "/api/workspaces/ws3/files/rename",
+        "/api/sessions/ws3/workspace/files/rename",
         params={"path": "b.txt"},
-        json={"new_name": "c.txt"},
+        json={"target_path": "c.txt"},
     )
     assert r.status_code == 200
     assert r.json().get("data", {}).get("path") == "c.txt"
-    r = client.get("/api/workspaces/ws3/files/download", params={"path": "c.txt"})
+    r = client.get("/api/sessions/ws3/workspace/files/download", params={"path": "c.txt"})
     assert r.status_code == 200
     assert r.text == "uploaded"
 
@@ -167,12 +167,12 @@ def test_workspace_upload_large_file(client):
     """大文件上传应分块落盘并保持内容完整"""
     payload = (b"audio-data-" * 130000) + b"tail"
     r = client.post(
-        "/api/workspaces/ws-large/files/upload",
+        "/api/sessions/ws-large/workspace/files/upload",
         files={"file": ("recording.wav", payload)},
     )
     assert r.status_code == 200
     assert r.json().get("data", {}).get("path") == "recording.wav"
-    r = client.get("/api/workspaces/ws-large/files/download", params={"path": "recording.wav"})
+    r = client.get("/api/sessions/ws-large/workspace/files/download", params={"path": "recording.wav"})
     assert r.status_code == 200
     assert r.content == payload
 
@@ -180,7 +180,7 @@ def test_workspace_upload_large_file(client):
 def test_workspace_path_traversal_blocked(client):
     """禁止 path 穿越到 workspace 外"""
     r = client.get(
-        "/api/workspaces/ws4/files/download",
+        "/api/sessions/ws4/workspace/files/download",
         params={"path": "../../../etc/passwd"},
     )
     assert r.status_code == 400
@@ -189,7 +189,7 @@ def test_workspace_path_traversal_blocked(client):
 def test_workspace_file_api_rejects_internal_system_paths(client):
     """文件 API 不允许访问 memory、checkpoints、运行日志目录或绝对路径。"""
     for path in ("memory/facts.md", "checkpoints/HEAD.json", "execution_logs/tool-execution.jsonl", "/tmp/secret.txt"):
-        r = client.get("/api/workspaces/ws-internal/files/content", params={"path": path})
+        r = client.get("/api/sessions/ws-internal/workspace/files/content", params={"path": path})
         assert r.status_code == 400
 
 
@@ -634,7 +634,7 @@ def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data
         rename_tool.ainvoke(
             {
                 "path": "image/配图方案-2026062602140000.md",
-                "new_name": "配图方案-最终版.md",
+                "target_path": "image/配图方案-最终版.md",
             }
         )
     )
@@ -692,7 +692,7 @@ def test_rename_workspace_file_does_not_guess_multiple_timestamped_sources(temp_
         rename_tool.ainvoke(
             {
                 "path": "image/配图方案-2026062602140000.md",
-                "new_name": "配图方案-最终版.md",
+                "target_path": "image/配图方案-最终版.md",
             }
         )
     )

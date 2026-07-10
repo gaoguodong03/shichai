@@ -138,7 +138,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
     filepath = ws_root / fn
     filepath.write_text(md, encoding="utf-8")
     rel = str(filepath.relative_to(ws_root)).replace("\\", "/")
-    return rel, f"/api/workspaces/{session_id}/files/download?path={rel}"
+    return rel, f"/api/sessions/{session_id}/workspace/files/download?path={rel}"
 
 async def get_group_session(group_session_id: str):
     """获取群聊详情与消息。"""

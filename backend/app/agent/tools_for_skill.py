@@ -47,7 +47,7 @@ class EditWorkspaceFileInput(BaseModel):
 
 class RenameWorkspaceFileInput(BaseModel):
     path: str = Field(description="原文件相对路径")
-    new_name: str = Field(description="新文件名或新相对路径（如 notes/key.md，可用于移动）")
+    target_path: str = Field(description="目标相对路径，例如 notes/key.md")
 
 
 class MkdirWorkspaceInput(BaseModel):
@@ -151,18 +151,14 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             return f"错误：写入失败 - {e}"
         return f"已编辑文件：{path}"
 
-    async def _rename_workspace_file(path: str, new_name: str) -> str:
-        cleaned = str(new_name or "").strip().replace("\\", "/")
+    async def _rename_workspace_file(path: str, target_path: str) -> str:
+        cleaned = str(target_path or "").strip().replace("\\", "/")
         if not cleaned:
-            return "错误：new_name 不能为空。"
+            return "错误：target_path 不能为空。"
         if ".." in cleaned:
-            return "错误：new_name 非法。"
+            return "错误：target_path 非法。"
         src_rel = _rel_safe(path)
-        if "/" in cleaned:
-            dst_rel = _rel_safe(cleaned)
-        else:
-            dst_rel = str((Path(src_rel).parent / cleaned).as_posix()).lstrip("/")
-            dst_rel = _rel_safe(dst_rel)
+        dst_rel = _rel_safe(cleaned)
         svc = get_shared_sandbox_service()
         try:
             await svc.exec_workspace_shell(
@@ -276,7 +272,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         ),
         ToolSpec.from_function(
             name="rename_workspace_file",
-            description="重命名或移动当前工作区内的文件/目录。new_name 可传新名称，或传相对路径（如 notes/key.md）。",
+            description="重命名或移动当前工作区内的文件/目录。target_path 是工作区内目标相对路径。",
             coroutine=_rename_workspace_file,
             args_schema=RenameWorkspaceFileInput,
         ),

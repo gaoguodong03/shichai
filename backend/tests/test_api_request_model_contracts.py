@@ -30,7 +30,7 @@ from app.api.settings_skill_parts import PartDirCreate, PartFileCreate, PartFile
         (DirCreateBody, {"dirname": "docs"}),
         (FileContentBody, {"content": "hello"}),
         (FileCreateBody, {"filename": "a.md"}),
-        (FileRenameBody, {"new_name": "b.md"}),
+        (FileRenameBody, {"target_path": "b.md"}),
         (SandboxRequirementsBody, {"content": "requests"}),
         (SandboxSettingsBody, {"image_variant": "standard"}),
         (SandboxRequirementsMergeBody, {"requirements": ["requests"]}),

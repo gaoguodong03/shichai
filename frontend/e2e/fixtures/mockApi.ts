@@ -687,17 +687,17 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         sessions: state.sessions.map((s) => ({ id: s.id, title: s.title, updated_at: s.updated_at, file_count: directoryEntries(state, s.id, new URLSearchParams()).length })),
       })
     }
-    const workspaceFilesMatch = path.match(/^\/workspaces\/([^/]+)\/files$/)
+    const workspaceFilesMatch = path.match(/^\/sessions\/([^/]+)\/workspace\/files$/)
     if (workspaceFilesMatch && method === 'GET') {
       return ok(route, { entries: directoryEntries(state, decodeURIComponent(workspaceFilesMatch[1]), url.searchParams) })
     }
     if (workspaceFilesMatch && method === 'POST') {
       return ok(route)
     }
-    if (path.match(/^\/workspaces\/[^/]+\/files\/mkdir$/) && method === 'POST') {
+    if (path.match(/^\/sessions\/[^/]+\/workspace\/files\/mkdir$/) && method === 'POST') {
       return ok(route)
     }
-    const workspaceContentMatch = path.match(/^\/workspaces\/([^/]+)\/files\/content$/)
+    const workspaceContentMatch = path.match(/^\/sessions\/([^/]+)\/workspace\/files\/content$/)
     if (workspaceContentMatch && method === 'GET') {
       const content = state.fileContent[fileKey(decodeURIComponent(workspaceContentMatch[1]), url.searchParams.get('path') || '')] || ''
       return ok(route, { content })
@@ -706,7 +706,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       state.fileContent[fileKey(decodeURIComponent(workspaceContentMatch[1]), url.searchParams.get('path') || '')] = String(readBody<{ content?: string }>(route).content || '')
       return ok(route)
     }
-    const workspaceDownloadMatch = path.match(/^\/workspaces\/([^/]+)\/files\/download$/)
+    const workspaceDownloadMatch = path.match(/^\/sessions\/([^/]+)\/workspace\/files\/download$/)
     if (workspaceDownloadMatch && method === 'GET') {
       const content = state.fileContent[fileKey(decodeURIComponent(workspaceDownloadMatch[1]), url.searchParams.get('path') || '')] || ''
       return route.fulfill({
