@@ -78,3 +78,30 @@ def test_group_chat_archive_has_independent_module_boundary():
     assert "def build_archive_segments" in archive_text
     assert "def build_archive_segments" not in state_text
     assert len(state_text.splitlines()) < 600
+
+
+def test_skill_script_sandbox_request_has_independent_module_boundary():
+    """Sandbox command construction belongs outside the script execution entrypoint."""
+    sandbox_module = PROJECT_ROOT / "backend" / "app" / "tools" / "skill_script_sandbox_request.py"
+    runner_module = PROJECT_ROOT / "backend" / "app" / "tools" / "run_skill_script.py"
+
+    assert sandbox_module.exists()
+    sandbox_text = sandbox_module.read_text(encoding="utf-8")
+    runner_text = runner_module.read_text(encoding="utf-8")
+
+    for name in [
+        "def build_script_command",
+        "def build_sandbox_exec_request",
+        "def inline_shell_env",
+        "def resolve_script_timeout_sec",
+    ]:
+        assert name in sandbox_text
+    for old_private_definition in [
+        "def _build_script_command",
+        "def _build_sandbox_script_command",
+        "def _build_sandbox_exec_request",
+        "def _inline_shell_env",
+        "def _resolve_script_timeout_sec",
+    ]:
+        assert old_private_definition not in runner_text
+    assert len(runner_text.splitlines()) < 600
