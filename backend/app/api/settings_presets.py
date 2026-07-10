@@ -154,25 +154,11 @@ class SessionPresetsBody(StrictRequestModel):
 
 def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
     """与 update_session_presets 落盘格式一致；无效项返回 None。"""
-    from app.api.agents import load_agent_instances
-
     name = str(item.name or "").strip()
     agent_names = [str(x).strip() for x in (item.agent_names or []) if str(x).strip()]
     if not name or not agent_names:
         return None
     host_norm: Optional[Dict[str, Any]] = None
-    try:
-        valid_agent_names = {
-            str(d.get("name") or "").strip()
-            for d in load_agent_instances()
-            if str(d.get("name") or "").strip()
-        }
-    except RuntimeError:
-        valid_agent_names = set()
-    if valid_agent_names:
-        agent_names = [name for name in agent_names if name in valid_agent_names]
-    if not agent_names:
-        return None
     if item.host is not None:
         host_norm = normalize_scenario_row({"name": name, "agent_names": agent_names, "host": item.host}).get("host")
     row: Dict[str, Any] = {

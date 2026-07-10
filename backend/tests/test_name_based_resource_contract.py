@@ -209,6 +209,16 @@ def test_normalize_skill_refs_preserves_directory_name_identity():
     assert refs == [{"name": "大小写敏感 Skill", "directory_name": "Skill-ABC_01"}]
 
 
+def test_normalize_skill_refs_preserves_missing_skill_directory_without_display_name():
+    refs = normalize_skill_refs(
+        [
+            {"directory_name": "deleted-skill"},
+        ]
+    )
+
+    assert refs == [{"name": "", "directory_name": "deleted-skill"}]
+
+
 def test_normalize_skill_refs_dedupes_by_exact_directory_name_identity():
     refs = normalize_skill_refs(
         [

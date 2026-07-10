@@ -100,7 +100,7 @@ def normalize_skill_refs(raw: Any) -> List[Dict[str, str]]:
             continue
         name = str(item.get("name") or "").strip()
         directory_name = _normalize_skill_directory_ref(item.get("directory_name"))
-        if not name or not directory_name:
+        if not directory_name:
             continue
         key = directory_name
         if key in seen:

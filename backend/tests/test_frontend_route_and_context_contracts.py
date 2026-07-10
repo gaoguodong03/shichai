@@ -150,6 +150,7 @@ def test_frontend_skill_reference_identity_uses_directory_name_not_display_name(
     for forbidden in [
         "seen.has(name)",
         "seen.add(name)",
+        "if (!directoryName || !name || seen.has(directoryName)) continue",
         "x.directory_name === directoryName || x.name === name",
         "x.directory_name !== directoryName && x.name !== name",
         "s.directory_name === ref.directory_name || s.name === ref.name",
@@ -161,6 +162,8 @@ def test_frontend_skill_reference_identity_uses_directory_name_not_display_name(
         "s.directory_name === directoryName || s.name === name",
     ]:
         assert forbidden not in scenario_editor
+
+    assert "{{ s.name || s.directory_name }}" in agent_view
 
 
 def test_frontend_resource_imports_do_not_model_legacy_skip_summaries():

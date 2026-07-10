@@ -198,6 +198,45 @@ def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tm
         reset_current_user_identity(token)
 
 
+def test_update_session_presets_preserves_missing_agent_references(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    from app.api.agents import save_agent_instances
+    from app.api.settings_presets import SessionPresetItem, SessionPresetsBody, update_session_presets
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-missing-ref", username="missing-ref@example.com")
+    try:
+        save_agent_instances([{"name": "现有专家", "description": "", "skills": []}])
+
+        body = SessionPresetsBody(
+            presets=[
+                SessionPresetItem(
+                    name="保留缺失专家场景",
+                    agent_names=["现有专家", "已删除专家"],
+                    description="验证缺失引用保留",
+                )
+            ]
+        )
+        asyncio.run(update_session_presets(body))
+
+        scenario_file = (
+            tmp_path
+            / "users"
+            / "user-resource-missing-ref"
+            / "resources"
+            / "scenarios"
+            / "保留缺失专家场景"
+            / "scenario.json"
+        )
+        scenario_data = json.loads(scenario_file.read_text(encoding="utf-8"))
+        assert scenario_data["agent_names"] == ["现有专家", "已删除专家"]
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, tmp_path):
     import asyncio
     import json

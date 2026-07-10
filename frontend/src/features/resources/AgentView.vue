@@ -104,7 +104,7 @@
                   class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
                   :title="`缺失技能路径：${s.directory_name}`"
                 >
-                  {{ s.name }}
+                  {{ s.name || s.directory_name }}
                 </span>
               </div>
             </div>
@@ -256,7 +256,7 @@ function normalizeSkillRefs(raw: SkillRef[]): SkillRef[] {
   for (const item of raw || []) {
     const directoryName = String(item.directory_name || '').trim()
     const name = String(item.name || '').trim()
-    if (!directoryName || !name || seen.has(directoryName)) continue
+    if (!directoryName || seen.has(directoryName)) continue
     out.push({ name, directory_name: directoryName })
     seen.add(directoryName)
   }
