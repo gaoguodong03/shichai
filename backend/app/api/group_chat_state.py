@@ -81,12 +81,13 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
             out["continuation"] = row
     host_scheduler = raw.get("host_scheduler") if isinstance(raw.get("host_scheduler"), dict) else None
     if host_scheduler:
+        next_speaker = str(host_scheduler.get("next_speaker") or "").strip()
         row = {
             "current_phase": str(host_scheduler.get("current_phase") or "").strip(),
-            "next_speaker": str(host_scheduler.get("next_speaker") or "").strip(),
+            "next_speaker": next_speaker,
             "next_action": str(host_scheduler.get("next_action") or "").strip(),
         }
-        if any(row.values()):
+        if any(row.values()) and next_speaker != "invite":
             out["host_scheduler"] = row
     return out
 

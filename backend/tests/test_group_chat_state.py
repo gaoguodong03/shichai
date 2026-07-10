@@ -295,6 +295,34 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
     assert "scheduler_state" not in state.load_session_definitions()["s1"]
 
 
+def test_orchestration_state_drops_invite_scheduler_branch(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s1": {
+                "title": "会话",
+                "created_at": "2026062908104800",
+                "updated_at": "2026062908104800",
+            }
+        }
+    )
+
+    state.write_group_orchestration_state(
+        "s1",
+        {
+            "host_scheduler": {
+                "current_phase": "招募",
+                "next_speaker": "invite",
+                "next_action": "建议邀请专家",
+                "announcement": "旧字段",
+                "suggested_order": ["写作专家"],
+            }
+        },
+    )
+
+    assert state.load_group_orchestration_state("s1") == {}
+
+
 def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
 
