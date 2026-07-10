@@ -1,4 +1,5 @@
 import pytest
+import json
 from app.agent.messages import AIMessage
 
 from app.agent.skill_agent_runtime import _call_tool_impl
@@ -21,6 +22,18 @@ class _AsyncOnlyDummyTool:
 
     async def coroutine(self, **kwargs):
         return f"ok:{self.name}:{kwargs.get('prompt', '')}"
+
+
+class _ScriptJsonTool:
+    def __init__(self, name: str, raw_result: str):
+        self.name = name
+        self.description = "script"
+        self._raw_result = raw_result
+        self.calls = 0
+
+    def func(self, **kwargs):
+        self.calls += 1
+        return self._raw_result
 
 
 @pytest.mark.asyncio
@@ -96,6 +109,100 @@ async def test_skill_tool_exec_supports_async_only_tool():
     msgs = out.get("messages") or []
     assert msgs
     assert "执行结果" in str(msgs[0].content)
+
+
+@pytest.mark.asyncio
+async def test_skill_script_tool_message_exposes_only_standard_stdout_summary():
+    stdout_payload = {
+        "execution_status": "succeeded",
+        "content": "请继续写入报告。",
+        "artifacts": [{"type": "file", "name": "报告", "path": "outputs/report.md"}],
+        "next_action": {"agent_turn": "continue", "skill_session": "keep"},
+    }
+    raw_result = json.dumps(
+        {
+            "ok": True,
+            "returncode": 0,
+            "stdout": json.dumps(stdout_payload, ensure_ascii=False),
+            "stderr": "internal stderr must stay out of prompt",
+            "sandbox_trace": {"sandbox_id": "sb-secret"},
+            "message": "脚本执行成功。",
+        },
+        ensure_ascii=False,
+    )
+    tool = _ScriptJsonTool("run_skill_script_report-builder", raw_result)
+    state = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "tc-script",
+                        "name": "run_skill_script_report-builder",
+                        "args": {"topic": "contract"},
+                    }
+                ],
+            )
+        ],
+        "tools": [tool],
+    }
+
+    out = await _call_tool_impl(state, [tool])
+    msgs = out.get("messages") or []
+    assert msgs
+    text = str(msgs[0].content)
+
+    assert "请继续写入报告。" in text
+    assert "outputs/report.md" in text
+    assert "agent_turn" in text
+    assert '"stdout"' not in text
+    assert '"stderr"' not in text
+    assert "returncode" not in text
+    assert "sandbox_trace" not in text
+    assert "internal stderr" not in text
+    assert "sb-secret" not in text
+
+
+@pytest.mark.asyncio
+async def test_failed_standard_skill_script_stdout_is_not_cached():
+    stdout_payload = {
+        "execution_status": "failed",
+        "content": "脚本参数无效，请修正后重试。",
+        "artifacts": [],
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+    raw_result = json.dumps(
+        {
+            "ok": True,
+            "returncode": 0,
+            "stdout": json.dumps(stdout_payload, ensure_ascii=False),
+            "stderr": "",
+            "message": "脚本执行成功。",
+        },
+        ensure_ascii=False,
+    )
+    tool = _ScriptJsonTool("run_skill_script_validator", raw_result)
+    state = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "tc-script",
+                        "name": "run_skill_script_validator",
+                        "args": {"input_path": "bad.txt"},
+                    }
+                ],
+            )
+        ],
+        "tools": [tool],
+        "tool_result_cache": {},
+    }
+
+    await _call_tool_impl(state, [tool])
+    await _call_tool_impl(state, [tool])
+
+    assert tool.calls == 2
 
 
 def test_build_skill_script_tool_name_sanitizes_non_ascii():

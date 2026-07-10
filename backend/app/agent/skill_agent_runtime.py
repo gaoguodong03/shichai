@@ -22,6 +22,7 @@ from app.agent.skill_tool_result_records import (
     _tool_result_record_from_exception,
     _tool_result_record_from_raw,
 )
+from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,46 @@ def _get_mcp_input_schema(tool_name: str, tools: Sequence[ToolSpec]) -> dict | N
     """从 tools 列表中按 tool_name 取出 MCP 工具 inputSchema，用于参数契约归一化。"""
     tool = _find_tool_by_name(tool_name, tools)
     return getattr(tool, "_mcp_input_schema", None) if tool is not None else None
+
+
+def _json_object_from_tool_result(value: object) -> dict | None:
+    """Parse JSON object-like tool output for prompt sanitization."""
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _skill_script_prompt_summary(result: object) -> str | None:
+    """Return script output safe for LLM context, excluding runtime trace fields."""
+    payload = _json_object_from_tool_result(result)
+    if not isinstance(payload, dict):
+        return None
+
+    stdout_payload = _json_object_from_tool_result(payload.get("stdout"))
+    candidates = [stdout_payload, payload]
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            parsed = SkillScriptStdoutPayload.model_validate(candidate)
+        except Exception:
+            continue
+        return json.dumps(parsed.model_dump(), ensure_ascii=False)
+
+    summary: dict[str, object] = {}
+    for key in ("ok", "code", "message"):
+        if key in payload and payload.get(key) not in (None, ""):
+            summary[key] = payload.get(key)
+    if not summary:
+        return None
+    return json.dumps(summary, ensure_ascii=False)
 
 
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
@@ -300,8 +341,11 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                 stdout_payload = json.loads(stdout)
             except Exception:
                 stdout_payload = None
-            if isinstance(stdout_payload, dict) and stdout_payload.get("ok") is False:
-                return False
+            if isinstance(stdout_payload, dict):
+                try:
+                    return SkillScriptStdoutPayload.model_validate(stdout_payload).execution_status != "failed"
+                except Exception:
+                    return False
         return True
 
     def _script_done_instruction(*, cached: bool = False) -> str:
@@ -357,6 +401,10 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
 
     def _safe_tool_result_for_prompt(result: object, tool_name: str = "") -> str:
         """限制工具结果进入模型上下文的长度，避免超长内容（如 base64 图片）撑爆 token。"""
+        if tool_name.startswith("run_skill_script_"):
+            script_summary = _skill_script_prompt_summary(result)
+            if script_summary is not None:
+                return script_summary
         audio_transcription_text = _audio_transcription_text_for_prompt(tool_name, result)
         if audio_transcription_text is not None:
             return audio_transcription_text
