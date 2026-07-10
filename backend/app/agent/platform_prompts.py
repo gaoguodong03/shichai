@@ -445,6 +445,30 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}
         """,
     ),
+    "skill.execution.tool_error_message.v1": _prompt(
+        "skill.execution.tool_error_message.v1",
+        """
+工具 {tool_name} 执行错误: {error}
+        """,
+    ),
+    "skill.execution.tool_missing_message.v1": _prompt(
+        "skill.execution.tool_missing_message.v1",
+        """
+工具 {tool_name} 不存在。可用: {available_tools}
+        """,
+    ),
+    "skill.execution.tool_parse_error_message.v1": _prompt(
+        "skill.execution.tool_parse_error_message.v1",
+        """
+工具调用解析错误: {error}
+        """,
+    ),
+    "skill.execution.read_workspace_unavailable.v1": _prompt(
+        "skill.execution.read_workspace_unavailable.v1",
+        """
+当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。
+        """,
+    ),
     "agent.final_synthesis.after_tool_success.v1": _prompt(
         "agent.final_synthesis.after_tool_success.v1",
         """

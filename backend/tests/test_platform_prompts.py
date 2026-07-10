@@ -100,3 +100,24 @@ def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
 
     assert "【文件引用" not in combined
     assert not (ROOT / "backend/app/agent/file_ref_resolver.py").exists()
+
+
+def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
+    runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
+
+    forbidden_runtime_prompt_fragments = [
+        "工具 {tool_name} 执行错误:",
+        "工具 {tool_name} 不存在",
+        "工具调用解析错误:",
+        "当前专家未启用 read_workspace_file",
+    ]
+    for phrase in forbidden_runtime_prompt_fragments:
+        assert phrase not in runtime_text
+
+    for prompt_id in [
+        "skill.execution.tool_error_message.v1",
+        "skill.execution.tool_missing_message.v1",
+        "skill.execution.tool_parse_error_message.v1",
+        "skill.execution.read_workspace_unavailable.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS

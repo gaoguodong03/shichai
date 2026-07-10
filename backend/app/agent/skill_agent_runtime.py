@@ -336,6 +336,24 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             {"tool_name": tool_name, "result_for_prompt": result_for_prompt, "suffix": suffix},
         )
 
+    def _tool_error_message(tool_name: str, error: object) -> str:
+        return render_platform_prompt(
+            "skill.execution.tool_error_message.v1",
+            {"tool_name": tool_name, "error": str(error)},
+        )
+
+    def _tool_missing_message(tool_name: str, available_tools: list[str] | None = None) -> str:
+        return render_platform_prompt(
+            "skill.execution.tool_missing_message.v1",
+            {"tool_name": tool_name, "available_tools": ", ".join(available_tools or [])},
+        )
+
+    def _tool_parse_error_message(error: object) -> str:
+        return render_platform_prompt("skill.execution.tool_parse_error_message.v1", {"error": str(error)})
+
+    def _read_workspace_unavailable_message() -> str:
+        return render_platform_prompt("skill.execution.read_workspace_unavailable.v1", {})
+
     def _audio_transcription_text_for_prompt(tool_name: str, result: object) -> str | None:
         if not tool_name.startswith("run_skill_script_audio-transcription"):
             return None
@@ -509,8 +527,9 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
                         str(e)[:500],
                     )
-                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
-                    tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                    error_message = _tool_error_message(tool_name, e)
+                    tool_results.append(ToolMessage(content=error_message, tool_call_id=tool_call_id))
+                    tool_raw_outputs.append(error_message)
                     tool_result_records.append(
                         _tool_result_record_from_exception(
                             tool_name=tool_name,
@@ -535,10 +554,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         available_tools=[t.name for t in state["tools"]],
                     )
                     tool_result_records.append(missing_result)
-                    tool_results.append(ToolMessage(
-                        content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。",
-                        tool_call_id=tool_call_id,
-                    ))
+                    tool_results.append(ToolMessage(content=_read_workspace_unavailable_message(), tool_call_id=tool_call_id))
                 else:
                     missing_result = _missing_tool_result_record(
                         tool_name=tool_name,
@@ -547,7 +563,12 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         available_tools=[t.name for t in state["tools"]],
                     )
                     tool_result_records.append(missing_result)
-                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}", tool_call_id=tool_call_id))
+                    tool_results.append(
+                        ToolMessage(
+                            content=_tool_missing_message(tool_name, [t.name for t in state["tools"]]),
+                            tool_call_id=tool_call_id,
+                        )
+                    )
         return {
             "messages": tool_results,
             "tool_attempt_debug": tool_attempt_debug,
@@ -654,7 +675,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
                     str(e)[:500],
                 )
-                tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                error_message = _tool_error_message(tool_name, e)
+                tool_raw_outputs.append(error_message)
                 tool_result_records.append(
                     _tool_result_record_from_exception(
                         tool_name=tool_name,
@@ -665,7 +687,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     )
                 )
                 return {
-                    "messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")],
+                    "messages": [HumanMessage(content=error_message)],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
                     "tool_results": tool_result_records,
@@ -687,7 +709,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                 )
             )
             return {
-                "messages": [HumanMessage(content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。")],
+                "messages": [HumanMessage(content=_read_workspace_unavailable_message())],
                 "tool_attempt_debug": tool_attempt_debug,
                 "tool_calls": tool_calls_trace,
                 "tool_results": tool_result_records,
@@ -702,7 +724,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             )
         )
         return {
-            "messages": [HumanMessage(content=f"工具 {tool_name} 不存在")],
+            "messages": [HumanMessage(content=_tool_missing_message(tool_name))],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
             "tool_results": tool_result_records,
@@ -710,7 +732,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         }
     except Exception as e:
         return {
-            "messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")],
+            "messages": [HumanMessage(content=_tool_parse_error_message(e))],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
             "tool_results": tool_result_records,
