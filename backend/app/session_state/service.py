@@ -277,7 +277,7 @@ def _build_session_checkpoint(
     }
 
 
-def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapshot") -> Dict[str, Any]:
+def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapshot", force: bool = False) -> Dict[str, Any]:
     """Capture the current file-backed session state as a checkpoint object."""
     if auto_checkpoint_suppressed():
         return {"skipped": True, "trigger": trigger}
@@ -292,7 +292,7 @@ def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapsh
         checkpoint_id=checkpoint_id,
         parent_checkpoint_id=head,
     )
-    if head and trigger not in {"manual_snapshot", "rollback"}:
+    if not force and head and trigger not in {"manual_snapshot", "rollback"}:
         try:
             current = read_checkpoint(layout, head)
             if str(current.get("state_hash") or "") == str(checkpoint.get("state_hash") or ""):

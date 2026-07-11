@@ -216,6 +216,11 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
     assert call["context"].user_id == user
     assert call["payload"]["__sandbox_env"]["SKILL_REQUIREMENTS_B64"]
 
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots", headers=headers)
+    assert snapshots_resp.status_code == 200
+    triggers = [item["trigger"] for item in snapshots_resp.json()["data"]["checkpoints"]]
+    assert "workspace_changed" not in triggers
+
 
 def test_skill_script_workspace_write_creates_workspace_changed_checkpoint(_frontend_flow_env, monkeypatch):
     """脚本工具写入 workspace 后，必须形成可回滚的 workspace_changed 检查点。"""

@@ -35,6 +35,10 @@ from app.tools.skill_script_sandbox_request import (
     inline_shell_env as _inline_shell_env,
     resolve_script_timeout_sec as _resolve_script_timeout_sec,
 )
+from app.tools.skill_script_workspace_checkpoint import (
+    checkpoint_workspace_script_write as _checkpoint_workspace_script_write,
+    workspace_fingerprint as _workspace_fingerprint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,20 +135,6 @@ def _list_available_scripts(script_root: Path) -> list[str]:
 def _json_result(**kwargs: Any) -> str:
     """统一结构化输出。"""
     return json.dumps(kwargs, ensure_ascii=False)
-
-
-def _checkpoint_workspace_script_write(workspace_id: str) -> None:
-    """脚本执行完成后为 workspace 当前状态创建 workspace_changed 检查点。"""
-    try:
-        from app.session_state.service import capture_session_checkpoint
-
-        capture_session_checkpoint(workspace_id, trigger="workspace_changed")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "skill_script_workspace_checkpoint_failed workspace_id=%s err=%s",
-            workspace_id,
-            exc,
-        )
 
 
 def _validate_skill_script_stdout(stdout: str) -> str | None:
@@ -373,6 +363,7 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
             retry_count=1,
             sandbox_cwd=sandbox_cwd,
         )
+        before_workspace_fingerprint = _workspace_fingerprint(workspace_id)
         logger.info(
             "st49_skill_script_execute_start code=skill_script_start user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s requirements_hash=%s requirements_present=%s",
             current_user_id,
@@ -479,7 +470,11 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         stdout = str(out.get("stdout") or "").strip()
         stderr = str(out.get("stderr") or "").strip()
         sandbox_trace = out.get("_sandbox_trace") if isinstance(out.get("_sandbox_trace"), dict) else {}
-        _checkpoint_workspace_script_write(workspace_id)
+        _checkpoint_workspace_script_write(
+            workspace_id,
+            before_fingerprint=before_workspace_fingerprint,
+            stdout=stdout,
+        )
         if isinstance(exit_code, int) and exit_code != 0:
             result_payload = {
                 "ok": False,

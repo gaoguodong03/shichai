@@ -213,6 +213,36 @@ def test_workspace_write_operations_create_workspace_changed_checkpoints(client)
         assert latest_trigger() == "workspace_changed"
 
 
+def test_explicit_workspace_save_creates_checkpoint_even_when_content_unchanged(client):
+    """显式保存同一内容也必须形成新的 workspace_changed 审计边界。"""
+    create_resp = client.post("/api/sessions", json={"title": "同内容保存检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    first = client.post(
+        f"/api/sessions/{session_id}/workspace/files",
+        json={"filename": "same.md", "content": "same"},
+    )
+    assert first.status_code == 200
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    before = snapshots_resp.json()["data"]["checkpoints"]
+
+    second = client.put(
+        f"/api/sessions/{session_id}/workspace/files/content",
+        params={"path": "same.md"},
+        json={"content": "same"},
+    )
+    assert second.status_code == 200
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    after = snapshots_resp.json()["data"]["checkpoints"]
+
+    assert len(after) == len(before) + 1
+    assert after[-1]["trigger"] == "workspace_changed"
+    assert after[-1]["state_hash"] == before[-1]["state_hash"]
+
+
 def test_workspace_upload_large_file(client):
     """大文件上传应分块落盘并保持内容完整"""
     payload = (b"audio-data-" * 130000) + b"tail"

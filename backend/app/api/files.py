@@ -30,7 +30,7 @@ def _auto_checkpoint_workspace(workspace_id: str, trigger: str) -> None:
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(workspace_id, trigger=trigger)
+        capture_session_checkpoint(workspace_id, trigger=trigger, force=True)
     except Exception:
         logger.warning("workspace checkpoint failed: %s trigger=%s", workspace_id, trigger, exc_info=True)
 

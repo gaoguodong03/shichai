@@ -66,7 +66,7 @@ def _checkpoint_workspace_mutation(workspace_id: str) -> None:
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(workspace_id, trigger="workspace_changed")
+        capture_session_checkpoint(workspace_id, trigger="workspace_changed", force=True)
     except Exception:
         logger.warning("workspace checkpoint failed after builtin workspace mutation: %s", workspace_id, exc_info=True)
 
