@@ -316,10 +316,11 @@ def test_mcp_bundle_packaging_has_core_module_boundary():
 
 
 def test_skill_import_does_not_keep_api_mcp_bundle_parsers():
-    """Skill import reads MCP rows through the current resource-bundle core helper."""
+    """Skill import reads MCP rows in the service layer, not the API route module."""
     api_text = (PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py").read_text(encoding="utf-8")
+    service_text = (PROJECT_ROOT / "backend" / "app" / "core" / "skill_bundle_service.py").read_text(encoding="utf-8")
 
-    assert "read_bundle_tool_rows(tmp)" in api_text
+    assert "read_bundle_tool_rows(tmp)" in service_text
     assert "def _read_mcp_bundle_rows" not in api_text
     assert "def _parse_mcp_bundle_rows" not in api_text
 
@@ -345,6 +346,7 @@ def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py",
         PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py",
+        PROJECT_ROOT / "backend" / "app" / "core" / "skill_bundle_service.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "group_session_service.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_state.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "files.py",

@@ -384,12 +384,9 @@ async def import_session_preset_bundle(
 
 async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
     from app.api.agents import load_agent_instances, save_agent_instances
-    from app.api.settings_skills import (
-        _merge_imported_skill_requirements_and_prewarm,
-        _read_skill_file,
-        _sanitize_skill_frontmatter_for_write,
-        _write_skill_file,
-    )
+    from app.api.settings_skill_frontmatter import sanitize_skill_frontmatter_for_write as _sanitize_skill_frontmatter_for_write
+    from app.api.settings_skill_store import read_skill_file as _read_skill_file, write_skill_file as _write_skill_file
+    from app.core.skill_bundle_service import merge_imported_skill_requirements_and_prewarm
 
     tmp: Optional[Path] = None
     try:
@@ -495,7 +492,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         mcp_updated = len([name for name in imported_mcp_names if name and name in existing_mcp_names])
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
-        requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
+        requirements_result = await merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
         _merged_presets, imported_names, overwritten_existing_names = _merge_session_presets_into_file([norm])
         return {
             "object_type": "scene",

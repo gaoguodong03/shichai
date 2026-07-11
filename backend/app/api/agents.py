@@ -248,9 +248,9 @@ async def import_agent_instance_bundle(
                 },
             }
 
-        from app.api.settings_skills import _import_expert_from_bundle_bytes
+        from app.core.skill_bundle_service import import_expert_from_bundle_bytes
 
-        helper_result = await _import_expert_from_bundle_bytes(raw, dry_run=False)
+        helper_result = await import_expert_from_bundle_bytes(raw, dry_run=False)
         summary = dict(helper_result.get("summary") or {})
         final_name = summary.get("imported_agent_name")
         instances = load_agent_instances()

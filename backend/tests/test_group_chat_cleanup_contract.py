@@ -11,6 +11,7 @@ def _read(rel: str) -> str:
 def test_backend_core_files_stay_bounded_after_extraction():
     assert len(_read("app/api/group_chat.py").splitlines()) <= 900
     assert len(_read("app/api/settings_presets.py").splitlines()) <= 600
+    assert len(_read("app/api/settings_skills.py").splitlines()) <= 600
     assert len(_read("app/agent/group_chat_runtime.py").splitlines()) <= 1500
     assert len(_read("app/agent/simple_agent.py").splitlines()) <= 1600
     assert len(_read("app/agent/skill_agent_runtime.py").splitlines()) <= 600
@@ -28,6 +29,7 @@ def test_backend_extraction_modules_exist_without_legacy_smells():
         "app/agent/simple_agent_tool_errors.py",
         "app/agent/skill_execution_prompt_rules.py",
         "app/agent/skill_agent_paths.py",
+        "app/core/skill_bundle_service.py",
         "app/core/scenario_preset_store.py",
         "app/agent/sandbox_requirements_verifier.py",
         "app/agent/sandbox_requirements_installer.py",

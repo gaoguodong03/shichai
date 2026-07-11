@@ -202,7 +202,7 @@ async def test_current_mcp_manager_loads_resources_from_stable_user_id(monkeypat
 
 @pytest.mark.asyncio
 async def test_settings_skills_mcp_invalidation_uses_stable_user_id(monkeypatch):
-    from app.api import settings_skills
+    from app.core import skill_bundle_service
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     captured = {}
@@ -210,11 +210,11 @@ async def test_settings_skills_mcp_invalidation_uses_stable_user_id(monkeypatch)
     async def fake_dispose(user_identity: str):
         captured["user_identity"] = user_identity
 
-    monkeypatch.setattr(settings_skills, "dispose_mcp_runtime_for_user", fake_dispose)
+    monkeypatch.setattr(skill_bundle_service, "dispose_mcp_runtime_for_user", fake_dispose)
 
     token = set_current_user_identity(user_id="user-skill-mcp-cache", username="skill-cache@example.com")
     try:
-        await settings_skills._invalidate_mcp_runtime_after_config_change()
+        await skill_bundle_service.invalidate_mcp_runtime_after_config_change()
     finally:
         reset_current_user_identity(token)
 
