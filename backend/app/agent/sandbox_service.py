@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -18,6 +17,7 @@ from app.agent.sandbox_handle_keys import (
     request_handle_cache_key,
     request_needs_user_requirements,
 )
+from app.agent.sandbox_execution import execute_sandbox_request
 from app.agent.sandbox_lifecycle_errors import (
     SandboxEnvironmentError,
     is_host_path_mount_source_error as _is_host_path_mount_source_error,
@@ -30,7 +30,6 @@ from app.agent.sandbox_policy_builder import (
     apply_fixed_resource_policy,
     apply_user_image_policy,
     build_mounts_for_request,
-    resolve_cwd,
 )
 from app.agent.sandbox_policy_runtime import (
     env_csv as _env_csv,
@@ -516,152 +515,7 @@ class SandboxService(SandboxRequirementsMixin, SandboxPrewarmMixin, SandboxWorks
                 logger.warning("sandbox_invalidate_dispose_failed user_id=%s err=%s", user_id, e)
 
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
-        policy = await self._build_policy(req)
-        cwd = resolve_cwd(policy, session_id=req.session_id, cwd=req.cwd)
-        mount_targets = [str(m.target or "") for m in (policy.volume_mounts or []) if str(m.target or "")]
-        payload = req.payload if isinstance(req.payload, dict) else {}
-        command = payload.get("__sandbox_command")
-        env = self._prepare_command_env(req, payload.get("__sandbox_env"))
-        started = time.time()
-        user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
-        for attempt in range(2):
-            handle: Optional[SandboxHandle] = None
-            try:
-                handle = await self._ensure_user_handle(req, policy)
-                append_sandbox_event(
-                    session_id=req.session_id,
-                    event_type="sandbox_command_started",
-                    turn_id=req.turn_id,
-                    payload={
-                        "tool_name": req.tool_name,
-                        "tool_kind": req.tool_kind,
-                        "tool_call_id": req.tool_call_id,
-                        "user_id": req.user_id,
-                        "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                        "cwd": cwd,
-                        "mount_count": len(policy.volume_mounts or []),
-                        "mount_targets": mount_targets,
-                        "attempt": attempt + 1,
-                    },
-                )
-                result = await self._adapter.run_tool_in_sandbox(
-                    handle,
-                    {
-                        "tool_name": req.tool_name,
-                        "tool_kind": req.tool_kind,
-                        "payload": payload,
-                        "timeout_ms": req.timeout_ms,
-                        "runner": req.runner,
-                        "cwd": cwd,
-                        "command": command if isinstance(command, list) else None,
-                        "env": env,
-                    },
-                )
-                if isinstance(result, dict):
-                    trace = result.get("_sandbox_trace")
-                    if not isinstance(trace, dict):
-                        trace = {}
-                    trace.setdefault("sandbox_id", str((handle.metadata or {}).get("sandbox_id") or ""))
-                    trace.setdefault("image_ref", str((handle.metadata or {}).get("image_ref") or ""))
-                    trace.setdefault(
-                        "installed_requirements_hash",
-                        str((handle.metadata or {}).get("installed_requirements_hash") or ""),
-                    )
-                    trace.setdefault(
-                        "verified_requirements_hash",
-                        str((handle.metadata or {}).get("verified_requirements_hash") or ""),
-                    )
-                    trace.setdefault(
-                        "requirements_verifier_version",
-                        str((handle.metadata or {}).get("requirements_verifier_version") or ""),
-                    )
-                    result["_sandbox_trace"] = trace
-                append_sandbox_event(
-                    session_id=req.session_id,
-                    event_type="sandbox_command_finished",
-                    turn_id=req.turn_id,
-                    payload={
-                        "tool_name": req.tool_name,
-                        "tool_call_id": req.tool_call_id,
-                        "user_id": req.user_id,
-                        "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                        "elapsed_ms": int((time.time() - started) * 1000),
-                        "attempt": attempt + 1,
-                    },
-                )
-                return result
-            except TimeoutError:
-                append_sandbox_event(
-                    session_id=req.session_id,
-                    event_type="sandbox_command_timeout",
-                    turn_id=req.turn_id,
-                    payload={"tool_name": req.tool_name, "tool_call_id": req.tool_call_id},
-                )
-                raise
-            except SandboxEnvironmentError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                if attempt == 0 and self._is_sandbox_not_found_error(exc):
-                    await self._invalidate_user_handle(user_id, expected_handle=handle)
-                    append_sandbox_event(
-                        session_id=req.session_id,
-                        event_type="sandbox_session_recreated",
-                        turn_id=req.turn_id,
-                        payload={
-                            "tool_name": req.tool_name,
-                            "tool_call_id": req.tool_call_id,
-                            "user_id": req.user_id,
-                            "reason": "sandbox_not_found",
-                        },
-                    )
-                    continue
-                if _is_lifecycle_connect_error(exc):
-                    await self._invalidate_user_handle(user_id, expected_handle=handle)
-                    raise SandboxEnvironmentError(_lifecycle_connect_error_message(exc)) from exc
-                if attempt == 0 and "tool not allowed by sandbox policy" in str(exc).lower():
-                    await self._invalidate_user_handle(user_id, expected_handle=handle)
-                    append_sandbox_event(
-                        session_id=req.session_id,
-                        event_type="sandbox_session_recreated",
-                        turn_id=req.turn_id,
-                        payload={
-                            "tool_name": req.tool_name,
-                            "tool_call_id": req.tool_call_id,
-                            "user_id": req.user_id,
-                            "reason": "sandbox_tool_policy_mismatch",
-                        },
-                    )
-                    continue
-                append_sandbox_event(
-                    session_id=req.session_id,
-                    event_type="sandbox_command_failed",
-                    turn_id=req.turn_id,
-                    payload={
-                        "tool_name": req.tool_name,
-                        "tool_call_id": req.tool_call_id,
-                        "user_id": req.user_id,
-                        "error": str(exc),
-                        "cwd": cwd,
-                        "mount_count": len(policy.volume_mounts or []),
-                        "mount_targets": mount_targets,
-                        "attempt": attempt + 1,
-                    },
-                )
-                diag = {
-                    "sandbox_id": str(((handle.metadata if handle is not None else {}) or {}).get("sandbox_id") or ""),
-                    "sandbox_cwd": cwd,
-                    "mount_count": len(policy.volume_mounts or []),
-                    "mount_targets": mount_targets,
-                    "resource_limit": {
-                        "cpu": policy.cpu_limit,
-                        "memory_mb": policy.memory_limit_mb,
-                    },
-                    "last_sandbox_error_code": "INVALID_REQUEST_BODY"
-                    if "INVALID_REQUEST_BODY" in str(exc)
-                    else ("HTTP_400" if "Status code: 400" in str(exc) else ""),
-                }
-                raise RuntimeError(f"{exc} | sandbox_diag={json.dumps(diag, ensure_ascii=False)}") from exc
-        raise RuntimeError("sandbox execution failed without terminal error")
+        return await execute_sandbox_request(self, req)
 
     async def dispose_session(self, session_id: str, *, turn_id: str = "") -> None:
         if not self._session_isolation:
