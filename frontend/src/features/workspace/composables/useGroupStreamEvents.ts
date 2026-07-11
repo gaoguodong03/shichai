@@ -243,11 +243,6 @@ export function useGroupStreamEvents(args: {
         clearStreamingPlaceholders()
         patchGroupStreamState(activeSessionId(sessionId), { phase: 'recruiting' })
       }
-      if (endData.suggested_next_speaker === 'user' || endData.phase === 'completed') {
-        clearAttachedFiles()
-      }
-    }
-    if (endData.phase === 'completed') {
       clearAttachedFiles()
     }
     if (state.sawExpertAssistantMessageThisRun) {

@@ -593,6 +593,7 @@ def test_frontend_does_not_auto_route_from_end_suggested_next_speaker():
     assert "groupSuggestedNextSpeaker.value =" in end_handler.group(0)
     assert "confirmGroupNext(" not in end_handler.group(0)
     assert "nextTick(() => confirmGroupNext" not in src
+    assert "endData.suggested_next_speaker === 'user'" not in end_handler.group(0)
 
 
 def test_frontend_waiting_state_follows_end_waiting_for_user():
@@ -605,6 +606,7 @@ def test_frontend_waiting_state_follows_end_waiting_for_user():
     assert end_handler is not None
     assert "if (endData.waiting_for_user)" in end_handler.group(0)
     assert "groupWaitingForUser.value = true" in end_handler.group(0)
+    assert "clearAttachedFiles()" in end_handler.group(0)
     assert "groupWaitingForUser.value = !!endData.turns_limit_reached" not in end_handler.group(0)
 
 
