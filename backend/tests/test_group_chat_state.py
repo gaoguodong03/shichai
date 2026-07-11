@@ -164,6 +164,14 @@ def test_runtime_json_keeps_only_contract_fields(tmp_path, monkeypatch):
     }
 
 
+def test_runtime_phase_never_defaults_to_running(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    runtime = state.runtime_for_active_run({"run_id": "r1", "running": True})
+
+    assert runtime["phase"] == "routing"
+
+
 def test_runtime_for_session_filters_stored_runtime_json_fields(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})
@@ -570,7 +578,7 @@ def test_runtime_clears_done_task(tmp_path, monkeypatch):
     try:
         task = loop.create_task(done())
         loop.run_until_complete(task)
-        state.ACTIVE_GROUP_RUNS["s1"] = {"run_id": "r1", "task": task, "phase": "running"}
+        state.ACTIVE_GROUP_RUNS["s1"] = {"run_id": "r1", "task": task, "phase": "executing"}
         session_item = {}
 
         runtime = state.runtime_for_session("s1", session_item)

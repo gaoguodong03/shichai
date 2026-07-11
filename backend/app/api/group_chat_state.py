@@ -27,6 +27,24 @@ ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
+RUNTIME_PHASES = {
+    "routing",
+    "planning",
+    "executing",
+    "file_resolving",
+    "file_resolved",
+    "skill_selecting",
+    "agent_routed",
+    "tool_running",
+    "assistant_generating",
+    "finalizing",
+    "awaiting_user",
+    "recruiting",
+    "reviewing",
+    "completed",
+    "stopped",
+    "failed",
+}
 
 
 def group_session_has_active_run(group_session_id: str) -> bool:
@@ -217,7 +235,24 @@ def _clean_runtime_state(state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not isinstance(state, dict):
         return {"running": False}
     allowed = {"running", "run_id", "agent_name", "skill", "phase", "started_at"}
-    return {key: value for key, value in state.items() if key in allowed and value is not None}
+    cleaned = {key: value for key, value in state.items() if key in allowed and value is not None}
+    running = cleaned.get("running") is True
+    if "phase" in cleaned:
+        phase = _runtime_phase(cleaned.get("phase"), running=running)
+        if phase:
+            cleaned["phase"] = phase
+        else:
+            cleaned.pop("phase", None)
+    elif running:
+        cleaned["phase"] = "routing"
+    return cleaned
+
+
+def _runtime_phase(value: Any, *, running: bool) -> str:
+    phase = str(value or "").strip()
+    if phase in RUNTIME_PHASES:
+        return phase
+    return "routing" if running else ""
 
 
 def write_group_runtime(
@@ -273,7 +308,7 @@ def runtime_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
         "run_id": str(active.get("run_id") or ""),
         "agent_name": str(active.get("agent_name") or ""),
         "skill": str(active.get("skill") or ""),
-        "phase": str(active.get("phase") or "running"),
+        "phase": _runtime_phase(active.get("phase"), running=True),
         "started_at": active.get("started_at") or "",
     }
 
