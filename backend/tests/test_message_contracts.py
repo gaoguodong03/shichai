@@ -52,6 +52,24 @@ def test_expert_message_record_uses_current_skill_result_shape():
     assert dumped["skill_result"]["artifacts"][0]["path"] == "outline.md"
 
 
+def test_skill_message_content_must_match_skill_result_content():
+    payload = {
+        "message_id": "msg-expert",
+        "speaker": {"type": "expert", "agent_name": "写作专家", "skill": "article-writer"},
+        "message": {"content": "平台改写后的总结"},
+        "created_at": "2026062908104900",
+        "skill_result": {
+            "execution_status": "succeeded",
+            "content": "脚本原始正文",
+            "artifacts": [],
+            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        },
+    }
+
+    with pytest.raises(ValidationError):
+        ChatMessageRecord.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     "path",
     [
