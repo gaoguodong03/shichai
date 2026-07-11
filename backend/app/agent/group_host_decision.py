@@ -78,6 +78,60 @@ def _strict_host_decision_from_payload(
     }
 
 
+def _user_requests_recruitment(text: str) -> bool:
+    """Return whether the user explicitly asks to invite more experts."""
+    value = str(text or "").strip()
+    if not value:
+        return False
+    return any(token in value for token in ("邀请", "加人", "加入专家", "添加专家", "再加", "请加", "拉进来"))
+
+
+def finalize_host_scheduler_decision(
+    decision: Dict[str, Any],
+    *,
+    agent_names: List[str],
+    available_to_add: List[Dict[str, Any]],
+    user_text: str,
+) -> Dict[str, Any]:
+    """Apply recruitment post-processing before runtime exposes a host decision."""
+    out = dict(decision or {})
+    available = {
+        str(item.get("name") or "").strip()
+        for item in available_to_add or []
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+    suggested: list[str] = []
+    for raw in out.get("suggested_add_agent_names") or []:
+        name = str(raw or "").strip()
+        if name and name in available and name not in suggested:
+            suggested.append(name)
+    if suggested and agent_names and not _user_requests_recruitment(user_text):
+        suggested = []
+    if suggested or out.get("suggested_add_agent_names"):
+        out["next_speaker"] = "user"
+    out["suggested_add_agent_names"] = suggested
+    return out
+
+
+def _apply_decision_to_ctx(decision: Dict[str, Any], *, default_next_action: str) -> Dict[str, Any]:
+    """Map a finalized host decision into runtime routing context fields."""
+    next_speaker = str((decision or {}).get("next_speaker") or "user").strip() or "user"
+    next_action = str((decision or {}).get("next_action") or "").strip() or str(default_next_action or "").strip()
+    current_phase = str((decision or {}).get("current_phase") or "").strip()
+    suggested_add = [str(item).strip() for item in ((decision or {}).get("suggested_add_agent_names") or []) if str(item).strip()]
+    host_scheduler = {
+        "current_phase": current_phase,
+        "next_speaker": next_speaker,
+        "next_action": next_action,
+    }
+    return {
+        "next_speaker": next_speaker,
+        "next_action": next_action,
+        "suggested_add_agent_names": suggested_add,
+        "host_scheduler": host_scheduler,
+    }
+
+
 def parse_strict_host_scheduler_output(
     content: str,
     agent_profiles: List[Dict[str, Any]],

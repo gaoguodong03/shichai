@@ -175,7 +175,8 @@ def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[st
 
 def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -> HumanMessage:
     payload = _successful_tool_payload(tool_out) or {}
-    message = str(payload.get("message") or "工具执行成功。").strip() or "工具执行成功。"
+    default_message = render_platform_prompt("agent.final_synthesis.default_tool_status.v1", {})
+    message = str(payload.get("message") or default_message).strip() or default_message
     return HumanMessage(
         content=render_platform_prompt(
             "agent.final_synthesis.after_tool_success.v1",

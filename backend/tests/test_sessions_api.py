@@ -178,7 +178,7 @@ def test_session_created_from_default_host_omits_display_only_skill_name(client:
 
 
 def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):
-    from app.api import sessions
+    from app.agent import group_chat_once
 
     async def broken_body():
         raise RuntimeError("boom")
@@ -190,7 +190,7 @@ def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monk
     async def fake_group_chat_stream(session_id, request):
         return BrokenStream()
 
-    monkeypatch.setattr(sessions, "group_chat_stream", fake_group_chat_stream)
+    monkeypatch.setattr(group_chat_once, "group_chat_stream", fake_group_chat_stream)
 
     response = client.post(
         "/api/sessions/s-error/chat",

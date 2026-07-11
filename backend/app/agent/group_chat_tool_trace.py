@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 from app.agent.platform_prompts import render_platform_prompt
+from app.agent.session_runtime_logs import append_tool_execution_logs
 
 
 _WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/sessions/[^\s)\"'<>]+/workspace/files/download\?path=[^\s)\"'<>]+")
@@ -346,3 +347,21 @@ def extract_sandbox_entry_trace(raw_outputs: List[str]) -> List[Dict[str, Any]]:
         except Exception:
             continue
     return traces
+
+
+def record_group_chat_tool_trace(
+    session_id: str,
+    *,
+    message_id: str,
+    agent_name: str,
+    skill: str,
+    tool_results: List[Dict[str, Any]],
+) -> None:
+    """Record group-chat tool results through the session-level execution log."""
+    append_tool_execution_logs(
+        session_id,
+        message_id=message_id,
+        agent_name=agent_name,
+        skill=skill,
+        tool_results=tool_results,
+    )

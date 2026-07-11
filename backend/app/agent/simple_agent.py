@@ -80,7 +80,7 @@ class SimpleAgent:
         missing_tool_msgs = _missing_tool_response_messages(
             getattr(response, "tool_calls", None) or [],
             out_msgs if isinstance(out_msgs, list) else [],
-            "工具执行器未返回结果消息",
+            render_platform_prompt("agent.tool_call.missing_response.default_reason.v1", {}),
         )
         if missing_tool_msgs:
             logger.warning(

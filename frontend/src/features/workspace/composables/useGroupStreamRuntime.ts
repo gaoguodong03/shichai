@@ -37,6 +37,7 @@ function streamPhaseText(phase: string): string {
     completed: '已完成',
     stopped: '已停止',
     failed: '运行失败',
+    timeout_or_budget_exceeded: '已达到自动执行上限，等待你确认…',
   }
   return labels[key] || key
 }

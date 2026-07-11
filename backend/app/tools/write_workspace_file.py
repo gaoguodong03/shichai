@@ -42,7 +42,7 @@ def _normalize_path(path_or_input) -> str:
     if not s:
         return ""
     if s.startswith("{") and s.endswith("}"):
-        raise ValueError("path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。")
+        raise ValueError(render_platform_prompt("workspace.write_file.json_wrapped_path_error.v1", {}))
     return s
 
 
@@ -100,21 +100,16 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         try:
             path_value = _normalize_path(path) or _normalize_path(kwargs.get("path")) or ""
         except ValueError as exc:
-            return f"错误：{exc}"
+            return str(exc)
         content_value = _normalize_content(content)
         allow_overwrite = _normalize_bool(overwrite)
         path_value = path_value.strip()
         if not path_value:
-            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report-2026070422145700.md）。"
+            return render_platform_prompt("workspace.write_file.missing_path.v1", {})
         if not content_value:
-            return (
-                "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
-            )
+            return render_platform_prompt("workspace.write_file.missing_content.v1", {})
         if _looks_like_model_tool_call_payload(content_value):
-            return (
-                "错误：content 不是可保存的最终正文，已拒绝写入工作区。"
-                "请把要保存的完整正文传给 content。"
-            )
+            return render_platform_prompt("workspace.write_file.tool_call_payload_content_error.v1", {})
         try:
             normalized = normalize_public_workspace_path(path_value)
         except WorkspacePathError as exc:
@@ -126,13 +121,9 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         try:
             target.relative_to(ws_root.resolve())
         except ValueError:
-            return f"错误：路径 {path_value} 不在当前工作区内。"
+            return render_platform_prompt("workspace.write_file.outside_workspace.v1", {"path": path_value})
         if target.exists() and not allow_overwrite:
-            return (
-                f"错误：文件已存在：{normalized}。为避免覆盖已有正文或工作区产物，"
-                "write_workspace_file 默认不覆盖同名文件。请改用符合 文件名-当前文件时间戳.扩展名 的新文件名，"
-                "或在确需覆盖时显式传入 overwrite=true。"
-            )
+            return render_platform_prompt("workspace.write_file.exists_no_overwrite.v1", {"path": normalized})
         svc = get_shared_sandbox_service()
         try:
             user_id = get_current_user().user_id
@@ -144,9 +135,9 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
                 content=str(content_value),
             )
         except Exception as e:
-            return f"错误：写入工作区文件失败 - {e}"
+            return render_platform_prompt("workspace.write_file.write_failed.v1", {"error": e})
         _checkpoint_workspace_write(workspace_id)
-        return f"已写入当前 Chat 工作区文件：{normalized}"
+        return render_platform_prompt("workspace.write_file.success.v1", {"path": normalized})
 
     return ToolSpec.from_function(
         name="write_workspace_file",

@@ -68,11 +68,14 @@
 | 文件 | 职责 |
 |------|------|
 | `group_chat_runtime.py` | 群聊一轮请求的总编排入口。只能串联步骤，不承载所有细节。 |
+| `group_chat_once.py` | 非流式 `/chat` 聚合入口，只消费 SSE 契约事件并返回聚合 JSON。 |
+| `group_chat_request_inputs.py` | 聊天请求附件校验和专家可见用户输入组装。 |
 | `group_orchestration_fsm.py` | 入口路由优先级：空专家、目标专家、continuation、host_scheduler、主持人调度。 |
-| `group_host_decision.py` | 主持人严格 JSON 解析、合法性校验和保护决策。 |
+| `group_host_decision.py` | 主持人严格 JSON 解析、合法性校验、保护决策、招募建议后处理和调度决策应用。 |
 | `group_chat_host_runtime.py` | 主持人调用 LLM 的运行时包装。 |
 | `group_chat_host_messages.py` | 主持人可见消息生成，不做路由判断。 |
 | `expert_runtime.py` | 专家回合准备：专家资料、Skill 解析、LLM 和工具运行时构造。 |
+| `group_chat_expert_turn.py` | 专家单回合流式执行、进度事件、工具结果汇总、消息落盘和工具 trace 写入。 |
 | `group_chat_skill_session.py` | 从 `skill_result.next_action` 推导跨轮 Skill 状态。 |
 | `group_chat_soft_stop.py` | soft stop 和等待用户规则。 |
 | `group_chat_streaming.py` | SSE 事件构造和序列化。 |
@@ -116,9 +119,10 @@
 | 文件 | 职责 |
 |------|------|
 | `tools_for_skill.py` | 按当前 Skill `allowed-tools` 组装 MCP、HTTP API、工作区工具和脚本工具。 |
+| `builtin_workspace_tools.py` | 内置工作区工具的 ToolSpec、schema 和具体执行逻辑。 |
 | `tool_gateway.py` | 工具调用网关、执行上下文和统一返回。 |
 | `group_chat_tool_trace.py` | 工具 trace、日志和调试记录。 |
-| `group_chat_tool_result_content.py` | 工具结果转用户可见内容。 |
+| `group_chat_tool_result_content.py` | 工具结果转用户可见内容和公开 artifact 提取。 |
 | `tools/run_skill_script.py` | Skill 脚本工具创建和沙箱执行入口。 |
 | `tools/http_api_tool.py`、`tools/call_api.py` | 保存型 HTTP API 工具。 |
 | `mcp/manager.py`、`mcp/tool_arg_normalizers.py` | MCP 连接管理和工具参数归一化。 |

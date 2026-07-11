@@ -84,3 +84,115 @@ def test_host_suggestions_require_user_next_speaker():
                 "suggested_add_agent_names": ["检索专家"],
             }
         )
+
+
+def test_finalize_host_decision_suppresses_unsolicited_recruitment_with_existing_members():
+    decision = {
+        "current_phase": "执行中",
+        "next_speaker": "user",
+        "next_action": "请补充材料。",
+        "suggested_add_agent_names": ["检索专家"],
+    }
+
+    out = hd.finalize_host_scheduler_decision(
+        decision,
+        agent_names=["文书专员"],
+        available_to_add=[{"name": "检索专家"}],
+        user_text="继续写正文",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["suggested_add_agent_names"] == []
+
+
+def test_finalize_host_decision_keeps_recruitment_for_zero_member_session():
+    decision = {
+        "current_phase": "招募",
+        "next_speaker": "user",
+        "next_action": "建议先邀请检索专家。",
+        "suggested_add_agent_names": ["检索专家"],
+    }
+
+    out = hd.finalize_host_scheduler_decision(
+        decision,
+        agent_names=[],
+        available_to_add=[{"name": "检索专家"}],
+        user_text="帮我写文章",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["suggested_add_agent_names"] == ["检索专家"]
+
+
+def test_finalize_host_decision_keeps_recruitment_when_user_explicitly_requests_it():
+    decision = {
+        "current_phase": "招募",
+        "next_speaker": "user",
+        "next_action": "建议邀请检索专家。",
+        "suggested_add_agent_names": ["检索专家"],
+    }
+
+    out = hd.finalize_host_scheduler_decision(
+        decision,
+        agent_names=["文书专员"],
+        available_to_add=[{"name": "检索专家"}],
+        user_text="请加一个检索专家进来",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["suggested_add_agent_names"] == ["检索专家"]
+
+
+def test_finalize_host_decision_filters_unavailable_and_duplicate_recruitment_names():
+    decision = {
+        "current_phase": "招募",
+        "next_speaker": "user",
+        "next_action": "建议邀请专家。",
+        "suggested_add_agent_names": ["检索专家", "未知专家", "检索专家", ""],
+    }
+
+    out = hd.finalize_host_scheduler_decision(
+        decision,
+        agent_names=[],
+        available_to_add=[{"name": "检索专家"}],
+        user_text="帮我写文章",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["suggested_add_agent_names"] == ["检索专家"]
+
+
+def test_apply_decision_to_ctx_returns_runtime_routing_fields_and_host_scheduler():
+    decision = {
+        "current_phase": "执行中",
+        "next_speaker": "写作专家",
+        "next_action": "请写第一版正文。",
+        "suggested_add_agent_names": ["检索专家"],
+    }
+
+    out = hd._apply_decision_to_ctx(decision, default_next_action="默认下一步")
+
+    assert out == {
+        "next_speaker": "写作专家",
+        "next_action": "请写第一版正文。",
+        "suggested_add_agent_names": ["检索专家"],
+        "host_scheduler": {
+            "current_phase": "执行中",
+            "next_speaker": "写作专家",
+            "next_action": "请写第一版正文。",
+        },
+    }
+
+
+def test_apply_decision_to_ctx_uses_default_next_action_when_decision_action_is_empty():
+    decision = {
+        "current_phase": "等待",
+        "next_speaker": "user",
+        "next_action": "",
+        "suggested_add_agent_names": [],
+    }
+
+    out = hd._apply_decision_to_ctx(decision, default_next_action="请补充材料。")
+
+    assert out["next_action"] == "请补充材料。"
+    assert out["host_scheduler"]["next_action"] == "请补充材料。"

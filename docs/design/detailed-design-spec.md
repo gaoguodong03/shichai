@@ -297,7 +297,6 @@ POST /api/sessions/{session_id}/chat/stream
 - `backend/app/agent/group_host_decision.py`
 - `backend/app/agent/group_chat_expert_resolution.py`
 - `backend/app/agent/expert_runtime.py`
-- `backend/app/core/scene_scheduler.py`
 
 异常处理：
 
@@ -310,9 +309,9 @@ POST /api/sessions/{session_id}/chat/stream
 
 - `backend/tests/test_group_host_decision.py`
 - `backend/tests/test_host_takeover.py`
-- `backend/tests/test_scene_scheduler.py`
-- `backend/tests/test_scene_runtime.py`
 - `backend/tests/test_group_orchestration_fsm.py`
+- `backend/tests/test_sessions_api.py`
+- `backend/tests/test_expert_runtime.py`
 
 ### 6.4 资源中心
 
@@ -686,7 +685,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 |------|--------------|----------|
 | UR-01 账号与用户隔离 | 6.1 | `test_auth_sqlite.py`、`test_user_resource_paths.py`、`auth.spec.ts` |
 | UR-02 工作区与统一会话 | 6.2 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`workspace.spec.ts` |
-| UR-03 主持人与专家协作 | 6.3 | `test_group_host_decision.py`、`test_host_takeover.py`、`test_scene_scheduler.py` |
+| UR-03 主持人与专家协作 | 6.3 | `test_group_host_decision.py`、`test_host_takeover.py`、`test_group_orchestration_fsm.py` |
 | UR-04 资源中心 | 6.4 | `test_agents_api.py`、资源中心 E2E |
 | UR-05 Skill 与脚本执行 | 6.5 | `test_skill_agent_tool_resolution.py`、`test_group_chat_skill_script_cli_flow.py` |
 | UR-06 MCP 工具能力 | 6.6 | `test_file_ref_and_gateway.py`、`test_mcp_skill_resolution.py` |

@@ -1002,7 +1002,8 @@ def test_run_skill_script_user_identity_uses_stable_user_id():
 
 
 def test_builtin_workspace_tools_use_stable_user_id(monkeypatch, tmp_path):
-    from app.agent import tools_for_skill
+    from app.agent import builtin_workspace_tools
+    from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     captured: dict[str, str] = {}
@@ -1013,10 +1014,10 @@ def test_builtin_workspace_tools_use_stable_user_id(monkeypatch, tmp_path):
             return []
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    monkeypatch.setattr(tools_for_skill, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    monkeypatch.setattr(builtin_workspace_tools, "get_shared_sandbox_service", lambda: _FakeSandboxService())
     token = set_current_user_identity(user_id="user-stable-tools", username="tools@example.com")
     try:
-        tools = tools_for_skill._create_builtin_workspace_tools("sess-builtin-tools")
+        tools = create_builtin_workspace_tools("sess-builtin-tools")
         list_tool = next(item for item in tools if item.name == "list_workspace_directory")
         out = asyncio.run(list_tool.ainvoke({"path": ""}))
     finally:

@@ -98,3 +98,17 @@ def test_sse_end_event_dedupes_suggested_add_agent_names():
     )
 
     assert parsed.suggested_add_agent_names == ["写作专家", "检索专家"]
+
+
+def test_sse_end_event_accepts_timeout_or_budget_exceeded_phase():
+    parsed = SseEndEvent.model_validate(
+        {
+            "type": "end",
+            "run_id": "run-1",
+            "phase": "timeout_or_budget_exceeded",
+            "waiting_for_user": True,
+            "suggested_next_speaker": "写作专家",
+        }
+    )
+
+    assert parsed.phase == "timeout_or_budget_exceeded"

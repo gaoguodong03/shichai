@@ -220,6 +220,14 @@ def test_runtime_does_not_pass_removed_tool_stream_prompt_variables():
     assert "stderr_block" not in runtime_text
 
 
+def test_final_synthesis_default_tool_status_uses_platform_prompt_registry():
+    """Default tool status text is part of the LLM-visible final synthesis prompt."""
+    runtime_text = (ROOT / "backend/app/agent/simple_agent_finalization.py").read_text(encoding="utf-8")
+
+    assert '"工具执行成功。"' not in runtime_text
+    assert "agent.final_synthesis.default_tool_status.v1" in PLATFORM_PROMPTS
+
+
 def test_expert_turn_missing_sections_use_platform_prompt_registry():
     builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
     runtime_text = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
@@ -349,22 +357,120 @@ def test_read_workspace_file_tool_messages_use_platform_prompt_registry():
     for phrase in [
         "请根据最近工具结果生成最终答复，不要调用 read_workspace_file。",
         "不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。",
+        "path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。",
+        "错误：未提供文件路径。",
+        "read_workspace_file 只能读取当前工作区内的相对路径文件。",
+        "read_workspace_file 需要会话上下文",
+        "仅允许读取当前会话工作区内的文件",
+        "不是 UTF-8 文本。",
+        "读取文件失败",
     ]:
         assert phrase not in tool_text
 
     for prompt_id in [
         "workspace.read_file.pseudo_field_error.v1",
         "workspace.read_file.not_found.v1",
+        "workspace.read_file.json_wrapped_path_error.v1",
+        "workspace.read_file.missing_path.v1",
+        "workspace.read_file.remote_path_error.v1",
+        "workspace.read_file.missing_session.v1",
+        "workspace.read_file.outside_workspace.v1",
+        "workspace.read_file.non_utf8.v1",
+        "workspace.read_file.read_failed.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_write_workspace_file_tool_messages_use_platform_prompt_registry():
+    """LLM-visible write_workspace_file tool results belong in the shared prompt registry."""
+    tool_text = (ROOT / "backend/app/tools/write_workspace_file.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。",
+        "write_workspace_file 需要提供 path",
+        "错误：content 为空。",
+        "content 不是可保存的最终正文",
+        "请把要保存的完整正文传给 content。",
+        "不在当前工作区内",
+        "write_workspace_file 默认不覆盖同名文件",
+        "写入工作区文件失败",
+        "已写入当前 Chat 工作区文件",
+    ]:
+        assert phrase not in tool_text
+
+    for prompt_id in [
+        "workspace.write_file.json_wrapped_path_error.v1",
+        "workspace.write_file.missing_path.v1",
+        "workspace.write_file.missing_content.v1",
+        "workspace.write_file.tool_call_payload_content_error.v1",
+        "workspace.write_file.outside_workspace.v1",
+        "workspace.write_file.exists_no_overwrite.v1",
+        "workspace.write_file.write_failed.v1",
+        "workspace.write_file.success.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_builtin_workspace_mutation_tool_messages_use_platform_prompt_registry():
+    """Edit, rename, mkdir, and list tool results are LLM-visible ToolMessage content."""
+    module_text = (ROOT / "backend/app/agent/builtin_workspace_tools.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "错误：文件不存在或是目录。",
+        "错误：读取失败",
+        "错误：未找到要替换的文本。",
+        "错误：写入失败",
+        "已编辑文件：",
+        "错误：target_path 不能为空。",
+        "错误：target_path 非法。",
+        "错误：重命名失败",
+        "已重命名文件：",
+        "错误：path 不能为空。",
+        "错误：path 非法。",
+        "错误：新建目录失败",
+        "已新建目录：",
+        "错误：列出目录失败",
+        "下：（空）",
+        "下的内容（含子目录）",
+    ]:
+        assert phrase not in module_text
+
+    for prompt_id in [
+        "workspace.edit_file.not_found_or_directory.v1",
+        "workspace.edit_file.read_failed.v1",
+        "workspace.edit_file.old_text_not_found.v1",
+        "workspace.edit_file.write_failed.v1",
+        "workspace.edit_file.success.v1",
+        "workspace.rename_file.missing_target_path.v1",
+        "workspace.rename_file.invalid_target_path.v1",
+        "workspace.rename_file.rename_failed.v1",
+        "workspace.rename_file.success.v1",
+        "workspace.mkdir.missing_path.v1",
+        "workspace.mkdir.invalid_path.v1",
+        "workspace.mkdir.failed.v1",
+        "workspace.mkdir.success.v1",
+        "workspace.list_dir.failed.v1",
+        "workspace.list_dir.empty.v1",
+        "workspace.list_dir.contents.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 
 
 def test_simple_agent_missing_tool_response_uses_platform_prompt_registry():
     """ToolMessage content returned to the LLM belongs in the shared prompt registry."""
-    module_text = (ROOT / "backend/app/agent/simple_agent_tool_ids.py").read_text(encoding="utf-8")
+    module_text = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in [
+            "backend/app/agent/simple_agent_tool_ids.py",
+            "backend/app/agent/simple_agent.py",
+            "backend/app/agent/simple_agent_streaming.py",
+        ]
+    )
 
     assert "未继续执行" not in module_text
+    assert "工具执行器未返回结果消息" not in module_text
     assert "agent.tool_call.missing_response.v1" in PLATFORM_PROMPTS
+    assert "agent.tool_call.missing_response.default_reason.v1" in PLATFORM_PROMPTS
 
 
 def test_skill_workspace_tool_lines_use_platform_prompt_registry():
@@ -422,6 +528,7 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
     files = [
         ROOT / "backend/app/tools/read_file.py",
         ROOT / "backend/app/tools/write_workspace_file.py",
+        ROOT / "backend/app/agent/builtin_workspace_tools.py",
         ROOT / "backend/app/agent/tools_for_skill.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in files)

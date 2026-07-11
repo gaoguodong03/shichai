@@ -3,6 +3,7 @@
 import asyncio
 from types import SimpleNamespace
 
+from app.agent.messages import AIMessage
 from app.agent.expert_runtime import build_expert_turn_runtime, resolve_expert_skill
 from app.agent.group_chat_expert_resolution import _last_user_message_text
 
@@ -21,6 +22,19 @@ class FakeSkillsLoader:
 
 class FakeLlm:
     pass
+
+
+class CapturingLlm:
+    def __init__(self, content):
+        self.content = content
+        self.messages = None
+
+    def get_client(self):
+        return self
+
+    async def ainvoke(self, messages):
+        self.messages = messages
+        return AIMessage(content=self.content)
 
 
 def test_resolve_expert_skill_uses_locked_skill_first():
@@ -55,6 +69,42 @@ def test_resolve_expert_skill_uses_locked_skill_first():
     assert skill == "sk2"
     assert content == "body 2"
     assert debug["strategy"] == "locked_skill_session"
+
+
+def test_resolve_expert_skill_uses_expert_profile_in_multi_skill_prompt():
+    loader = FakeSkillsLoader({"writer": "写作正文", "research": "检索正文"})
+    llm = CapturingLlm('{"selected_skill":"research"}')
+
+    skill, content, debug = asyncio.run(
+        resolve_expert_skill(
+            agent_profile={
+                "name": "专家A",
+                "description": "负责资料检索和事实核验",
+                "system_prompt": "你必须优先核验来源可靠性。",
+                "skills": [
+                    {"name": "写作", "directory_name": "writer"},
+                    {"name": "检索", "directory_name": "research"},
+                ],
+            },
+            agent_name="专家A",
+            discussion_goal="整理竞品资料",
+            messages=[],
+            session_item={},
+            orchestration_state={},
+            app_settings={"default_llm": "qwen3-max"},
+            round_user_text="先查资料",
+            skills_loader=loader,
+            llm_resolver=lambda _agent_profile: llm,
+        )
+    )
+
+    assert skill == "research"
+    assert content == "检索正文"
+    assert debug["strategy"] == "expert_llm_pick"
+    assert debug["selected_skill"] == "research"
+    assert llm.messages is not None
+    assert "负责资料检索和事实核验" in llm.messages[0].content
+    assert "你必须优先核验来源可靠性。" in llm.messages[0].content
 
 
 def test_build_expert_turn_runtime_creates_agent_entry_bundle():

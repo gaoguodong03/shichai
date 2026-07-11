@@ -365,9 +365,9 @@ def test_builtin_workspace_mutation_tools_create_workspace_changed_checkpoint(
     seed_file,
 ):
     """内置工作区变更工具成功后必须形成 workspace_changed 检查点。"""
-    from app.agent import tools_for_skill as tool_module
+    from app.agent import builtin_workspace_tools as tool_module
     from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host
-    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+    from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
     from app.api.files import get_workspace_root
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
@@ -398,7 +398,7 @@ def test_builtin_workspace_mutation_tools_create_workspace_changed_checkpoint(
             target = ws / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-        tool = next(item for item in _create_builtin_workspace_tools(session_id) if item.name == tool_name)
+        tool = next(item for item in create_builtin_workspace_tools(session_id) if item.name == tool_name)
         out = asyncio.run(tool.ainvoke(payload))
     finally:
         reset_current_user_identity(token)
@@ -814,9 +814,9 @@ def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root
 
 def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_root, monkeypatch):
     """内部运行态目录不进入工作区列表工具结果。"""
-    from app.agent import tools_for_skill as tool_module
+    from app.agent import builtin_workspace_tools as tool_module
     from app.agent.session_workspace_policy import sandbox_session_dir
-    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+    from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
 
     class _FakeSandboxService:
         async def list_workspace_files_flat(
@@ -838,7 +838,7 @@ def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_r
             ]
 
     monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    tools = _create_builtin_workspace_tools("sess-l")
+    tools = create_builtin_workspace_tools("sess-l")
     list_tool = next(t for t in tools if t.name == "list_workspace_directory")
 
     out = asyncio.run(list_tool.ainvoke({"path": ""}))
@@ -853,9 +853,9 @@ def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_r
 def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data_root, monkeypatch):
     """模型传入猜测时间戳时，rename 可在唯一同前缀文件上恢复。"""
     from app.api.files import get_workspace_root
-    from app.agent import tools_for_skill as tool_module
+    from app.agent import builtin_workspace_tools as tool_module
     from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host, list_workspace_files_on_host
-    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+    from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
 
     class _FakeSandboxService:
         async def exec_workspace_shell(
@@ -889,7 +889,7 @@ def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data
     real_file.write_text("plan", encoding="utf-8")
 
     monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    tools = _create_builtin_workspace_tools(workspace_id)
+    tools = create_builtin_workspace_tools(workspace_id)
     rename_tool = next(t for t in tools if t.name == "rename_workspace_file")
 
     out = asyncio.run(
@@ -909,9 +909,9 @@ def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data
 def test_rename_workspace_file_does_not_guess_multiple_timestamped_sources(temp_user_data_root, monkeypatch):
     """同前缀同扩展名有多个候选时，rename 不自动猜源文件。"""
     from app.api.files import get_workspace_root
-    from app.agent import tools_for_skill as tool_module
+    from app.agent import builtin_workspace_tools as tool_module
     from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host, list_workspace_files_on_host
-    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+    from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
 
     class _FakeSandboxService:
         async def exec_workspace_shell(
@@ -947,7 +947,7 @@ def test_rename_workspace_file_does_not_guess_multiple_timestamped_sources(temp_
     second.write_text("second", encoding="utf-8")
 
     monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    tools = _create_builtin_workspace_tools(workspace_id)
+    tools = create_builtin_workspace_tools(workspace_id)
     rename_tool = next(t for t in tools if t.name == "rename_workspace_file")
 
     out = asyncio.run(

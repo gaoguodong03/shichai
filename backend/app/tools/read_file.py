@@ -30,7 +30,7 @@ def _normalize_path(path_or_input) -> str:
     if not s:
         return ""
     if s.startswith("{") and s.endswith("}"):
-        raise ValueError("path 不能是 JSON 包装字符串；请按工具 schema 传 path 参数。")
+        raise ValueError(render_platform_prompt("workspace.read_file.json_wrapped_path_error.v1", {}))
     return s
 
 
@@ -38,19 +38,16 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     """返回 (相对 workspace 根的路径, 错误信息)。"""
     raw = (path or "").strip()
     if not raw:
-        return "", "错误：未提供文件路径。"
+        return "", render_platform_prompt("workspace.read_file.missing_path.v1", {})
     if looks_like_url_or_remote_path(raw):
-        return "", (
-            "错误：read_workspace_file 只能读取当前工作区内的相对路径文件。"
-            "请使用诸如 github-weekly-snapshot.md 或 notes/report.md。"
-        )
+        return "", render_platform_prompt("workspace.read_file.remote_path_error.v1", {})
     cleaned = strip_llm_junk_from_read_path(raw) or raw
     normalized = cleaned.strip().replace("\\", "/")
     pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
     if normalized.strip("/") in pseudo_names:
         return "", render_platform_prompt("workspace.read_file.pseudo_field_error.v1", {"field": normalized})
     if not session_id:
-        return "", "错误：read_workspace_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
+        return "", render_platform_prompt("workspace.read_file.missing_session.v1", {})
 
     ws_root = get_workspace_root_path(session_id).resolve()
     current_prefix = f"sessions/{session_id}/workspace"
@@ -68,7 +65,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     try:
         rel = str(full.relative_to(ws_root)).replace("\\", "/")
     except ValueError:
-        return "", "错误：仅允许读取当前会话工作区内的文件，请使用工作区相对路径（例如 notes/report.md）。"
+        return "", render_platform_prompt("workspace.read_file.outside_workspace.v1", {})
     return rel, None
 
 
@@ -79,7 +76,7 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
         try:
             raw = _normalize_path(path) or _normalize_path(kwargs.get("path"))
         except ValueError as exc:
-            return f"错误：{exc}"
+            return str(exc)
         rel, err = _workspace_relative_for_session(session_id=session_id or "", path=raw)
         if err:
             return err
@@ -95,9 +92,9 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
             except FileNotFoundError:
                 return render_platform_prompt("workspace.read_file.not_found.v1", {"path": raw})
             except UnicodeDecodeError:
-                return f"错误：{raw} 不是 UTF-8 文本。"
+                return render_platform_prompt("workspace.read_file.non_utf8.v1", {"path": raw})
             except Exception as e:
-                return f"错误：读取文件失败 - {e}"
+                return render_platform_prompt("workspace.read_file.read_failed.v1", {"error": e})
         ws_root = get_workspace_root_path(session_id)
         svc = get_shared_sandbox_service()
         try:
@@ -111,9 +108,9 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
         except FileNotFoundError:
             return render_platform_prompt("workspace.read_file.not_found.v1", {"path": raw})
         except UnicodeDecodeError:
-            return f"错误：{raw} 不是 UTF-8 文本。"
+            return render_platform_prompt("workspace.read_file.non_utf8.v1", {"path": raw})
         except Exception as e:
-            return f"错误：读取文件失败 - {e}"
+            return render_platform_prompt("workspace.read_file.read_failed.v1", {"error": e})
         return text
 
     return ToolSpec.from_function(

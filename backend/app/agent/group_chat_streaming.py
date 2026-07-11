@@ -2,10 +2,26 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import suppress
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Mapping
+
+from app.agent.session_contracts import SseEndEvent
 
 SSE_AGENT_KEEPALIVE_INTERVAL_SEC = 15.0
+
+
+def serialize_sse_event(event_type: str, payload: Mapping[str, Any]) -> str:
+    """Serialize one SSE event with UTF-8 JSON payload."""
+    return f"event: {event_type}\ndata: {json.dumps(dict(payload), ensure_ascii=False)}\n\n"
+
+
+def end_event_payload(end: SseEndEvent) -> dict[str, Any]:
+    """Serialize end events without empty optional recruitment suggestions."""
+    payload = end.model_dump(exclude_none=True)
+    if not payload.get("suggested_add_agent_names"):
+        payload.pop("suggested_add_agent_names", None)
+    return payload
 
 
 async def stream_background_events(source: AsyncIterator[str]) -> AsyncIterator[str]:

@@ -218,6 +218,23 @@ def test_chat_once_runtime_is_not_named_as_fallback():
     assert "fallback" not in section
 
 
+def test_session_api_delegates_chat_once_aggregation_to_agent_module():
+    """The non-stream chat endpoint is a thin API entry, not the SSE aggregator."""
+    api_text = (PROJECT_ROOT / "backend" / "app" / "api" / "sessions.py").read_text(encoding="utf-8")
+    aggregator_path = PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_once.py"
+    aggregator_text = aggregator_path.read_text(encoding="utf-8") if aggregator_path.exists() else ""
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`sessions.py` | 会话 CRUD、聊天流入口、停止运行、会话详情 API。只做薄入口。" in boundary_text
+    assert "`group_chat_once.py` | 非流式 `/chat` 聚合入口，只消费 SSE 契约事件并返回聚合 JSON。" in boundary_text
+    assert "import asyncio" not in api_text
+    assert "import json" not in api_text
+    assert "SseErrorEvent" not in api_text
+    assert "body_iterator" not in api_text
+    assert "def _parse_sse_block" not in api_text
+    assert "async def group_chat_once" in aggregator_text
+
+
 def test_runtime_docs_do_not_route_from_message_text():
     """Runtime routing docs must not reintroduce message-text control channels."""
     paths = [
@@ -663,3 +680,338 @@ def test_data_structure_contract_does_not_use_skill_display_name_for_import_iden
         "同名导入判断",
     ]:
         assert forbidden not in section
+
+
+def _configured_layer1_modules() -> list[str]:
+    text = (PROJECT_ROOT / "backend" / "tests" / "conftest.py").read_text(encoding="utf-8")
+    block = text.split("LAYER1_CORE_MODULES", 1)[1].split(")\n\n\n", 1)[0]
+    return sorted(set(re.findall(r'"(test_[A-Za-z0-9_]+)"', block)))
+
+
+def test_layer1_regression_doc_matches_configured_modules():
+    """Layer-1 docs must be regenerated from the current marker configuration."""
+    text = (PROJECT_ROOT / "docs" / "testing" / "layer1-regression.md").read_text(encoding="utf-8")
+    modules = _configured_layer1_modules()
+
+    assert f"当前 {len(modules)} 个" in text
+    for module in modules:
+        assert f"`{module}.py`" in text
+    for old_reference in [
+        "当前 31 个",
+        "test_scene_scheduler.py",
+        "test_scene_runtime.py",
+        "test_orchestration_contracts.py",
+    ]:
+        assert old_reference not in text
+
+
+def test_contract_traceability_matrix_exists_with_required_columns():
+    """Contract implementation tracking belongs in a dedicated traceability matrix."""
+    text = (PROJECT_ROOT / "docs" / "testing" / "contract-traceability-matrix.md").read_text(encoding="utf-8")
+
+    for column in [
+        "契约编号",
+        "契约来源",
+        "条款摘要",
+        "当前代码锚点",
+        "当前测试锚点",
+        "状态",
+        "缺口",
+        "修改动作",
+        "验证命令",
+    ]:
+        assert column in text
+    for status in [
+        "已实现且有测试",
+        "已实现但测试不足",
+        "文档已定，代码待改",
+        "代码存在旧逻辑，待删除",
+        "需确认",
+    ]:
+        assert status in text
+    assert "PROMPT-01" in text
+    assert "backend/app/agent/platform_prompt_templates.json" in text
+
+
+def test_runtime_and_design_docs_do_not_reference_removed_scene_scheduler():
+    """Formal docs must not point host post-processing at removed scheduler files."""
+    runtime_text = (PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md").read_text(encoding="utf-8")
+    design_text = (PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md").read_text(encoding="utf-8")
+
+    assert "backend/app/core/scene_scheduler.py" not in runtime_text
+    assert "backend/app/core/scene_scheduler.py" not in design_text
+    assert "主持人严格输出与后处理：[`backend/app/agent/group_host_decision.py`" in runtime_text
+    assert "`backend/app/agent/group_host_decision.py`" in design_text
+
+
+def test_skill_contract_test_index_exists_with_required_sections():
+    """Skill contract coverage must be traceable by document section."""
+    text = (PROJECT_ROOT / "docs" / "testing" / "skill-contract-test-index.md").read_text(encoding="utf-8")
+
+    for column in [
+        "文档章节",
+        "契约要求",
+        "代码锚点",
+        "测试锚点",
+        "验证命令",
+    ]:
+        assert column in text
+    for section in [
+        "skill-standard.md §2",
+        "skill-standard.md §4.2",
+        "sandbox-tool-interface.md 总体规则",
+        "sandbox-tool-interface.md 技能脚本工具",
+        "sandbox-tool-interface.md 保存型 HTTP API 工具",
+    ]:
+        assert section in text
+    for test_file in [
+        "backend/tests/test_skill_mcp_and_script_requirements.py",
+        "backend/tests/test_skill_agent_tool_resolution.py",
+        "backend/tests/test_file_ref_and_gateway.py",
+    ]:
+        assert test_file in text
+
+
+def test_prompt_contract_test_index_exists_with_llm_call_points():
+    """Prompt contract coverage must be traceable by LLM call point."""
+    text = (PROJECT_ROOT / "docs" / "testing" / "prompt-contract-test-index.md").read_text(encoding="utf-8")
+
+    for column in [
+        "LLM 调用点",
+        "Prompt 块边界",
+        "代码锚点",
+        "测试锚点",
+        "验证命令",
+    ]:
+        assert column in text
+    for call_point in [
+        "主持人选择专家",
+        "专家选择 Skill",
+        "专家通过 Skill 执行能力",
+        "标题生成",
+        "展示重写",
+        "LLM 可见工具消息",
+    ]:
+        assert call_point in text
+    for test_file in [
+        "backend/tests/test_host_takeover.py",
+        "backend/tests/test_expert_runtime.py",
+        "backend/tests/test_expert_self_awareness_prompt.py",
+        "backend/tests/test_group_chat_presentation_rewriter.py",
+        "backend/tests/test_platform_prompts.py",
+        "backend/tests/test_simple_agent_tool_intent.py",
+    ]:
+        assert test_file in text
+
+
+def test_prompt_contract_points_to_current_template_registry():
+    """Prompt contract must name the current template registry as the implementation target."""
+    text = (PROJECT_ROOT / "docs" / "contracts" / "prompt-assembly-contract.md").read_text(encoding="utf-8")
+
+    assert "版本：v1.0 当前契约" in text
+    assert "统一平台内置模板文件：`backend/app/agent/platform_prompt_templates.json`" in text
+    assert "本文是目标契约" not in text
+    assert "后续代码、测试和文档应按本文收敛" not in text
+
+
+def test_formal_testing_docs_reference_existing_test_files():
+    """Concrete test-file references in formal testing docs must resolve to real files."""
+    actual_paths = {str(path.relative_to(PROJECT_ROOT)) for path in (PROJECT_ROOT / "backend" / "tests").glob("test_*.py")}
+    actual_paths.update(
+        str(path.relative_to(PROJECT_ROOT)) for path in (PROJECT_ROOT / "frontend" / "e2e").glob("*.spec.ts")
+    )
+    actual_by_name = {Path(path).name: path for path in actual_paths}
+    docs = [
+        PROJECT_ROOT / "docs" / "testing" / "layer1-regression.md",
+        PROJECT_ROOT / "docs" / "testing" / "contract-traceability-matrix.md",
+        PROJECT_ROOT / "docs" / "testing" / "prompt-contract-test-index.md",
+        PROJECT_ROOT / "docs" / "testing" / "skill-contract-test-index.md",
+        PROJECT_ROOT / "docs" / "testing" / "test-case-catalog.md",
+        PROJECT_ROOT / "docs" / "testing" / "full-flow-business-tests.md",
+        PROJECT_ROOT / "docs" / "testing" / "pre-release-testing.md",
+        PROJECT_ROOT / "docs" / "requirements" / "acceptance-and-tests.md",
+        PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md",
+        PROJECT_ROOT / "docs" / "design" / "interface-document.md",
+    ]
+    pattern = re.compile(
+        r"(?:(?:backend/tests|frontend/e2e|tests)/)?test_[A-Za-z0-9_]+\.py"
+        r"|frontend/e2e/[A-Za-z0-9_.-]+\.spec\.ts"
+        r"|[A-Za-z0-9_.-]+\.spec\.ts"
+    )
+    missing = []
+
+    for doc in docs:
+        for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
+            for match in pattern.finditer(line):
+                ref = match.group(0)
+                if ref in {"test_xxx.py", "tests/test_xxx.py"}:
+                    continue
+                if ref.startswith("tests/"):
+                    normalized = "backend/" + ref
+                elif ref.startswith(("backend/tests/", "frontend/e2e/")):
+                    normalized = ref
+                elif ref.endswith(".spec.ts"):
+                    normalized = "frontend/e2e/" + ref
+                else:
+                    normalized = actual_by_name.get(ref, "backend/tests/" + ref)
+                if normalized not in actual_paths:
+                    missing.append(f"{doc.relative_to(PROJECT_ROOT)}:{lineno}:{ref}")
+
+    assert missing == []
+
+
+def test_formal_docs_do_not_reference_removed_test_modules():
+    """Formal docs must not point readers to removed test modules."""
+    docs = [
+        PROJECT_ROOT / "docs" / "testing",
+        PROJECT_ROOT / "docs" / "requirements",
+        PROJECT_ROOT / "docs" / "design",
+    ]
+    forbidden = [
+        "test_scene_scheduler",
+        "test_scene_runtime",
+        "test_orchestration_contracts",
+    ]
+    offenders = []
+
+    for root in docs:
+        for path in root.rglob("*.md"):
+            text = path.read_text(encoding="utf-8")
+            for token in forbidden:
+                if token in text:
+                    offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{token}")
+
+    assert offenders == []
+
+
+def test_tools_for_skill_delegates_builtin_workspace_tool_implementation():
+    """Tool assembly should not own builtin workspace tool implementations."""
+    text = (PROJECT_ROOT / "backend" / "app" / "agent" / "tools_for_skill.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "字段契约、运行决策、状态落盘、Prompt 组装、工具组装和前端展示状态必须分开" in boundary_text
+    assert "def _create_builtin_workspace_tools" not in text
+    assert "class EditWorkspaceFileInput" not in text
+    assert "from app.agent.builtin_workspace_tools import create_builtin_workspace_tools" in text
+
+
+def test_group_chat_runtime_delegates_sse_serialization_to_streaming_module():
+    """Group-chat runtime should not own SSE event serialization helpers."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    streaming_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_streaming.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`group_chat_streaming.py` | SSE 事件构造和序列化。" in boundary_text
+    assert "def _sse(" not in runtime_text
+    assert "def _end_event_payload" not in runtime_text
+    assert "serialize_sse_event" in streaming_text
+    assert "end_event_payload" in streaming_text
+
+
+def test_group_chat_runtime_delegates_tool_artifact_collection():
+    """Tool-result artifact extraction belongs with tool-result content helpers."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    tool_content_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_tool_result_content.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`group_chat_tool_result_content.py` | 工具结果转用户可见内容和公开 artifact 提取。" in boundary_text
+    assert "def _collect_artifacts" not in runtime_text
+    assert "ArtifactRef" not in runtime_text
+    assert "def collect_artifacts" in tool_content_text
+    assert "has_failed = any(" not in runtime_text
+    assert "has_blocked = any(" not in runtime_text
+    assert "skill_result_from_content(" not in runtime_text
+    assert "def build_expert_skill_result" in tool_content_text
+
+
+def test_group_chat_runtime_delegates_tool_trace_logging():
+    """Tool trace logging belongs with group-chat tool trace helpers."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    trace_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_tool_trace.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`group_chat_tool_trace.py` | 工具 trace、日志和调试记录。" in boundary_text
+    assert "from app.agent.session_runtime_logs import append_tool_execution_logs" not in runtime_text
+    assert "append_tool_execution_logs(" not in runtime_text
+    assert "def record_group_chat_tool_trace" in trace_text
+    assert "append_tool_execution_logs(" in trace_text
+
+
+def test_group_chat_runtime_delegates_expert_turn_budget_to_soft_stop():
+    """Expert turn budget and waiting-user pause rules belong with soft-stop helpers."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    soft_stop_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_soft_stop.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+    contract_text = (PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md").read_text(encoding="utf-8")
+
+    assert "`group_chat_soft_stop.py` | soft stop 和等待用户规则。" in boundary_text
+    assert "超过后用 `timeout_or_budget_exceeded` 中断并等待用户" in contract_text
+    assert "MAX_EXPERT_TURNS_PER_STREAM" not in runtime_text
+    assert "turns >" not in runtime_text
+    assert 'phase="timeout_or_budget_exceeded"' in runtime_text
+    assert "| `timeout_or_budget_exceeded` |" in contract_text
+    assert "MAX_EXPERT_TURNS_PER_STREAM" in soft_stop_text
+    assert "def expert_turn_budget_exceeded" in soft_stop_text
+
+
+def test_group_chat_runtime_delegates_expert_turn_execution():
+    """Expert single-turn execution belongs in group_chat_expert_turn.py."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    expert_turn_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_expert_turn.py").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`group_chat_expert_turn.py` | 专家单回合流式执行、进度事件、工具结果汇总、消息落盘和工具 trace 写入。" in boundary_text
+    assert "from app.agent.group_chat_expert_turn import run_one_expert_turn" in runtime_text
+    assert "async def _run_one_expert_turn" not in runtime_text
+    assert "runtime.agent.astream" not in runtime_text
+    assert "async def run_one_expert_turn" in expert_turn_text
+    assert "runtime.agent.astream" in expert_turn_text
+
+
+def test_skill_script_tool_naming_uses_directory_name_terminology():
+    """Skill runtime identity is directory_name, not a legacy id."""
+    naming_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "skill_tool_naming.py").read_text(encoding="utf-8")
+    field_contract_text = (PROJECT_ROOT / "docs" / "contracts" / "data-structure-and-field-logic.md").read_text(encoding="utf-8")
+
+    assert "| Skill | `directory_name` | `resources/skills/{directory_name}/SKILL.md` |" in field_contract_text
+    assert "Skill id" not in naming_text
+    assert "directory_name" in naming_text
+
+
+def test_group_chat_runtime_delegates_request_input_parsing():
+    """Request attachment validation and user prompt assembly belong in a dedicated helper."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    helper_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_request_inputs.py").read_text(encoding="utf-8")
+    coding_text = (PROJECT_ROOT / "docs" / "development" / "coding-standard.md").read_text(encoding="utf-8")
+
+    assert "请求校验和附件解析进入独立解析模块" in coding_text
+    assert "def _validate_attachments" not in runtime_text
+    assert "def _request_user_text" not in runtime_text
+    assert "def validate_attachments" in helper_text
+    assert "def request_user_text" in helper_text
+
+
+def test_group_chat_runtime_delegates_recruitment_decision_finalization():
+    """Host recruitment suggestion finalization belongs with host decision logic."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    host_decision_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_host_decision.py").read_text(encoding="utf-8")
+    contract_text = (PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md").read_text(encoding="utf-8")
+    boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "`finalize_host_scheduler_decision()` 负责统一后处理" in contract_text
+    assert "`group_host_decision.py` | 主持人严格 JSON 解析、合法性校验、保护决策、招募建议后处理和调度决策应用。" in boundary_text
+    assert "def _finalize_suggested_add_agent_names" not in runtime_text
+    assert "def _user_requests_recruitment" not in runtime_text
+    assert "def finalize_host_scheduler_decision" in host_decision_text
+
+
+def test_group_chat_runtime_delegates_host_decision_context_application():
+    """Host decision application belongs with host decision logic."""
+    runtime_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py").read_text(encoding="utf-8")
+    host_decision_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_host_decision.py").read_text(encoding="utf-8")
+    contract_text = (PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md").read_text(encoding="utf-8")
+
+    assert "-> _apply_decision_to_ctx(...)" in contract_text
+    assert "def _apply_decision_to_ctx" in host_decision_text
+    assert 'str(decision.get("current_phase")' not in runtime_text
+    assert 'str(decision.get("next_action")' not in runtime_text

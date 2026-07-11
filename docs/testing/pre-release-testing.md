@@ -254,14 +254,11 @@ http://<server-ip>:8100
 
 当前包含：
 
-- 鉴权与用户数据：`test_auth_sqlite`、`test_sessions_api`；
-- 编排与主持人状态机：`test_group_orchestration_fsm`、`test_orchestration_contracts`、`test_group_chat_cleanup_contract`；
-- 群聊协议与记忆：`test_group_chat_stream_protocol`、`test_group_chat_group_memory`、`test_group_memory_store`；
-- Agent/专家：`test_agents_api`、`test_expert_bundle`、`test_expert_runtime`、`test_host_takeover`；
-- 沙箱与技能脚本：`test_sandbox_service`、`test_group_chat_skill_script_cli_flow`；
-- 文件与工作区：`test_workspace_files`、`test_file_ref_and_gateway`；
-- Runtime/MCP/工具网关切片：`test_skill_agent_tool_resolution`、`test_call_api_tool`、`test_frontend_business_flows`；
-- 场景与配置校验：`test_bundle_import_api`、`test_scenario_bundle`、`test_session_preset_validate`、`test_llm_config`。
+- 鉴权、会话与资源 API：`test_auth_sqlite`、`test_sessions_api`、`test_agents_api`、`test_bundle_import_api`、`test_agent_import_validate`、`test_session_preset_validate`；
+- 资源包、专家和运行时：`test_scenario_bundle`、`test_expert_bundle`、`test_expert_runtime`、`test_expert_self_awareness_prompt`、`test_host_takeover`；
+- 工具、Skill、MCP 和 LLM：`test_call_api_tool`、`test_file_ref_and_gateway`、`test_group_chat_skill_script_cli_flow`、`test_skill_agent_tool_resolution`、`test_simple_agent_tool_intent`、`test_llm_config`；
+- 群聊记忆、沙箱和工作区：`test_group_chat_group_memory`、`test_group_memory_store`、`test_sandbox_service`、`test_workspace_files`；
+- 启动和前端聚合：`test_core_init`、`test_lifespan`、`test_frontend_business_flows`。
 
 不包含：
 

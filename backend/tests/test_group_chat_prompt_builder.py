@@ -2,7 +2,7 @@
 
 
 def test_request_user_text_keeps_structured_target_out_of_user_body():
-    from app.agent.group_chat_runtime import _request_user_text
+    from app.agent.group_chat_request_inputs import request_user_text
     from app.agent.session_contracts import GroupChatRequest
     from app.agent.message_contracts import WorkspaceAttachment
 
@@ -13,7 +13,7 @@ def test_request_user_text_keeps_structured_target_out_of_user_body():
         target_agent_name="资料专家",
     )
 
-    text = _request_user_text(request)
+    text = request_user_text(request)
 
     assert "请汇总这份材料" in text
     assert "【工作区附件】" in text

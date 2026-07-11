@@ -103,6 +103,7 @@ export function useGroupStreamEvents(args: {
     if (key === 'executing') return '正在执行...'
     if (key === 'assistant_generating') return '正在生成回复...'
     if (key === 'finalizing') return '正在收尾...'
+    if (key === 'timeout_or_budget_exceeded') return '已达到自动执行上限，等待你确认...'
     return STREAMING_STATUS_DEFAULT
   }
 

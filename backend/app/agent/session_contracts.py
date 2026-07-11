@@ -84,7 +84,7 @@ class SseProgressEvent(StrictApiModel):
 class SseEndEvent(StrictApiModel):
     type: Literal["end"] = "end"
     run_id: str = Field(min_length=1)
-    phase: Literal["awaiting_user", "completed", "recruiting", "stopped", "failed"]
+    phase: Literal["awaiting_user", "completed", "recruiting", "stopped", "failed", "timeout_or_budget_exceeded"]
     waiting_for_user: bool = False
     suggested_next_speaker: str | None = Field(default=None, min_length=1)
     suggested_add_agent_names: list[str] = Field(default_factory=list)

@@ -1,6 +1,13 @@
 from app.agent.group_chat_soft_stop import _evaluate_soft_stop
 
 
+def test_expert_turn_budget_exceeded_uses_contract_limit():
+    from app.agent.group_chat_soft_stop import expert_turn_budget_exceeded
+
+    assert expert_turn_budget_exceeded(32) is False
+    assert expert_turn_budget_exceeded(33) is True
+
+
 def test_soft_stop_does_not_count_recovered_material_turn_tool_errors():
     state = {
         "prev_content": "",

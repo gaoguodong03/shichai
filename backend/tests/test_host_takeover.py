@@ -99,7 +99,7 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
             yield ""
 
     monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_should_not_run)
-    monkeypatch.setattr(runtime, "_run_one_expert_turn", _fake_expert_turn)
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _fake_expert_turn)
     monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
 
     events = [
@@ -153,7 +153,7 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         yield 'event: end\ndata: {"type":"end","run_id":"run-1","phase":"awaiting_user","waiting_for_user":true}\n\n'
 
     monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
-    monkeypatch.setattr(runtime, "_run_one_expert_turn", _expert_turn)
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
     monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
 
     events = [

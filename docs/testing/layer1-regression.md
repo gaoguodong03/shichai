@@ -1,136 +1,142 @@
-# 测试清单与第一层回归说明
+# 第一层回归说明
 
-./scripts/test-layer1.sh  
+本文记录当前 `layer1_core` 回归入口和真实纳入范围。旧版 layer1 清单已经废弃；本文以 `backend/tests/conftest.py` 中的 `LAYER1_CORE_MODULES` 为准。
 
-完整业务链路入口见 `docs/testing/full-flow-business-tests.md` 与 `./scripts/test-full-flow.sh`。
-
-本文档用于回答两个问题：
-
-1. 当前项目「都测试了什么」；
-2. 如何稳定执行第一层一键回归，并把新增测试纳入其中。
+完整业务链路入口见 [全流程业务测试汇总](full-flow-business-tests.md) 和 `./scripts/test-full-flow.sh`。
 
 ## 一键回归入口
 
-- 命令：`./scripts/test-layer1.sh`
-- 后端：`pytest -m layer1_core --tb=short`
-- 前端：`npm ci && npm run build`
+推荐命令：
 
-### 常用环境变量
+```bash
+./scripts/test-layer1.sh
+```
 
-- `SHUTONG_CONDA_ENV=st49`：指定 conda 目标环境（默认 `st49`）。
-- `SKIP_BACKEND=1`：只跑前端。
-- `SKIP_FRONTEND=1`：只跑后端。
-- `FRONTEND_INSTALL=skip`：跳过 `npm ci`，直接 `npm run build`。
-- `BACKEND_PY=/path/to/python`：强制后端 Python 解释器。
+该脚本执行：
 
-## 第一层（layer1_core）当前覆盖范围
+1. 后端：`pytest -m layer1_core --tb=short`
+2. 前端：`npm ci && npm run build`
 
-第一层范围由 `backend/tests/conftest.py` 中的 `LAYER1_CORE_MODULES` 控制。
+常用环境变量：
 
-设计目标：
+| 变量 | 用途 |
+|------|------|
+| `SHUTONG_CONDA_ENV=st49` | 指定 conda 目标环境，默认 `st49`。 |
+| `SKIP_BACKEND=1` | 只跑前端构建。 |
+| `SKIP_FRONTEND=1` | 只跑后端第一层测试。 |
+| `FRONTEND_INSTALL=skip` | 跳过 `npm ci`，直接执行 `npm run build`。 |
+| `BACKEND_PY=/path/to/python` | 指定后端 Python 解释器。 |
 
-- 覆盖核心业务链路：编排、群聊、沙箱、鉴权、工作区、runtime/工具/MCP 网关；
-- 保持执行速度与稳定性；
-- 不追求一次性覆盖全部路由与全部运行时分支。
+## 第一层边界
 
-## 用户需求覆盖索引
+第一层是快速门禁，不是全量测试。它用于覆盖核心业务链路和最容易发生契约漂移的模块：
 
-本节承接 `docs/requirements/user-requirements.md` 与 `docs/requirements/acceptance-and-tests.md` 的 UR 编号，用于判断第一层回归是否覆盖对应核心需求。自动化测试不能替代全部手工验收；涉及真实浏览器、真实模型、Docker/OpenSandbox 部署或外部网络的路径，应继续按上线前手册补充验证。
+- 账号、会话、资源中心和工作区 API。
+- 群聊、Skill、工具、MCP、LLM 和沙箱核心路径。
+- 前端业务聚合测试和生产构建。
+- 启动初始化、资源包导入导出和专家运行时基础契约。
 
-| 用户需求 | 第一层自动化覆盖 | 仍需手工或专项验证 |
-|----------|------------------|--------------------|
-| UR-01 账号与用户隔离 | `test_auth_sqlite.py`、`test_sessions_api.py` | 未登录页面跳转、浏览器刷新登录态 |
-| UR-02 工作区与统一会话 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`test_frontend_business_flows.py` | 长回答流式体验、真实文件预览体验 |
-| UR-03 主持人与专家协作 | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 真实 LLM 下主持人可读性与用户等待状态 |
-| UR-04 资源中心 | `test_agents_api.py`、`test_frontend_business_flows.py`、`test_bundle_import_api.py` | 前端资源详情页完整点击路径 |
-| UR-05 Skill 与脚本执行 | `test_file_ref_and_gateway.py`、`test_group_chat_skill_script_cli_flow.py`、`test_skill_agent_tool_resolution.py` | 真实沙箱依赖安装、长耗时脚本错误展示 |
-| UR-06 MCP 工具能力 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 真实远程 MCP 鉴权、断连、网络异常 |
-| UR-07 沙箱运行环境 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | Docker/OpenSandbox 镜像、Playwright 版沙箱冒烟 |
-| UR-08 工作区文件管理 | `test_workspace_files.py`、`test_file_ref_and_gateway.py`、`test_frontend_business_flows.py` | 图片、PDF、Office 等文件前端预览 |
-| UR-09 导出与导入 | `test_bundle_import_api.py`、`test_scenario_bundle.py`、`test_expert_bundle.py` | 跨账号导入、冲突确认和导入后页面检查 |
-| UR-10 模型、环境变量与个人设置 | `test_llm_config.py`、`test_frontend_business_flows.py` | 设置页保存反馈、模型环境变量连通性 |
-| UR-11 部署与运维 | `test_lifespan.py`、`test_sandbox_service.py`、前端构建 | 1Panel/Docker 健康检查、数据卷持久化、日志排查 |
+第一层不承诺覆盖：
 
-## 已纳入第一层的测试文件（当前 31 个）
+- 全部 HTTP 路由。
+- 全部工具和全部 MCP 子模块。
+- 真实 LLM、真实远程 MCP、Docker/OpenSandbox 长链路和非确定性慢测。
+- 用户必须通过浏览器完整点击体验才能确认的路径。
 
-### 鉴权与账户
+这些内容进入专项测试、全流程测试或上线前手工验收。
 
-- `test_auth_sqlite.py`：注册/登录、密码哈希、跨用户隔离、改账号改密码。
+## 已纳入第一层的测试文件（当前 24 个）
 
-### 工具与能力
+以下列表必须与 `backend/tests/conftest.py` 的 `LAYER1_CORE_MODULES` 同步。
 
-- `test_call_api_tool.py`：`call_api` 的 SSRF、防错入参、超时、HTML 回退、JSON 返回。
-- `test_simple_agent_tool_intent.py`：`SimpleAgent` 的工具调用判定与调试信息。
-- `test_skill_agent_tool_resolution.py`：工具名解析、别名/非 ASCII 名称解析。
-- `test_file_ref_and_gateway.py`：文件引用解析、路径保护、网关执行与串行化。
-- `test_frontend_business_flows.py`：按前端可操作功能串起会话、文件、资源中心与设置页主要 CRUD。
+### 账号、会话和资源 API
 
-### Agent / 场景包 / 配置校验
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `test_auth_sqlite.py` | 注册、登录、Token、密码哈希、账号修改和用户隔离。 |
+| `test_sessions_api.py` | 会话创建、列表、详情、更新、删除、导出和默认主持人配置。 |
+| `test_agents_api.py` | 专家资源 CRUD 和 name-based 资源身份。 |
+| `test_bundle_import_api.py` | 资源包导入预览、旧冲突参数拒绝和落库结果。 |
+| `test_agent_import_validate.py` | Agent 导入结构校验。 |
+| `test_session_preset_validate.py` | 会话预设、主持人 Skill 和依赖引用校验。 |
 
-- `test_agents_api.py`：`/api/agents` 路由 CRUD。
-- `test_agent_import_validate.py`：Agent 导入校验。
-- `test_session_preset_validate.py`：会话预设校验。
-- `test_scenario_bundle.py`：场景包合并与清洗。
-- `test_expert_bundle.py`：专家包导入导出。
+### 资源包、专家和运行时
 
-### 群聊编排与状态机
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `test_scenario_bundle.py` | 场景包合并、清洗、导出导入和敏感字段处理。 |
+| `test_expert_bundle.py` | 专家包导入导出和 Skill/工具引用。 |
+| `test_expert_runtime.py` | 专家运行时、Skill 选择和工具组装基础链路。 |
+| `test_expert_self_awareness_prompt.py` | 专家自我认知 Prompt 拼装和当前工作区时间戳。 |
+| `test_host_takeover.py` | 主持人接管、`target_agent_name` 强制路由和主持人输出解析。 |
 
-- `test_group_orchestration_fsm.py`：技能会话锁、接管/跳过规则、状态机辅助函数。
-- `test_orchestration_contracts.py`：调度决策与 end payload 合同约束。
-- `test_scene_runtime.py`：场景 runtime 入口、虚拟主持人与候选专家策略。
-- `test_expert_runtime.py`：专家 runtime 入口、技能选择与工具组装。
-- `test_scene_scheduler.py`：场景调度收敛与建议专家逻辑。
-- `test_host_takeover.py`：主持人接管语义、`target_agent_name` 强制路由、主持人输出解析。
-- `test_group_chat_cleanup_contract.py`：不再生成旧版 `host_plan`、`orchestrator_audit` 运行期文件。
-- `test_orchestration_contracts.py`：调度和终止事件合同约束。
+### 工具、Skill、MCP 和 LLM
 
-### 群聊记忆与协议
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `test_call_api_tool.py` | 保存型 HTTP API 工具、SSRF、防错入参和错误文案。 |
+| `test_file_ref_and_gateway.py` | 文件引用、路径保护、工具网关、MCP 参数和脚本执行入口。 |
+| `test_group_chat_skill_script_cli_flow.py` | 群聊中 Skill 脚本工具调用、manifest 参数和 CLI 转换。 |
+| `test_skill_agent_tool_resolution.py` | Skill 工具名解析、别名拒绝和标准 stdout 摘要。 |
+| `test_simple_agent_tool_intent.py` | SimpleAgent 工具意图、工具结果综合和错误停止规则。 |
+| `test_llm_config.py` | LLM provider 配置、环境变量引用、参数白名单和提示日志。 |
 
-- `test_group_memory_store.py`：事实去重、工作区索引写入、facts/index 分发上下文。
-- `test_group_chat_group_memory.py`：群聊 facts 注入、专家工具产物索引、图片预览 markdown、自动继续信号。
-- `test_group_chat_stream_protocol.py`：群聊流式事件协议。
-- `test_group_chat_skill_script_cli_flow.py`：结构化目标专家字段触发 Skill 脚本，模型传 manifest `args` 字段，平台转换为 CLI 参数。
+### 群聊记忆、沙箱和工作区
 
-### 沙箱
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `test_group_chat_group_memory.py` | 群聊记忆注入、工具产物索引、交付声明保护和自动继续信号。 |
+| `test_group_memory_store.py` | 群聊事实去重、索引写入和工作区引用。 |
+| `test_sandbox_service.py` | 用户级沙箱复用、重建、释放、固定资源策略和预热。 |
+| `test_workspace_files.py` | 工作区文件增删改查、上传下载、路径穿越防护和工具写入。 |
 
-- `test_sandbox_service.py`：用户级沙箱复用/重建/释放、固定资源策略、预热。
-- `test_lifespan.py`：应用生命周期与启动预热开关。
+### 启动和前端聚合
 
-### 会话与工作区 API
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `test_core_init.py` | 启动初始化只加载有效用户资源。 |
+| `test_lifespan.py` | FastAPI 生命周期、启动预热开关和健康检查基础行为。 |
+| `test_frontend_business_flows.py` | 前端可操作业务流的后端聚合验证。 |
 
-- `test_sessions_api.py`：会话新建/列表/详情/删除与 404。
-- `test_workspace_files.py`：工作区文件增删改查、下载、上传、路径穿越防护、工具写入。
-- `test_scenario_bundle.py`：场景包导出、导入和依赖收集。
+## 与其他测试层的关系
 
-### 其他核心配置
+| 测试层 | 入口 | 适用场景 |
+|--------|------|----------|
+| 单文件定向测试 | `rtk conda run -n st49 pytest backend/tests/test_sessions_api.py -q` | 改动单个后端模块后快速验证。 |
+| 第一层回归 | `./scripts/test-layer1.sh` | 提交前快速门禁。 |
+| 后端全量 | `rtk conda run -n st49 pytest backend/tests -q` | 大范围后端改动或发布前。 |
+| 前端构建 | `rtk npm --prefix frontend run build` | 前端类型、路由和组件引用检查。 |
+| 前端 E2E | `rtk npx --prefix frontend playwright test` | 浏览器点击级路径验证。 |
+| 上线前手工验收 | [上线前模块化测试操作手册](pre-release-testing.md) | 真实 LLM、真实沙箱、真实 MCP 和部署环境。 |
 
-- `test_llm_config.py`：LLM 提供商配置解析与回退。
-- `test_expert_self_awareness_prompt.py`：专家自我认知提示词拼装。
-- `test_bundle_import_api.py`：资源包导入、依赖缺失预览与导入后资源落盘。
+## 新增测试规则
 
-## 当前不在第一层的内容（刻意留空）
+新增测试是否纳入第一层，按以下标准判断：
 
-以下不是第一层目标（可在后续第二层/专项测试补）：
+1. 是否保护 P0 用户路径或核心运行契约。
+2. 是否稳定、快速、可在本机和 CI 环境重复执行。
+3. 是否不依赖真实外部网络、真实 LLM 或长时间 Docker 操作。
+4. 是否能在失败时给出清晰定位。
 
-- 全量 HTTP 路由的系统性覆盖；
-- 全部 tools 与全部 MCP 子模块的端到端覆盖；
-- 强依赖外部环境的纯运行时路径（长链路、慢测、非确定性流程）。
+纳入步骤：
 
-## 如何新增测试并纳入第一层
+1. 在 `backend/tests/` 新增或修改测试文件。
+2. 运行目标文件，例如：
 
-1. 在 `backend/tests/` 新增 `test_xxx.py`；
-2. 先确保 `pytest test_xxx.py` 通过；
-3. 将 `test_xxx`（不含 `.py`）加入 `backend/tests/conftest.py` 的 `LAYER1_CORE_MODULES`；
-4. 执行 `./scripts/test-layer1.sh` 验证汇总为 PASS。
+   ```bash
+   rtk conda run -n st49 pytest backend/tests/test_sessions_api.py -q
+   ```
 
-## 推荐执行顺序
+3. 如果属于第一层，在 `backend/tests/conftest.py` 的 `LAYER1_CORE_MODULES` 加入模块名。
+4. 更新本文的“已纳入第一层的测试文件”。
+5. 运行：
 
-本地开发阶段：
+   ```bash
+   ./scripts/test-layer1.sh
+   ```
 
-1. 改动后先跑目标文件：`pytest tests/test_xxx.py -q`
-2. 提交前跑第一层：`./scripts/test-layer1.sh`
+## 维护规则
 
-合并前（建议）：
-
-1. 后端全量：`cd backend && pytest`
-2. 前端构建：`cd frontend && npm run build`
+- 本文只记录当前真实第一层，不保留旧测试文件名作为计划项。
+- 如果需要规划待补测试，写入 [契约实施追踪矩阵](contract-traceability-matrix.md)，不要混入第一层真实清单。
+- 第一层清单、`LAYER1_CORE_MODULES` 和 `scripts/test-layer1.sh` 三者必须同步。

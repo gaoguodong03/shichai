@@ -34,9 +34,9 @@ async def _collect_stream_events(response) -> list[tuple[str, dict[str, Any]]]:
 
 
 def test_collect_artifacts_keeps_only_strict_public_artifact_refs():
-    from app.agent.group_chat_runtime import _collect_artifacts
+    from app.agent.group_chat_tool_result_content import collect_artifacts
 
-    artifacts = _collect_artifacts(
+    artifacts = collect_artifacts(
         [
             {
                 "artifacts": [
@@ -50,6 +50,40 @@ def test_collect_artifacts_keeps_only_strict_public_artifact_refs():
     )
 
     assert artifacts == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
+
+
+def test_build_expert_skill_result_marks_failed_before_blocked_and_collects_artifacts():
+    from app.agent.group_chat_tool_result_content import build_expert_skill_result
+
+    result = build_expert_skill_result(
+        content="",
+        tool_results=[
+            {
+                "execution_status": "blocked",
+                "message": "需要补充链接",
+                "tool_call": {"name": "collect_inputs"},
+            },
+            {
+                "execution_status": "failed",
+                "message": "脚本失败",
+                "tool_call": {"name": "run_skill_script"},
+                "artifacts": [{"type": "file", "name": "日志", "path": "reports/failure.md"}],
+            },
+        ],
+    )
+
+    assert result["execution_status"] == "failed"
+    assert result["content"].startswith("当前步骤失败：run_skill_script")
+    assert result["artifacts"] == [{"type": "file", "name": "日志", "path": "reports/failure.md"}]
+
+
+def test_build_expert_skill_result_uses_empty_model_content_placeholder():
+    from app.agent.group_chat_tool_result_content import build_expert_skill_result
+
+    result = build_expert_skill_result(content="", tool_results=[])
+
+    assert result["execution_status"] == "succeeded"
+    assert result["content"] == "模型没有返回可展示的文字内容。"
 
 
 @pytest.mark.asyncio
@@ -396,7 +430,7 @@ async def test_delete_group_session_publishes_deleted_session_event(monkeypatch,
 
 @pytest.mark.asyncio
 async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
-    from app.agent import group_chat_runtime as runtime
+    from app.agent import group_chat_expert_turn as expert_turn
     from app.api import group_chat_state as state
 
     class FakeAgent:
@@ -418,8 +452,8 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
         updates.append(kwargs)
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    monkeypatch.setattr(runtime, "build_expert_turn_runtime", _fake_build_runtime)
-    monkeypatch.setattr(runtime, "update_group_run", _record_update)
+    monkeypatch.setattr(expert_turn, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(expert_turn, "update_group_run", _record_update)
     state.save_session_definitions(
         {
             "s-expert-phase": {
@@ -433,7 +467,7 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
 
     events = [
         _parse_sse_block(item)
-        async for item in runtime._run_one_expert_turn(
+        async for item in expert_turn.run_one_expert_turn(
             group_session_id="s-expert-phase",
             run_id="run-1",
             session_definitions=state.load_session_definitions(),
@@ -460,7 +494,7 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_keepalive_progress_keeps_current_runtime_phase_after_tool_call(monkeypatch, tmp_path):
-    from app.agent import group_chat_runtime as runtime
+    from app.agent import group_chat_expert_turn as expert_turn
     from app.api import group_chat_state as state
 
     class FakeAgent:
@@ -490,8 +524,8 @@ async def test_keepalive_progress_keeps_current_runtime_phase_after_tool_call(mo
         updates.append(kwargs)
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    monkeypatch.setattr(runtime, "build_expert_turn_runtime", _fake_build_runtime)
-    monkeypatch.setattr(runtime, "update_group_run", _record_update)
+    monkeypatch.setattr(expert_turn, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(expert_turn, "update_group_run", _record_update)
     state.save_session_definitions(
         {
             "s-tool-keepalive-phase": {
@@ -505,7 +539,7 @@ async def test_keepalive_progress_keeps_current_runtime_phase_after_tool_call(mo
 
     events = [
         _parse_sse_block(item)
-        async for item in runtime._run_one_expert_turn(
+        async for item in expert_turn.run_one_expert_turn(
             group_session_id="s-tool-keepalive-phase",
             run_id="run-tool",
             session_definitions=state.load_session_definitions(),

@@ -591,6 +591,14 @@ def test_frontend_stores_backend_phase_values_in_stream_state():
         assert forbidden not in combined
 
 
+def test_frontend_names_timeout_or_budget_exceeded_phase_from_runtime_contract():
+    runtime = read("frontend/src/features/workspace/composables/useGroupStreamRuntime.ts")
+    events = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+
+    assert "timeout_or_budget_exceeded: '已达到自动执行上限，等待你确认…'" in runtime
+    assert "timeout_or_budget_exceeded') return '已达到自动执行上限，等待你确认...'" in events
+
+
 def test_frontend_does_not_auto_route_from_end_suggested_next_speaker():
     src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
     end_handler = re.search(

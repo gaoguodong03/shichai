@@ -859,7 +859,7 @@ GET /
 |----------|------------|
 | 认证与账号 | `backend/tests/test_auth_sqlite.py`、`frontend/e2e/auth.spec.ts` |
 | 统一会话 | `backend/tests/test_sessions_api.py`、`backend/tests/test_group_chat_stream_protocol.py`、`frontend/e2e/workspace.spec.ts` |
-| 主持人调度 | `backend/tests/test_group_host_decision.py`、`backend/tests/test_host_takeover.py`、`backend/tests/test_scene_scheduler.py` |
+| 主持人调度 | `backend/tests/test_group_host_decision.py`、`backend/tests/test_host_takeover.py`、`backend/tests/test_group_orchestration_fsm.py` |
 | 资源中心 | `backend/tests/test_agents_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | Skill 与 MCP | `backend/tests/test_skill_agent_tool_resolution.py`、`backend/tests/test_file_ref_and_gateway.py` |
 | 工作区文件 | `backend/tests/test_workspace_files.py`、`frontend/e2e/workspace.spec.ts` |

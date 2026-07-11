@@ -9,8 +9,7 @@
 - 会话状态存储：[`backend/app/api/group_chat_state.py`](../../backend/app/api/group_chat_state.py)
 - 群聊运行时：[`backend/app/agent/group_chat_runtime.py`](../../backend/app/agent/group_chat_runtime.py)
 - 入口路由与续跑状态：[`backend/app/agent/group_orchestration_fsm.py`](../../backend/app/agent/group_orchestration_fsm.py)
-- 主持人严格输出：[`backend/app/agent/group_host_decision.py`](../../backend/app/agent/group_host_decision.py)
-- 主持人后处理：[`backend/app/core/scene_scheduler.py`](../../backend/app/core/scene_scheduler.py)
+- 主持人严格输出与后处理：[`backend/app/agent/group_host_decision.py`](../../backend/app/agent/group_host_decision.py)
 - 专家运行时：[`backend/app/agent/expert_runtime.py`](../../backend/app/agent/expert_runtime.py)
 - 工具组装：[`backend/app/agent/tools_for_skill.py`](../../backend/app/agent/tools_for_skill.py)
 - Skill Agent 工具循环：[`backend/app/agent/skill_agent_runtime.py`](../../backend/app/agent/skill_agent_runtime.py)
@@ -424,6 +423,7 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 | `completed` | 当前回合正常完成。 |
 | `stopped` | 用户主动停止当前运行。 |
 | `failed` | 当前运行失败或 stale runtime 被清理。 |
+| `timeout_or_budget_exceeded` | 专家自动执行超过预算，当前回合中断并等待用户确认。 |
 
 #### `orchestration_state.json`
 
@@ -605,7 +605,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 接口统一类改动建议至少验证：
 
 ```bash
-rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_host_decision.py backend/app/agent/group_orchestration_fsm.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
+rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_chat_expert_turn.py backend/app/agent/group_host_decision.py backend/app/agent/group_orchestration_fsm.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
 rtk python -m pytest backend/tests/test_group_host_decision.py backend/tests/test_group_orchestration_fsm.py backend/tests/test_group_chat_stream_protocol.py -q
 rtk npm --prefix frontend run build
 ```

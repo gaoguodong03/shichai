@@ -69,6 +69,8 @@ async def expert_llm_pick_skill(
     *,
     group_session_id: str = "",
     agent_name: str = "",
+    agent_description: str = "",
+    agent_prompt: str = "",
     llm_name: str = "",
 ) -> Tuple[Optional[str], Dict[str, Any]]:
     """Ask the expert model to choose exactly one loaded Skill."""
@@ -88,7 +90,8 @@ async def expert_llm_pick_skill(
         "expert.select_skill.v1",
         {
             "agent_name": agent_name,
-            "agent_description": agent_profile.get("description") or "（无）",
+            "agent_description": agent_description or "（无）",
+            "agent_prompt": agent_prompt or "（无）",
             "discussion_goal": discussion_goal or "（无）",
             "user_prompt": um or "（无）",
             "skill_directories": catalog,
@@ -179,6 +182,8 @@ async def resolve_expert_skill(
         round_user_text,
         group_session_id=group_session_id,
         agent_name=agent_name,
+        agent_description=str(agent_profile.get("description") or ""),
+        agent_prompt=str(agent_profile.get("system_prompt") or ""),
         llm_name=str(agent_profile.get("llm_name") or app_settings.get("default_llm") or ""),
     )
     if picked:

@@ -29,7 +29,7 @@
 | TC-UR02-03 | UR-02 | E2E | 会话含消息和文件 | 刷新工作区页面 | 历史、成员、文件和状态恢复 | `frontend/e2e/workspace.spec.ts` |
 | TC-UR02-04 | UR-02 | API | 已有会话 | 删除会话后继续发消息 | 列表不再显示，后续发送被拒绝 | `backend/tests/test_sessions_api.py` |
 | TC-UR03-01 | UR-03 | API | 普通会话无专家 | 用户提出复杂任务 | 主持人推荐可邀请专家 | `backend/tests/test_group_host_decision.py` |
-| TC-UR03-02 | UR-03 | API | 场景会话有固定专家 | 用户发起场景任务 | 调度只使用场景内专家 | `backend/tests/test_scene_scheduler.py` |
+| TC-UR03-02 | UR-03 | API | 场景会话有固定专家 | 用户发起场景任务 | 调度只使用场景内专家 | `backend/tests/test_sessions_api.py`、`backend/tests/test_host_takeover.py` |
 | TC-UR03-03 | UR-03 | API/E2E | 会话有多个专家 | 用户通过 `target_agent_name` 指定专家 | 被指定专家优先响应 | `backend/tests/test_host_takeover.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR03-04 | UR-03 | API | 专家需要补充字段 | 专家返回补充请求 | 会话进入等待用户状态 | `backend/tests/test_group_orchestration_fsm.py` |
 | TC-UR04-01 | UR-04 | API/E2E | 已登录 | 新建、编辑、删除专家 | 列表和详情同步更新 | `backend/tests/test_agents_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
