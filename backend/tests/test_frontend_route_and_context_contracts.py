@@ -641,10 +641,13 @@ def test_workspace_panel_logic_is_extracted_to_composable():
 def test_workspace_content_is_standard_size_shell():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     composable = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
+    host_display = read("frontend/src/features/workspace/composables/useHostDisplayName.ts")
     assert len(src.splitlines()) <= 1000
-    assert len(composable.splitlines()) <= 900
+    assert len(composable.splitlines()) <= 700
     assert "useWorkspaceContentProviders" in src
     assert "export function useWorkspaceContentProviders" in composable
+    assert "export function useHostDisplayName" in host_display
+    assert "/settings/host-profile" in host_display
 
 
 def test_main_view_stays_as_shell_without_thin_helper_files():

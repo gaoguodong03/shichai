@@ -12,10 +12,13 @@ import { useGroupAtMentions } from './useGroupAtMentions'
 import { useGroupFileReferences } from './useGroupFileReferences'
 import { useGroupMessageList } from './useGroupMessageList'
 import { useGroupMembers } from './useGroupMembers'
+import { DEFAULT_HOST_DISPLAY_NAME, useHostDisplayName } from './useHostDisplayName'
 import { useGroupOrchestrationState } from './useGroupOrchestrationState'
 import { useGroupStreamEvents } from './useGroupStreamEvents'
 import { useGroupStreamRuntime } from './useGroupStreamRuntime'
+import { useGroupTargetAgent } from './useGroupTargetAgent'
 import { useSessionMetaPanel } from './useSessionMetaPanel'
+import { loadForkedSessionRow } from './sessionForkRow'
 import { useShortcutPresets } from './useShortcutPresets'
 import { useWorkspaceContentLifecycle } from './useWorkspaceContentLifecycle'
 import {
@@ -50,8 +53,6 @@ export type WorkspaceContentEmit = {
   (e: 'middle-column-toggle'): void
 }
 
-const DEFAULT_HOST_DISPLAY_NAME = '四九'
-
 export function useWorkspaceContentProviders(args: {
   props: WorkspaceContentProps
   emit: WorkspaceContentEmit
@@ -83,23 +84,7 @@ export function useWorkspaceContentProviders(args: {
     loadGroupDetail,
     emitSessionRunState: (sessionId, running) => emit('session-run-state', sessionId, running),
   })
-  const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
-  const effectiveHostDisplayName = computed(() => {
-    const hostName = String(groupDetail.value?.host?.name || '').trim()
-    if (hostName) return hostName
-    return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
-  })
-  async function loadHostDisplayName() {
-    try {
-      const r = await apiRequest('/settings/host-profile')
-      const j = await r.json().catch(() => ({}))
-      const data = (j as { data?: { name?: string } })?.data
-      const next = String(data?.name || '').trim()
-      hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
-    } catch {
-      hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME
-    }
-  }
+  const { effectiveHostDisplayName, loadHostDisplayName } = useHostDisplayName(groupDetail)
   const {
     showAddMemberModal,
     invitableAgents,
@@ -132,14 +117,7 @@ export function useWorkspaceContentProviders(args: {
   })
   const groupDiscussionGoal = ref<string | null>(null)
   const groupTargetAgentName = ref<string | null>(null)
-  const groupTargetAgentDisplayName = computed(() => {
-    const id = String(groupTargetAgentName.value || '').trim()
-    if (!id) return ''
-    return groupDetail.value?.agent_map?.[id]?.name || id
-  })
-  function clearGroupTargetAgentName() {
-    groupTargetAgentName.value = null
-  }
+  const { groupTargetAgentDisplayName, clearGroupTargetAgentName } = useGroupTargetAgent(groupDetail, groupTargetAgentName)
   const {
     showShortcutEditorModal,
     shortcutEditorRef,
@@ -211,21 +189,7 @@ export function useWorkspaceContentProviders(args: {
   async function onSessionForked(sessionId: string) {
     const id = (sessionId || '').trim()
     if (!id) return
-    let sessionRow: { id: string; title?: string; updated_at?: string } = { id }
-    try {
-      const response = await apiRequest(`/sessions/${encodeURIComponent(id)}`)
-      const payload = await response.json().catch(() => null)
-      if (response.ok && payload?.status === 'ok' && payload?.data) {
-        sessionRow = {
-          id,
-          title: typeof payload.data.title === 'string' ? payload.data.title : undefined,
-          updated_at: typeof payload.data.updated_at === 'string' ? payload.data.updated_at : undefined,
-        }
-      }
-    } catch {
-      // fallback: still switch session with minimal row
-    }
-    emit('scenario-new-session', id, sessionRow)
+    emit('scenario-new-session', id, await loadForkedSessionRow(id))
   }
 
   async function onSessionRolledBack() {
