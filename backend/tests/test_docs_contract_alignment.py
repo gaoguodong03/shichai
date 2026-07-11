@@ -578,6 +578,7 @@ def test_runtime_user_messages_do_not_reference_removed_secret_settings_entry():
     """Runtime-facing notices must send users to env vars, not the removed secret settings entry."""
     runtime_paths = [
         PROJECT_ROOT / "backend" / "app" / "agent" / "llm_client.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "llm_prompt_trace.py",
         PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "audio_asr.py",
         PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "volces_icon.py",
         PROJECT_ROOT / "backend" / "app" / "mcp" / "stdio" / "image_generation.py",
