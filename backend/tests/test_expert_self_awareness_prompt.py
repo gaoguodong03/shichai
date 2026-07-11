@@ -85,9 +85,9 @@ def test_create_skill_execution_agent_omits_legacy_prompt_scaffolding():
 
 
 def test_create_skill_execution_agent_injects_current_workspace_file_timestamp(monkeypatch):
-    import app.agent.skill_agent_runtime as runtime
+    import app.agent.skill_execution_prompt_rules as prompt_rules
 
-    monkeypatch.setattr(runtime, "_current_workspace_file_timestamp", lambda: "2026070422145700")
+    monkeypatch.setattr(prompt_rules, "_current_workspace_file_timestamp", lambda: "2026070422145700")
 
     agent = create_skill_execution_agent(
         llm=object(),

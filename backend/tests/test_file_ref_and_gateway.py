@@ -345,10 +345,10 @@ def test_mcp_placeholders_only_resolve_platform_env_syntax(monkeypatch):
 
 
 def test_skill_extra_instructions_prevent_workspace_scheduler_files():
-    from app.agent import skill_agent_runtime as runtime
+    from app.agent.skill_execution_prompt_rules import skill_execution_extra_instructions
     from app.agent.tool_spec import ToolSpec
 
-    instructions = runtime._skill_execution_extra_instructions(
+    instructions = skill_execution_extra_instructions(
         [
             ToolSpec(name="read_workspace_file"),
             ToolSpec(name="write_workspace_file"),
@@ -371,10 +371,10 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
 
 
 def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths():
-    from app.agent import skill_agent_runtime as runtime
+    from app.agent.skill_execution_prompt_rules import skill_execution_extra_instructions
     from app.agent.tool_spec import ToolSpec
 
-    instructions = runtime._skill_execution_extra_instructions(
+    instructions = skill_execution_extra_instructions(
         [
             ToolSpec(name="audio-asr_transcribe_audio_file"),
             ToolSpec(name="list_workspace_directory"),

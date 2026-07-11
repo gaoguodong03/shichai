@@ -4,12 +4,12 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, List
 from app.agent.messages import BaseMessage, AIMessage, SystemMessage, ToolMessage
 from app.agent.llm_client import bind_tools_compat
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent import SimpleAgent
+from app.agent.skill_execution_prompt_rules import skill_execution_extra_instructions
 from app.agent.skill_agent_paths import (
     _apply_audio_asr_path_from_user_message,
     _apply_image_generation_workspace_id,
@@ -28,80 +28,11 @@ from app.agent.tool_spec import ToolSpec
 logger = logging.getLogger(__name__)
 
 
-def _current_workspace_file_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
-
 def _find_tool_by_name(tool_name: str, tools: Sequence[ToolSpec]) -> ToolSpec | None:
     for tool in tools or []:
         if getattr(tool, "name", None) == tool_name:
             return tool
     return None
-
-
-def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
-    """随实际绑定工具生成多步、工作区、脚本和 MCP 说明，避免未绑定能力误导模型。"""
-    names = {getattr(t, "name", "") for t in tools}
-    script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
-    preface = ""
-    if not script_names:
-        preface = render_platform_prompt("skill.execution.multi_step_preface.v1", {})
-    file_lines: List[str] = []
-    if "read_workspace_file" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.read.v1", {}))
-    if "write_workspace_file" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.write.v1", {}))
-    if "edit_workspace_file" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.edit.v1", {}))
-    if "rename_workspace_file" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.rename.v1", {}))
-    if "mkdir_workspace" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.mkdir.v1", {}))
-    if "list_workspace_directory" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.list.v1", {}))
-    workspace_tool_rules = ""
-    if file_lines:
-        timestamp_rule = ""
-        if "write_workspace_file" in names:
-            timestamp_rule = render_platform_prompt("skill.execution.timestamp_rule.v1", {"timestamp": _current_workspace_file_timestamp()})
-        workspace_tool_rules = render_platform_prompt(
-            "skill.execution.workspace_rules.v1",
-            {
-                "file_tool_lines": "\n".join(file_lines),
-                "timestamp_rule": timestamp_rule,
-                "read_rule": render_platform_prompt("skill.execution.workspace_read_rule.v1", {}) if "read_workspace_file" in names else "",
-                "write_rule": render_platform_prompt("skill.execution.workspace_write_rule.v1", {}) if "write_workspace_file" in names or "edit_workspace_file" in names else "",
-                "workspace_task_file_rule": render_platform_prompt("skill.execution.workspace_task_file_rule.v1", {}) if "write_workspace_file" in names else "",
-                "material_rule": render_platform_prompt("skill.execution.workspace_material_rule.v1", {}) if "write_workspace_file" in names else "",
-            },
-        )
-    audio_asr_rules = render_platform_prompt("skill.execution.audio_asr_rules.v1", {}) if "audio-asr_transcribe_audio_file" in names else ""
-    script_tool_rules = (
-        render_platform_prompt("skill.execution.script_tool_rules.v1", {"script_tool_names": "\n".join(f"- `{n}`" for n in script_names)})
-        if script_names
-        else ""
-    )
-    mcp_names = sorted(
-        {
-            getattr(t, "name", "")
-            for t in tools
-            if any(_tool_mcp_identity(t))
-        }
-    )
-    mcp_tool_rules = (
-        render_platform_prompt("skill.execution.mcp_tool_rules.v1", {"mcp_tool_names": "\n".join(f"- `{n}`" for n in mcp_names)})
-        if mcp_names
-        else ""
-    )
-    rendered = render_platform_prompt(
-        "skill.execution.extra_instructions.v1",
-        {
-            "workspace_tool_rules": workspace_tool_rules,
-            "audio_asr_rules": audio_asr_rules,
-            "script_tool_rules": script_tool_rules,
-            "mcp_tool_rules": mcp_tool_rules,
-        },
-    )
-    return (preface + rendered).strip() + ("\n\n" if rendered.strip() or preface else "")
 
 
 def _get_tool_call_arguments(tool_call: dict) -> dict:
@@ -241,7 +172,7 @@ def create_skill_execution_agent(
             {"tool_name": exa_search_tool_name},
         )
     system_prompt += "\n\n" + render_platform_prompt("skill.execution.response_policy.v1", {})
-    system_prompt += _skill_execution_extra_instructions(tools)
+    system_prompt += skill_execution_extra_instructions(tools)
 
     async def call_model(state: AgentState, config=None):
         messages = list(state["messages"])
