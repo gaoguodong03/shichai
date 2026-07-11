@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-import json
 import logging
 import shutil
 from pathlib import Path
@@ -15,7 +14,6 @@ from fastapi.responses import StreamingResponse
 from app.api.import_contract import reject_legacy_import_strategy_fields
 from app.api.request_models import StrictRequestModel
 from app.api.settings_mcp import load_mcp_config, save_mcp_config
-from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.scenario_bundle import (
     build_scenario_bundle_zip_bytes,
     collect_skill_directories_and_tool_names_for_preset,
@@ -45,7 +43,15 @@ from app.core.settings_bundle_import import (
     skill_directory_identity_import_plan as _skill_directory_identity_import_plan,
     upsert_rows_by_name as _upsert_rows_by_name,
 )
-from app.core.name_based_resources import normalize_scenario_row
+from app.core.scenario_preset_store import (
+    load_session_preset_rows_from_resource_files as _load_session_preset_rows_from_resource_files,
+    merge_session_presets_into_file as _merge_session_presets_into_file,
+    merge_session_presets_with_resource_rows as _merge_session_presets_with_resource_rows,
+    mirror_session_presets_to_resources as _mirror_session_presets_to_resources,
+    preset_names as _preset_names,
+    scenario_resource_names as _scenario_resource_names,
+    session_preset_item_to_disk_row as _session_preset_item_to_disk_row,
+)
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import skills_dir_path
 from app.mcp.manager import dispose_mcp_runtime_for_user
@@ -66,73 +72,6 @@ def _request_log_meta(request: Optional[Request]) -> Dict[str, str]:
     }
 
 
-def _preset_names(rows: List[Dict[str, Any]]) -> List[str]:
-    return [str(row.get("name") or "").strip() for row in rows if str(row.get("name") or "").strip()]
-
-
-def _scenario_resource_names() -> List[str]:
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is None:
-        return []
-    root = user_ctx.scenarios_dir.resolve()
-    if not root.is_dir():
-        return []
-    names: List[str] = []
-    for child in sorted(root.iterdir(), key=lambda p: p.name):
-        if child.is_dir() and (child / "scenario.json").is_file():
-            names.append(child.name)
-    return names
-
-
-def _normalize_session_preset_row_for_api(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not isinstance(item, dict):
-        return None
-    try:
-        return normalize_scenario_row(item)
-    except ValueError:
-        return None
-
-
-def _load_session_preset_rows_from_resource_files() -> List[Dict[str, Any]]:
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is None:
-        return []
-    root = user_ctx.scenarios_dir.resolve()
-    if not root.is_dir():
-        return []
-    rows: List[Dict[str, Any]] = []
-    for child in sorted(root.iterdir(), key=lambda p: p.name):
-        if not child.is_dir() or child.name.startswith("."):
-            continue
-        body = child / "scenario.json"
-        if not body.is_file():
-            continue
-        try:
-            raw = json.loads(body.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        row = _normalize_session_preset_row_for_api(raw if isinstance(raw, dict) else {})
-        if row is not None:
-            rows.append(row)
-    return rows
-
-
-def _merge_session_presets_with_resource_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    resource_rows = _load_session_preset_rows_from_resource_files()
-    if not resource_rows:
-        return []
-    by_name: Dict[str, Dict[str, Any]] = {}
-    order: List[str] = []
-    for row in resource_rows:
-        resource_name = str(row.get("name") or "").strip()
-        if not resource_name:
-            continue
-        order.append(resource_name)
-        by_name[resource_name] = row
-    merged = [by_name[resource_name] for resource_name in order if resource_name in by_name]
-    return merged
-
-
 @router.get("/settings/session-presets")
 async def get_session_presets():
     """读取会话快捷预设（用于前端快捷按钮）。"""
@@ -150,26 +89,6 @@ class SessionPresetItem(StrictRequestModel):
 
 class SessionPresetsBody(StrictRequestModel):
     presets: List[SessionPresetItem]
-
-
-def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
-    """与 update_session_presets 落盘格式一致；无效项返回 None。"""
-    name = str(item.name or "").strip()
-    agent_names = [str(x).strip() for x in (item.agent_names or []) if str(x).strip()]
-    if not name or not agent_names:
-        return None
-    host_norm: Optional[Dict[str, Any]] = None
-    if item.host is not None:
-        host_norm = normalize_scenario_row({"name": name, "agent_names": agent_names, "host": item.host}).get("host")
-    row: Dict[str, Any] = {
-        "name": name,
-        "agent_names": agent_names,
-        "description": str(item.description or ""),
-        "system_prompt": str(item.system_prompt or ""),
-    }
-    if host_norm is not None:
-        row["host"] = host_norm
-    return row
 
 
 def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]:
@@ -195,88 +114,6 @@ def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]
         mcp_servers=load_mcp_config(),
     )
     return validation_to_api_dict(v)
-
-
-def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetItem]:
-    try:
-        host = row.get("host")
-        return SessionPresetItem(
-            name=str(row["name"]),
-            agent_names=list(row["agent_names"]),
-            description=str(row.get("description") or ""),
-            system_prompt=str(row.get("system_prompt") or ""),
-            host=host if isinstance(host, dict) else None,
-        )
-    except Exception:
-        return None
-
-
-def _merge_session_presets_into_file(
-    normalized_rows: List[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
-    """将已规范化的场景行合并写入 resources/scenarios。
-
-    返回 (合并后列表, 本次写入的 preset name 列表, 被同名覆盖的旧 name 列表)。
-    """
-    existing_rows = _load_session_preset_rows_from_resource_files()
-    by_name: Dict[str, Dict[str, Any]] = {str(r["name"]): dict(r) for r in existing_rows if r.get("name")}
-    original_names = [str(r["name"]) for r in existing_rows if r.get("name")]
-    name_to_existing_names: Dict[str, List[str]] = {}
-    for r in existing_rows:
-        existing_name = str(r.get("name") or "").strip()
-        if not existing_name:
-            continue
-        nk = normalized_name_key(r.get("name"))
-        if not nk:
-            continue
-        name_to_existing_names.setdefault(nk, []).append(existing_name)
-
-    imported_names: List[str] = []
-    overwritten_existing_names: List[str] = []
-    overwritten_name_keys: set[str] = set()
-    for norm in normalized_rows:
-        work = dict(norm)
-        incoming_name = str(work.get("name") or "").strip()
-        if not incoming_name:
-            continue
-        same_names = [name for name in name_to_existing_names.get(normalized_name_key(incoming_name), []) if name in by_name]
-        if same_names:
-            for name in same_names:
-                by_name.pop(name, None)
-            overwritten_existing_names.extend(same_names)
-            overwritten_name_keys.add(normalized_name_key(incoming_name))
-        item = _dict_to_session_preset_item(work)
-        if item is None:
-            continue
-        row = _session_preset_item_to_disk_row(item)
-        if row is None:
-            continue
-        by_name[row["name"]] = row
-        imported_names.append(row["name"])
-
-    merged: List[Dict[str, Any]] = []
-    for name in original_names:
-        if normalized_name_key(name) in overwritten_name_keys:
-            continue
-        if name in by_name:
-            merged.append(by_name[name])
-    used = {name for name in original_names if normalized_name_key(name) not in overwritten_name_keys}
-    for name, row in by_name.items():
-        if name not in used:
-            merged.append(row)
-    _mirror_session_presets_to_resources(merged)
-    return merged, imported_names, overwritten_existing_names
-
-
-def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        mirror_rows_to_resource_dir(
-            rows,
-            user_ctx.scenarios_dir.resolve(),
-            "name",
-            body_filename="scenario.json",
-        )
 
 
 @router.put("/settings/session-presets")
