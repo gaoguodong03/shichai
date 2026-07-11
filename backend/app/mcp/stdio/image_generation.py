@@ -95,6 +95,25 @@ def _workspace_root_for_mcp(workspace_id: str) -> Path:
         reset_current_user_identity(token)
 
 
+def _checkpoint_workspace_for_mcp(workspace_id: str) -> None:
+    """Create a workspace_changed checkpoint in the MCP runtime user context."""
+    wid = (workspace_id or "").strip()
+    if not wid:
+        return
+    user_id = (os.getenv("ST49_MCP_USER_ID") or "").strip()
+    username = (os.getenv("ST49_MCP_USERNAME") or user_id).strip()
+    token = set_current_user_identity(user_id=user_id, username=username) if user_id else None
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(wid, trigger="workspace_changed", force=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("image_generation checkpoint failed workspace_id=%s err=%s", wid, exc)
+    finally:
+        if token is not None:
+            reset_current_user_identity(token)
+
+
 def _save_data_url(result: str, *, workspace_id: str, output_subdir: str) -> dict[str, Any] | None:
     text = (result or "").strip()
     if not text.startswith("data:image/") or ";base64," not in text:
@@ -121,6 +140,8 @@ def _save_data_url(result: str, *, workspace_id: str, output_subdir: str) -> dic
     filename = f"图片-{ts}-{uuid4().hex[:8]}.{ext}"
     output_path = output_dir / filename
     output_path.write_bytes(image_bytes)
+    if wid:
+        _checkpoint_workspace_for_mcp(wid)
 
     rel_path = output_path.relative_to(workspace_root).as_posix()
     payload: dict[str, Any] = {

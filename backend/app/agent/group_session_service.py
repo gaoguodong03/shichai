@@ -135,6 +135,12 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
         fn += ".md"
     filepath = ws_root / fn
     filepath.write_text(md, encoding="utf-8")
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(session_id, trigger="workspace_changed", force=True)
+    except Exception:
+        logger.warning("session_export checkpoint failed: %s", session_id, exc_info=True)
     rel = str(filepath.relative_to(ws_root)).replace("\\", "/")
     return rel, f"/api/sessions/{session_id}/workspace/files/download?path={rel}"
 

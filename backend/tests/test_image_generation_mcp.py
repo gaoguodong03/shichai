@@ -109,6 +109,10 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
+    from app.api.group_chat_state import save_session_definitions
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.session_state.service import list_session_checkpoints
+
     image_b64 = base64.b64encode(b"runtime-user-jpg").decode("ascii")
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
@@ -119,6 +123,20 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
         "_generate_image",
         lambda *, description, pic_size: f"data:image/jpeg;base64,{image_b64}",
     )
+    token = set_current_user_identity(user_id="user-runtime", username="runtime@example.com")
+    try:
+        save_session_definitions(
+            {
+                "group-runtime": {
+                    "title": "图片生成",
+                    "agent_names": [],
+                    "created_at": "2026062908104800",
+                    "updated_at": "2026062908104800",
+                }
+            }
+        )
+    finally:
+        reset_current_user_identity(token)
 
     result = json.loads(
         image_generation.generate_image(
@@ -144,6 +162,12 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
     assert len(result["artifacts"]) == 1
     assert set(result["artifacts"][0]) == {"type", "name", "path"}
     assert expected.read_bytes() == b"runtime-user-jpg"
+    token = set_current_user_identity(user_id="user-runtime", username="runtime@example.com")
+    try:
+        checkpoints = list_session_checkpoints("group-runtime")
+    finally:
+        reset_current_user_identity(token)
+    assert checkpoints[-1]["trigger"] == "workspace_changed"
     assert not (
         tmp_path
         / "users"

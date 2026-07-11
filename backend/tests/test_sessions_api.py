@@ -314,6 +314,34 @@ def test_export_session_default_filename_uses_workspace_timestamp_contract(monke
     assert download_url.endswith(f"path={rel_path}")
 
 
+def test_export_session_markdown_creates_workspace_changed_checkpoint(client: TestClient):
+    """会话导出写入 workspace 后必须生成 workspace_changed 检查点。"""
+    from app.api.group_chat_state import save_group_history
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    create_resp = client.post("/api/sessions", json={"title": "导出检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        save_group_history(session_id, [_user_msg("msg-export", "请导出")], checkpoint_trigger=None)
+    finally:
+        reset_current_user_identity(token)
+
+    before_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert before_resp.status_code == 200
+    before = before_resp.json()["data"]["checkpoints"]
+
+    export_resp = client.post(f"/api/sessions/{session_id}/export")
+    assert export_resp.status_code == 200
+
+    after_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert after_resp.status_code == 200
+    after = after_resp.json()["data"]["checkpoints"]
+    assert len(after) == len(before) + 1
+    assert after[-1]["trigger"] == "workspace_changed"
+
+
 def test_update_empty_session_can_become_scene_without_join_messages(client: TestClient):
     agent_resp = client.post("/api/agents", json={"name": "场景专家"})
     assert agent_resp.status_code == 200
