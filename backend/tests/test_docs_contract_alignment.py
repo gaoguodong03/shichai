@@ -72,6 +72,7 @@ def test_simple_agent_tool_summary_helpers_are_not_named_as_fallbacks():
     """Tool-result summary paths are product behavior, not legacy fallback branches."""
     runtime_files = [
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_streaming.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_errors.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_finalization.py",
     ]
@@ -88,16 +89,16 @@ def test_simple_agent_tool_summary_has_independent_module_boundary():
     """Tool-result finalization belongs outside error handling and SimpleAgent loops."""
     summary_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_summary.py"
     error_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_errors.py"
-    agent_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py"
+    streaming_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_streaming.py"
 
     assert summary_module.exists()
     summary_text = summary_module.read_text(encoding="utf-8")
     error_text = error_module.read_text(encoding="utf-8")
-    agent_text = agent_module.read_text(encoding="utf-8")
+    streaming_text = streaming_module.read_text(encoding="utf-8")
 
     assert "def _final_response_or_tool_summary" in summary_text
     assert "def _final_response_or_tool_summary" not in error_text
-    assert "from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary" in agent_text
+    assert "from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary" in streaming_text
 
 
 def test_simple_agent_does_not_advertise_content_tool_call_fallback():

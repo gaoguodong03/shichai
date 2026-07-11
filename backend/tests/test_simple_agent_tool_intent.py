@@ -9,7 +9,8 @@ from app.agent.simple_agent_finalization import (
     _post_tool_synthesis_instruction,
 )
 from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
-from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step
+from app.agent.simple_agent import SimpleAgent
+from app.agent.simple_agent_tool_flow import is_run_skill_script_workflow_step as _is_run_skill_script_workflow_step
 from app.agent.tool_spec import ToolSpec
 
 
