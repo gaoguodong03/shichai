@@ -460,7 +460,7 @@ def test_session_presets_preserve_top_level_system_prompt(client: TestClient):
     assert list_resp.status_code == 200
     preset = list_resp.json()["data"]["presets"][0]
     assert preset["system_prompt"] == "场景预设规则"
-    assert preset["host"]["system_prompt"] is None
+    assert preset["host"]["system_prompt"] == ""
 
 
 def test_app_and_host_system_prompts_are_independent(client: TestClient):

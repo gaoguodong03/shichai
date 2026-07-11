@@ -330,7 +330,7 @@ def test_normalize_scenario_row_keeps_minimal_prompt_host_and_agent_names():
         "host": {
             "name": "协同写作场景主持人",
             "llm_name": "deepseek-v4-flash",
-            "system_prompt": None,
+            "system_prompt": "",
             "skill_name": "协同写作主持人v1.2",
             "skill_directory": "skill_tywretmy",
         },

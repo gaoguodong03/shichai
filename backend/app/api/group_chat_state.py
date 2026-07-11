@@ -508,20 +508,11 @@ def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
             if not isinstance(data, list):
                 return []
             canonical_messages: List[Dict[str, Any]] = []
-            dropped_count = 0
-            for item in data:
+            for idx, item in enumerate(data):
                 try:
                     canonical_messages.append(_canonical_history_message(item))
-                except ValueError:
-                    dropped_count += 1
-            if dropped_count:
-                logger.warning(
-                    "dropped legacy group history messages: session=%s count=%s",
-                    group_session_id,
-                    dropped_count,
-                )
-                with suppress(OSError):
-                    path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
+                except ValueError as exc:
+                    raise ValueError(f"history message violates ChatMessageRecord at index {idx}") from exc
             return canonical_messages
         except (OSError, json.JSONDecodeError, TypeError):
             return []

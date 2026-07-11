@@ -434,7 +434,7 @@ def test_group_history_loads_canonical_messages_without_runtime_compat(tmp_path,
     assert "timestamp" not in loaded[0]
 
 
-def test_group_history_load_drops_invalid_messages(tmp_path, monkeypatch):
+def test_group_history_load_rejects_invalid_messages_without_rewriting(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     (tmp_path / "s1").mkdir(parents=True)
     valid_message = {
@@ -452,15 +452,12 @@ def test_group_history_load_drops_invalid_messages(tmp_path, monkeypatch):
     history_path = tmp_path / "s1" / "history.json"
     history_path.write_text(json.dumps([invalid_message, valid_message], ensure_ascii=False), encoding="utf-8")
 
-    loaded = state.load_group_history("s1")
+    original = history_path.read_text(encoding="utf-8")
 
-    assert loaded == [
-        {
-            **valid_message,
-            "message": {"content": "新消息"},
-        }
-    ]
-    assert json.loads(history_path.read_text(encoding="utf-8")) == loaded
+    with pytest.raises(ValueError):
+        state.load_group_history("s1")
+
+    assert history_path.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.parametrize(

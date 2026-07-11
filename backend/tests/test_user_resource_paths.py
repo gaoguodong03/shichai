@@ -268,7 +268,7 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
             {
                 "name": "线上导入场景",
                 "agent_names": ["线上专家"],
-                "host": {"name": "主持人", "llm_name": "", "system_prompt": None, "skill_name": "", "skill_directory": ""},
+                "host": {"name": "主持人", "llm_name": "", "system_prompt": "", "skill_name": "", "skill_directory": ""},
                 "description": "只剩资源目录镜像时也应能刷新出来",
                 "system_prompt": "",
             }

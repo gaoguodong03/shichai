@@ -167,7 +167,7 @@ def _normalize_scenario_host_snapshot(raw: Any) -> Dict[str, Any]:
     return {
         "name": str(cfg.get("name") or "").strip(),
         "llm_name": str(cfg.get("llm_name") or "").strip(),
-        "system_prompt": str(cfg.get("system_prompt") or "").strip() if cfg.get("system_prompt") is not None else None,
+        "system_prompt": str(cfg.get("system_prompt") or "").strip(),
         "skill_name": skill_name,
         "skill_directory": skill_directory,
     }
