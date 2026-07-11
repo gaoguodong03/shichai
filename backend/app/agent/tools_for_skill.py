@@ -7,6 +7,7 @@ run_skill_script_<directory_name> → wrap。
 """
 from pathlib import Path
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,8 @@ from app.agent.platform_prompts import render_platform_prompt
 
 from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
 
 class EditWorkspaceFileInput(BaseModel):
     path: str = Field(description=render_platform_prompt("tool.schema.edit_workspace_file.path.v1", {}))
@@ -57,6 +60,15 @@ class MkdirWorkspaceInput(BaseModel):
 
 class ListWorkspaceDirectoryInput(BaseModel):
     path: str = Field(description=render_platform_prompt("tool.schema.list_workspace_directory.path.v1", {}), default="")
+
+
+def _checkpoint_workspace_mutation(workspace_id: str) -> None:
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(workspace_id, trigger="workspace_changed")
+    except Exception:
+        logger.warning("workspace checkpoint failed after builtin workspace mutation: %s", workspace_id, exc_info=True)
 
 
 def _filter_redundant_workspace_mcp_tools(tools: List) -> List:
@@ -150,6 +162,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             )
         except Exception as e:
             return f"错误：写入失败 - {e}"
+        _checkpoint_workspace_mutation(workspace_id)
         return f"已编辑文件：{path}"
 
     async def _rename_workspace_file(path: str, target_path: str) -> str:
@@ -195,6 +208,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
                 )
             except Exception as fallback_error:
                 return f"错误：重命名失败 - {fallback_error}"
+        _checkpoint_workspace_mutation(workspace_id)
         return f"已重命名文件：{dst_rel}"
 
     async def _mkdir_workspace(path: str) -> str:
@@ -214,6 +228,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             )
         except Exception as e:
             return f"错误：新建目录失败 - {e}"
+        _checkpoint_workspace_mutation(workspace_id)
         return f"已新建目录：{rel}"
 
     async def _list_workspace_directory(path: str = "") -> str:

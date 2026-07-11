@@ -319,6 +319,67 @@ def test_write_workspace_file_tool_creates_workspace_changed_checkpoint(client, 
     assert checkpoints[-1]["trigger"] == "workspace_changed"
 
 
+@pytest.mark.parametrize(
+    "tool_name,payload,seed_file",
+    [
+        ("edit_workspace_file", {"path": "draft.md", "old_text": "old", "new_text": "new"}, ("draft.md", "old body")),
+        ("rename_workspace_file", {"path": "draft.md", "target_path": "renamed.md"}, ("draft.md", "body")),
+        ("mkdir_workspace", {"path": "generated"}, None),
+    ],
+)
+def test_builtin_workspace_mutation_tools_create_workspace_changed_checkpoint(
+    client,
+    monkeypatch,
+    tool_name,
+    payload,
+    seed_file,
+):
+    """内置工作区变更工具成功后必须形成 workspace_changed 检查点。"""
+    from app.agent import tools_for_skill as tool_module
+    from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host
+    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+    from app.api.files import get_workspace_root
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, workspace_path, rel_path, **_kwargs):
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+        async def exec_workspace_shell(self, *, session_id, workspace_path, argv, **_kwargs):
+            return exec_workspace_shell_on_host(session_id=session_id, workspace_path=workspace_path, argv=argv)
+
+        async def mkdir_workspace(self, *, workspace_path, rel_path, **_kwargs):
+            (workspace_path / rel_path).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    create_resp = client.post("/api/sessions", json={"title": f"{tool_name} 检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        ws = get_workspace_root(session_id)
+        if seed_file:
+            rel_path, content = seed_file
+            target = ws / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        tool = next(item for item in _create_builtin_workspace_tools(session_id) if item.name == tool_name)
+        out = asyncio.run(tool.ainvoke(payload))
+    finally:
+        reset_current_user_identity(token)
+
+    assert "错误：" not in out
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert checkpoints[-1]["trigger"] == "workspace_changed"
+
+
 def test_write_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monkeypatch):
     """工作区写工具按 user_id 隔离用户数据，不能用可变 username。"""
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
