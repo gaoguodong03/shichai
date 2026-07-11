@@ -12,6 +12,8 @@ from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from app.agent.workspace_visibility import WorkspacePathError, normalize_public_workspace_path
+
 
 class StructuredOutputProtocolError(ValueError):
     """Report a strict structured-output protocol violation with raw evidence."""
@@ -113,6 +115,14 @@ class ArtifactRef(StrictModel):
     type: Literal["file", "directory", "image", "table", "json", "markdown", "other"]
     name: str = Field(min_length=1)
     path: str = Field(min_length=1)
+
+    @field_validator("path")
+    @classmethod
+    def _validate_public_workspace_path(cls, value: str) -> str:
+        try:
+            return normalize_public_workspace_path(value)
+        except WorkspacePathError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class SkillNextAction(StrictModel):

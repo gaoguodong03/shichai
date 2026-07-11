@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, SkillResult, WorkspaceAttachment
+from app.agent.structured_output_contracts import ArtifactRef
 
 
 def test_user_message_record_uses_nested_message_object():
@@ -65,6 +66,22 @@ def test_expert_message_record_uses_current_skill_result_shape():
 def test_workspace_attachment_rejects_non_public_workspace_relative_paths(path):
     with pytest.raises(ValidationError):
         WorkspaceAttachment.model_validate({"type": "workspace_file", "path": path, "name": "bad"})
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/tmp/report.md",
+        "D:/outputs/report.md",
+        "../report.md",
+        "reports/../../report.md",
+        "memory/index.md",
+        "traces/run.json",
+    ],
+)
+def test_artifact_ref_rejects_non_public_workspace_relative_paths(path):
+    with pytest.raises(ValidationError):
+        ArtifactRef.model_validate({"type": "file", "name": "报告", "path": path})
 
 
 @pytest.mark.parametrize(
