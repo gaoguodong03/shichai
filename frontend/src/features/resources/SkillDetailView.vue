@@ -2,100 +2,32 @@
   <div class="flex flex-col h-full bg-page text-primary overflow-hidden">
     <div v-if="loading" class="p-4 text-muted flex-1">加载中...</div>
     <template v-else-if="skill">
-      <header class="px-4 py-3 border-b border-border bg-card flex-shrink-0">
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-[12rem]">
-            <h1 class="text-base font-semibold text-primary truncate">技能</h1>
-            <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.directory_name }}</p>
-          </div>
-          <div class="flex flex-shrink-0 items-center gap-2">
-            <button
-              v-if="activeTab !== 'main' && !isDraftSkill"
-              type="button"
-              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-              :disabled="partsLoading"
-              @click="addPartFile"
-            >
-              新建文件
-            </button>
-            <button
-              v-if="activeTab !== 'main' && !isDraftSkill"
-              type="button"
-              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-              :disabled="partsLoading"
-              @click="addPartFolder"
-            >
-              新建文件夹
-            </button>
-            <button
-              v-if="!isDraftSkill"
-              type="button"
-              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
-              :disabled="exporting"
-              @click="exportZip"
-            >
-              {{ exporting ? '导出中…' : '导出' }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-              :disabled="saving || deleting || contentLoading"
-              @click="handleEditSave"
-            >
-              {{ editMode ? (saving ? '保存中...' : '保存') : '编辑' }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
-              :disabled="deleting || saving"
-              @click="deleteSkill"
-            >
-              {{ deleting ? '删除中...' : '删除' }}
-            </button>
-          </div>
-        </div>
-      </header>
+      <SkillDetailHeader
+        :skill="skill"
+        :active-tab="activeTab"
+        :is-draft-skill="isDraftSkill"
+        :parts-loading="partsLoading"
+        :exporting="exporting"
+        :edit-mode="editMode"
+        :saving="saving"
+        :deleting="deleting"
+        :content-loading="contentLoading"
+        @add-part-file="addPartFile"
+        @add-part-folder="addPartFolder"
+        @export-zip="exportZip"
+        @edit-save="handleEditSave"
+        @delete-skill="deleteSkill"
+      />
 
       <div class="flex-1 min-h-0 flex bg-page">
-        <aside class="w-64 flex-shrink-0 border-r border-border bg-sidebar overflow-y-auto">
-          <div class="px-3 py-2 border-b border-border/40 sticky top-0 bg-sidebar z-10">
-            <div class="text-xs text-muted truncate">当前目录：{{ currentSidebarDir }}</div>
-            <div class="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                class="px-2 py-1 text-xs rounded border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-                :disabled="activeTab === 'main'"
-                @click="goUpFromSidebar"
-              >
-                上一级
-              </button>
-            </div>
-          </div>
-          <div class="p-2 space-y-1">
-            <div v-if="activeTab !== 'main' && partsLoading" class="px-2 py-2 text-sm text-muted">加载中...</div>
-            <div v-else-if="!sidebarEntries.length" class="px-2 py-2 text-sm text-muted">暂无文件</div>
-            <button
-              v-else
-              v-for="e in sidebarEntries"
-              :key="e.key"
-              type="button"
-              class="w-full px-3 py-2.5 text-left text-base transition-colors border-b border-border/40"
-              :class="e.active
-                ? 'bg-accent-subtle text-accent-subtle-text'
-                : 'hover:bg-list-hover text-primary'"
-              @click="onSidebarEntryClick(e)"
-            >
-              <div class="skill-sidebar-entry-title">
-                <span
-                  class="skill-sidebar-entry-icon"
-                  :style="resourceIconStyle(e.isDir ? skillFolderIconUrl : skillFileIconUrl)"
-                  aria-hidden="true"
-                />
-                <span class="truncate">{{ e.name }}</span>
-              </div>
-            </button>
-          </div>
-        </aside>
+        <SkillPartSidebar
+          :current-sidebar-dir="currentSidebarDir"
+          :active-tab="activeTab"
+          :parts-loading="partsLoading"
+          :sidebar-entries="sidebarEntries"
+          @go-up="goUpFromSidebar"
+          @entry-click="onSidebarEntryClick"
+        />
 
         <main class="flex-1 min-w-0 overflow-auto themed-scrollbar p-4 bg-page">
           <div v-if="activeTab === 'main'" class="mx-auto w-full max-w-4xl space-y-4">
@@ -255,54 +187,26 @@
                   </p>
                 </div>
               </div>
-              <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
-                  <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
-                  <span class="text-xs text-muted">{{ editMode ? '编辑中' : '预览' }}</span>
-                </div>
-                <div
-                  v-if="!editMode"
-                  class="skill-markdown-preview themed-scrollbar px-4 py-3 text-sm text-primary max-h-[24rem] overflow-auto"
-                  v-html="renderMarkdown(form.body || '')"
-                />
-                <textarea
-                  v-else
-                  v-model="form.body"
-                  rows="18"
-                  class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent themed-scrollbar focus:ring-0 resize-y min-h-[14rem]"
-                  placeholder="SKILL.md 正文内容"
-                />
-              </div>
+              <SkillMarkdownBodyEditor
+                :body="form.body"
+                :edit-mode="editMode"
+                :preview-html="renderMarkdown(form.body || '')"
+                @update:body="form.body = $event"
+              />
             </template>
           </div>
 
           <template v-else>
             <div v-if="!selectedPartFile" class="h-full flex items-center justify-center text-sm text-muted">选择文件后可预览与编辑</div>
             <div v-else class="h-full flex flex-col min-h-0">
-              <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
-                <span class="text-xs text-muted truncate">{{ selectedPartFile.path }}</span>
-                <div class="flex gap-2">
-                  <button
-                    @click="partMarkdownPreviewMode = !partMarkdownPreviewMode"
-                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover"
-                  >
-                    {{ partMarkdownPreviewMode ? '编辑源文件' : '预览渲染' }}
-                  </button>
-                  <button
-                    @click="savePartFile"
-                    :disabled="partSaving"
-                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-                  >
-                    {{ partSaving ? '保存中...' : '保存' }}
-                  </button>
-                  <button
-                    @click="deletePartFile"
-                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover"
-                  >
-                    删除文件
-                  </button>
-                </div>
-              </div>
+              <SkillPartFileToolbar
+                :path="selectedPartFile.path"
+                :preview-mode="partMarkdownPreviewMode"
+                :saving="partSaving"
+                @toggle-preview="partMarkdownPreviewMode = !partMarkdownPreviewMode"
+                @save="savePartFile"
+                @delete="deletePartFile"
+              />
               <div v-if="partContentLoading" class="text-sm text-muted flex-1">加载中...</div>
               <div v-else-if="partMarkdownPreviewMode" class="flex-1 overflow-auto p-4 flex flex-col">
                 <div
@@ -335,12 +239,13 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
-import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
-import skillFileIconUrl from '@/assets/icons/workspace/file.svg'
-import skillFolderIconUrl from '@/assets/icons/workspace/folder.svg'
 import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPartPath } from './resourcePartPaths'
+import SkillDetailHeader from './SkillDetailHeader.vue'
+import SkillMarkdownBodyEditor from './SkillMarkdownBodyEditor.vue'
+import SkillPartFileToolbar from './SkillPartFileToolbar.vue'
+import SkillPartSidebar from './SkillPartSidebar.vue'
+import type { PartType } from './skillDetailTypes'
 
-type PartType = 'references' | 'assets' | 'scripts' | 'other'
 const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
 type AllowedTools = { mcp: string[]; http_api: string[]; python: string[] }
 type PythonDependencyState = 'satisfied' | 'missing' | 'conflict' | 'invalid' | 'skipped' | 'unknown'

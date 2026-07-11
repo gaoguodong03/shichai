@@ -673,6 +673,18 @@ def test_main_view_stays_as_shell_without_thin_helper_files():
     assert not (ROOT / "frontend/src/features/shell/sessionAvatarDisplay.ts").exists()
 
 
+def test_skill_detail_view_extracts_header_and_sidebar_shells():
+    src = read("frontend/src/features/resources/SkillDetailView.vue")
+    header = read("frontend/src/features/resources/SkillDetailHeader.vue")
+    sidebar = read("frontend/src/features/resources/SkillPartSidebar.vue")
+
+    assert len(src.splitlines()) <= 1250
+    assert "SkillDetailHeader" in src
+    assert "SkillPartSidebar" in src
+    assert "add-part-file" in header
+    assert "sidebarEntries" in sidebar
+
+
 def test_app_entry_has_no_local_debug_ingest_probe():
     src = read("frontend/src/App.vue")
     assert "127.0.0.1:7242" not in src
