@@ -346,6 +346,7 @@ def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py",
         PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py",
+        PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_missing_references.py",
         PROJECT_ROOT / "backend" / "app" / "core" / "skill_bundle_service.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "group_session_service.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_state.py",
