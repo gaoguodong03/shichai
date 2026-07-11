@@ -327,7 +327,13 @@ def test_skill_import_does_not_keep_api_mcp_bundle_parsers():
 
 def test_opensandbox_file_operations_do_not_keep_command_channel_fallbacks():
     """OpenSandbox file operations must fail loudly when the filesystem endpoint is unavailable."""
-    adapter_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "sandbox_adapter.py").read_text(encoding="utf-8")
+    adapter_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            PROJECT_ROOT / "backend" / "app" / "agent" / "sandbox_adapter.py",
+            PROJECT_ROOT / "backend" / "app" / "agent" / "opensandbox_runtime_client.py",
+        ]
+    )
 
     for forbidden in [
         "命令通道兜底",

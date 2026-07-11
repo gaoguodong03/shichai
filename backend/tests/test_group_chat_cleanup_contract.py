@@ -16,6 +16,7 @@ def test_backend_core_files_stay_bounded_after_extraction():
     assert len(_read("app/agent/simple_agent.py").splitlines()) <= 1600
     assert len(_read("app/agent/skill_agent_runtime.py").splitlines()) <= 600
     assert len(_read("app/agent/llm_client.py").splitlines()) <= 600
+    assert len(_read("app/agent/sandbox_adapter.py").splitlines()) <= 600
     assert len(_read("app/agent/sandbox_service.py").splitlines()) <= 1200
     assert len(_read("app/core/settings_bundle_import.py").splitlines()) <= 600
 
@@ -32,6 +33,7 @@ def test_backend_extraction_modules_exist_without_legacy_smells():
         "app/agent/skill_execution_prompt_rules.py",
         "app/agent/skill_agent_paths.py",
         "app/agent/llm_prompt_trace.py",
+        "app/agent/opensandbox_runtime_client.py",
         "app/core/skill_bundle_service.py",
         "app/core/scenario_preset_store.py",
         "app/core/settings_bundle_missing_references.py",
