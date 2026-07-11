@@ -126,108 +126,14 @@
 
 
 
-          <div class="space-y-4 rounded-xl border border-border-light bg-bg-subtle/40 p-4">
-
-            <div>
-
-              <label class="block text-sm font-medium text-primary mb-1">调用参数（可选）</label>
-
-              <p class="text-xs text-muted">仅开放官网明确支持的字段；留空表示使用厂商默认值。</p>
-
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-
-              <div>
-                <label class="block text-xs text-muted mb-1">温度 temperature</label>
-                <input v-model.trim="edit.params.temperature" type="number" step="0.01" min="0" placeholder="如 0.7" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">核采样 top_p</label>
-                <input v-model.trim="edit.params.top_p" type="number" step="0.01" min="0" max="1" placeholder="如 0.95" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">最大输出 max_tokens</label>
-                <input v-model.trim="edit.params.max_tokens" type="number" step="1" min="1" placeholder="如 2000" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">存在惩罚 presence_penalty</label>
-                <input v-model.trim="edit.params.presence_penalty" type="number" step="0.01" min="-2" max="2" placeholder="-2 到 2" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">频率惩罚 frequency_penalty</label>
-                <input v-model.trim="edit.params.frequency_penalty" type="number" step="0.01" min="-2" max="2" placeholder="-2 到 2" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">随机种子 seed</label>
-                <input v-model.trim="edit.params.seed" type="number" step="1" placeholder="可选整数" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-            </div>
-
-            <div v-if="isQwenLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
-
-              <div>
-                <label class="block text-xs text-muted mb-1">Qwen/百炼思考模式 enable_thinking</label>
-                <select v-model="edit.params.enable_thinking" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring">
-                  <option value="">默认</option>
-                  <option value="true">开启</option>
-                  <option value="false">关闭</option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs text-muted mb-1">思考预算 thinking_budget</label>
-                <input v-model.trim="edit.params.thinking_budget" type="number" step="1" min="0" placeholder="如 50" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-            </div>
-
-            <div v-if="isDeepSeekLike || isGlmLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
-
-              <div>
-                <label class="block text-xs text-muted mb-1">思考模式 thinking</label>
-                <select v-model="edit.params.thinking" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring">
-                  <option value="">默认</option>
-                  <option value="true">开启</option>
-                  <option value="false">关闭</option>
-                </select>
-              </div>
-
-              <div v-if="isGlmLike">
-                <label class="block text-xs text-muted mb-1">采样 do_sample</label>
-                <select v-model="edit.params.do_sample" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring">
-                  <option value="">默认</option>
-                  <option value="true">开启</option>
-                  <option value="false">关闭</option>
-                </select>
-              </div>
-
-            </div>
-
-            <div v-if="isGeminiLike || isClaudeLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
-
-              <div>
-                <label class="block text-xs text-muted mb-1">Top K</label>
-                <input v-model.trim="edit.params.top_k" type="number" step="1" min="0" placeholder="如 20" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
-              </div>
-
-              <div v-if="isGeminiLike">
-                <label class="block text-xs text-muted mb-1">Gemini 思考级别 thinkingLevel</label>
-                <select v-model="edit.params.gemini_thinking_level" class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring">
-                  <option value="">默认</option>
-                  <option value="low">low</option>
-                </select>
-              </div>
-
-            </div>
-
-          </div>
+          <LLMAdvancedParamsPanel
+            v-model:params="edit.params"
+            :is-qwen-like="isQwenLike"
+            :is-deep-seek-like="isDeepSeekLike"
+            :is-glm-like="isGlmLike"
+            :is-gemini-like="isGeminiLike"
+            :is-claude-like="isClaudeLike"
+          />
 
 
 
@@ -324,6 +230,8 @@ import { apiRequest } from '@/api/base'
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
+import LLMAdvancedParamsPanel from './LLMAdvancedParamsPanel.vue'
+import type { BoolChoice, ModelParams } from './llmSettingsTypes'
 
 
 
@@ -377,22 +285,6 @@ const form = ref<{
 }>({ default_llm: 'qwen3-max', llm_providers: {} })
 
 
-
-type BoolChoice = '' | 'true' | 'false'
-type ModelParams = {
-  temperature: string
-  top_p: string
-  max_tokens: string
-  presence_penalty: string
-  frequency_penalty: string
-  seed: string
-  enable_thinking: BoolChoice
-  thinking_budget: string
-  thinking: BoolChoice
-  do_sample: BoolChoice
-  top_k: string
-  gemini_thinking_level: '' | 'low'
-}
 
 function emptyParams(): ModelParams {
   return {

@@ -685,6 +685,16 @@ def test_skill_detail_view_extracts_header_and_sidebar_shells():
     assert "sidebarEntries" in sidebar
 
 
+def test_llm_settings_view_extracts_advanced_params_panel():
+    src = read("frontend/src/features/resources/LLMSettingsView.vue")
+    panel = read("frontend/src/features/resources/LLMAdvancedParamsPanel.vue")
+
+    assert len(src.splitlines()) <= 800
+    assert "LLMAdvancedParamsPanel" in src
+    assert "enable_thinking" in panel
+    assert "gemini_thinking_level" in panel
+
+
 def test_app_entry_has_no_local_debug_ingest_probe():
     src = read("frontend/src/App.vue")
     assert "127.0.0.1:7242" not in src
