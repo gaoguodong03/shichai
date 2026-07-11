@@ -43,7 +43,7 @@ test.describe('验收 5/6：设置中心', () => {
           message_id: 'host-global-name',
           speaker: { type: 'host', agent_name: '四九' },
           message: { content: '请问答专家继续。' },
-          created_at: '2026-05-23T08:00:00Z',
+          created_at: '2026052308000000',
         },
       ],
     }
@@ -86,18 +86,18 @@ test.describe('验收 5/6：设置中心', () => {
     await expect(page.locator('.group-chat-bubble-meta').filter({ hasText: '四九' })).toHaveCount(0)
   })
 
-  test('用户可以管理密钥与账号安全', async ({ page }) => {
+  test('用户可以管理环境变量与账号安全', async ({ page }) => {
     await bootLoggedInApp(page)
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    await page.getByRole('button', { name: '密钥' }).click()
+    await page.getByRole('button', { name: '环境变量' }).click()
     await expect(page.getByRole('heading', { name: '环境变量' })).toBeVisible()
     await page.getByRole('button', { name: '新建变量' }).click()
-    await page.getByPlaceholder('例如：Jeniya 主变量').fill('自动化密钥')
+    await page.getByPlaceholder('例如：Jeniya 主变量').fill('自动化环境变量')
     await page.getByPlaceholder('例如：QWEN_API_KEY').fill('auto-key')
     await page.getByPlaceholder('sk-...').fill('sk-test')
     await page.getByRole('button', { name: '新建', exact: true }).click()
-    await expect(page.getByText('自动化密钥')).toBeVisible()
+    await expect(page.getByText('自动化环境变量')).toBeVisible()
 
     await page.getByRole('button', { name: '账号' }).click()
     const accountHintText = page.getByText('账号支持手机号或是电子邮箱。')

@@ -230,6 +230,20 @@ def test_e2e_stream_mocks_use_current_sse_event_payloads():
     assert "skill_result?: SkillResult" in mock_api
 
 
+def test_e2e_message_fixtures_use_storage_timestamp_format():
+    files = [
+        "frontend/e2e/fixtures/mockApi.ts",
+        "frontend/e2e/workspace.spec.ts",
+        "frontend/e2e/resources-scenario-expert.spec.ts",
+        "frontend/e2e/resources-skill-mcp-llm.spec.ts",
+        "frontend/e2e/settings.spec.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+
+    assert not re.search(r"created_at:\s*['\"]\d{4}-\d{2}-\d{2}T", combined)
+    assert not re.search(r'"created_at"\s*:\s*"\d{4}-\d{2}-\d{2}T', combined)
+
+
 def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallback():
     mock_api = read("frontend/e2e/fixtures/mockApi.ts")
     chat_handler = re.search(
