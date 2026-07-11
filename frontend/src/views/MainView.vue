@@ -13,55 +13,15 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <div v-if="currentModule === 'workspace'" ref="newSessionMenuRoot" class="px-3 pt-3 pb-3 flex-shrink-0 relative">
-        <button
-          type="button"
-          aria-haspopup="menu"
-          :aria-expanded="newSessionMenuOpen ? 'true' : 'false'"
-          @click.stop="toggleNewSessionMenu"
-          :class="[
-            'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-            creatingSession
-              ? 'opacity-70 pointer-events-none bg-nav-selected-bg text-nav-selected-text'
-              : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-          ]"
-        >
-          <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
-          <span>新建会话</span>
-        </button>
-        <div
-          v-if="newSessionMenuOpen"
-          class="new-session-menu"
-          role="menu"
-          aria-label="新建会话"
-          @click.stop
-        >
-          <button
-            type="button"
-            role="menuitem"
-            class="new-session-menu-item"
-            :disabled="creatingSession"
-            @click="createBlankSessionFromMenu"
-          >
-            <span class="new-session-menu-item-title">空会话</span>
-          </button>
-          <div class="new-session-menu-divider" />
-          <div v-if="scenarioLoading" class="new-session-menu-status">场景加载中...</div>
-          <div v-else-if="!newSessionMenuScenarios.length" class="new-session-menu-status">暂无场景</div>
-          <button
-            v-else
-            v-for="scenario in newSessionMenuScenarios"
-            :key="scenario.name"
-            type="button"
-            role="menuitem"
-            class="new-session-menu-item"
-            @click="createScenarioSessionFromMenu(scenario)"
-          >
-            <span class="new-session-menu-item-title">{{ scenario.name || '未命名场景' }}</span>
-            <span class="new-session-menu-item-meta">{{ (scenario.agent_names || []).length }} 位专家</span>
-          </button>
-        </div>
-      </div>
+      <MainNewSessionMenu
+        v-if="currentModule === 'workspace'"
+        :creating-session="creatingSession"
+        :scenario-loading="scenarioLoading"
+        :scenarios="scenarioPresets"
+        @load-scenarios="fetchScenarioPresets"
+        @create-blank="createNewSession"
+        @create-scenario="createScenarioSessionFromMenu"
+      />
       <div
         class="flex-1 overflow-y-auto middle-column-scrollbar"
         :class="currentModule === 'resource' ? 'pt-3' : ''"
@@ -525,17 +485,10 @@
           </template>
         </template>
         <template v-else-if="currentModule === 'settings'">
-          <button
-            v-for="c in settingsCategories"
-            :key="c.id"
-            @click="router.push(settingsRoutePath(c.id))"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              settingsSection === c.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-            ]"
-          >
-            {{ c.label }}
-          </button>
+          <MainSettingsList
+            :settings-section="settingsSection"
+            @select="router.push(settingsRoutePath($event))"
+          />
         </template>
       </div>
     </aside>
@@ -1227,7 +1180,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, inject } from 'vue'
+import { ref, inject } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import WorkspaceContent from '@/features/workspace/WorkspaceContent.vue'
@@ -1252,6 +1205,8 @@ import { appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import SessionMemberAvatars from '@/features/shell/SessionMemberAvatars.vue'
 import MainNavigationRail from '@/features/shell/MainNavigationRail.vue'
+import MainNewSessionMenu from '@/features/shell/MainNewSessionMenu.vue'
+import MainSettingsList from '@/features/shell/MainSettingsList.vue'
 import ResourceImportIcon from '@/components/icons/ResourceImportIcon.vue'
 import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
 import resourceNewIconUrl from '@/assets/icons/resources/new.svg'
@@ -1259,7 +1214,6 @@ import resourceSearchIconUrl from '@/assets/icons/resources/search.svg'
 import { displaySessionTitle, formatSessionDate as formatDate } from '@/features/shell/sessionListDisplay'
 import { useGroupSessions } from '@/features/shell/useGroupSessions'
 import {
-  settingsCategories,
   settingsRoutePath,
   useMainRouteState,
 } from '@/features/shell/mainNavigation'
@@ -1518,70 +1472,21 @@ const {
   fetchGroupSessions,
 })
 
-const workspaceContentRef = ref<{
-  refresh: () => void
-  createSessionFromScenarioPreset: (p: {
-    name: string
-    agent_names: string[]
-    host?: ScenarioHostConfig
-    description?: string
-    system_prompt?: string
-  }) => Promise<string | null>
-} | null>(null)
-const newSessionMenuRoot = ref<HTMLElement | null>(null)
-const newSessionMenuOpen = ref(false)
-const newSessionMenuScenarios = computed(() =>
-  (scenarioPresets.value || []).filter((scenario) => (scenario.name || '').trim() || (scenario.agent_names || []).length),
-)
-
-function closeNewSessionMenu() {
-  newSessionMenuOpen.value = false
-}
-
-function toggleNewSessionMenu() {
-  if (creatingSession.value) return
-  newSessionMenuOpen.value = !newSessionMenuOpen.value
-  if (newSessionMenuOpen.value) {
-    fetchScenarioPresets()
-  }
-}
-
-function onDocumentClickForNewSessionMenu(event: MouseEvent) {
-  if (!newSessionMenuOpen.value) return
-  const root = newSessionMenuRoot.value
-  if (root && event.target instanceof Node && root.contains(event.target)) return
-  closeNewSessionMenu()
-}
-
-function onDocumentKeydownForNewSessionMenu(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeNewSessionMenu()
-}
-
-async function createBlankSessionFromMenu() {
-  closeNewSessionMenu()
-  await createNewSession()
-}
-
-async function createScenarioSessionFromMenu(scenario: {
+type ScenarioSessionPreset = {
   name: string
   agent_names: string[]
   host?: ScenarioHostConfig
   description?: string
   system_prompt?: string
-}) {
-  closeNewSessionMenu()
-  await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)
 }
 
-onMounted(() => {
-  document.addEventListener('click', onDocumentClickForNewSessionMenu)
-  document.addEventListener('keydown', onDocumentKeydownForNewSessionMenu)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClickForNewSessionMenu)
-  document.removeEventListener('keydown', onDocumentKeydownForNewSessionMenu)
-})
+const workspaceContentRef = ref<{
+  refresh: () => void
+  createSessionFromScenarioPreset: (p: ScenarioSessionPreset) => Promise<string | null>
+} | null>(null)
+async function createScenarioSessionFromMenu(scenario: ScenarioSessionPreset) {
+  await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)
+}
 
 async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()

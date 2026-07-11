@@ -35,10 +35,11 @@ def test_settings_view_uses_route_section_for_active_panel():
     main = read("frontend/src/views/MainView.vue")
     navigation = read("frontend/src/features/shell/mainNavigation.ts")
     lifecycle = read("frontend/src/features/shell/useMainModuleLifecycle.ts")
+    settings_list = read("frontend/src/features/shell/MainSettingsList.vue")
     assert "const settingsSection = computed<SettingsCategoryId>" in navigation
     assert "void router.push('/settings/app')" in lifecycle
     assert "<AppSettingsView v-if=\"settingsSection === 'app'\"" in main
-    assert "settingsSection === c.id" in main
+    assert "settingsSection === category.id" in settings_list
     assert "selectedId === 'app'" not in main
 
 
@@ -649,11 +650,15 @@ def test_workspace_content_is_standard_size_shell():
 def test_main_view_stays_as_shell_without_thin_helper_files():
     main = read("frontend/src/views/MainView.vue")
     navigation = read("frontend/src/features/shell/MainNavigationRail.vue")
+    new_session = read("frontend/src/features/shell/MainNewSessionMenu.vue")
     component = read("frontend/src/features/shell/SessionMemberAvatars.vue")
     collections = read("frontend/src/features/resources/useResourceCollections.ts")
 
-    assert len(main.splitlines()) <= 1600
+    assert len(main.splitlines()) <= 1500
     assert "MainNavigationRail" in main
+    assert "MainNewSessionMenu" in main
+    assert "MainSettingsList" in main
+    assert "new-session-menu" in new_session
     assert "resourceChildren" in navigation
     assert "settingsRoutePath" not in navigation
     assert "SessionMemberAvatars" in main
