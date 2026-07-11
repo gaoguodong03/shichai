@@ -648,10 +648,14 @@ def test_workspace_content_is_standard_size_shell():
 
 def test_main_view_stays_as_shell_without_thin_helper_files():
     main = read("frontend/src/views/MainView.vue")
+    navigation = read("frontend/src/features/shell/MainNavigationRail.vue")
     component = read("frontend/src/features/shell/SessionMemberAvatars.vue")
     collections = read("frontend/src/features/resources/useResourceCollections.ts")
 
-    assert len(main.splitlines()) <= 1700
+    assert len(main.splitlines()) <= 1600
+    assert "MainNavigationRail" in main
+    assert "resourceChildren" in navigation
+    assert "settingsRoutePath" not in navigation
     assert "SessionMemberAvatars" in main
     assert "useGroupSessions" in main
     assert "useResourceCollections" in main
