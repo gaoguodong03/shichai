@@ -488,6 +488,21 @@ def test_saved_http_api_tool_schema_descriptions_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_mcp_configuration_status_tool_message_uses_platform_prompt_registry():
+    """mcp_configuration_status returns LLM-visible guidance, so its message belongs in the registry."""
+    module_text = (ROOT / "backend/app/agent/tools_for_skill.py").read_text(encoding="utf-8")
+
+    assert "本轮 Skill 声明的 MCP 工具未能加载，请先在资源中心配置对应环境变量后重试。" not in module_text
+    assert "Skill 声明了该 MCP 工具，但资源中心没有对应配置。" not in module_text
+    assert "MCP 配置引用了未设置的环境变量。" not in module_text
+    for prompt_id in [
+        "tool.result.mcp_configuration_unavailable.v1",
+        "tool.result.mcp_config_missing.v1",
+        "tool.result.mcp_secret_missing.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_image_generation_default_user_prompt_uses_platform_prompt_registry():
     """Image tool default user prompt text belongs in the shared prompt registry."""
     tool_text = (ROOT / "backend/app/tools/chatanywhere_image_cli_lib.py").read_text(encoding="utf-8")
