@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.api.group_chat_archive import build_archive_segments
 from app.agent.message_contracts import ChatMessageRecord
+from app.agent.runtime_status import RuntimePhase
 from app.core.user_context import get_current_user_context
 
 logger = logging.getLogger(__name__)
@@ -27,24 +28,7 @@ ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
-RUNTIME_PHASES = {
-    "routing",
-    "planning",
-    "executing",
-    "file_resolving",
-    "file_resolved",
-    "skill_selecting",
-    "agent_routed",
-    "tool_running",
-    "assistant_generating",
-    "finalizing",
-    "awaiting_user",
-    "recruiting",
-    "reviewing",
-    "completed",
-    "stopped",
-    "failed",
-}
+RUNTIME_PHASES = {phase.value for phase in RuntimePhase}
 
 
 def group_session_has_active_run(group_session_id: str) -> bool:

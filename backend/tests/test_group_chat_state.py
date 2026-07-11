@@ -172,6 +172,12 @@ def test_runtime_phase_never_defaults_to_running(tmp_path, monkeypatch):
     assert runtime["phase"] == "routing"
 
 
+def test_runtime_phase_enum_matches_session_runtime_contract():
+    from app.agent.runtime_status import RuntimePhase
+
+    assert {item.value for item in RuntimePhase} == state.RUNTIME_PHASES
+
+
 def test_runtime_for_session_filters_stored_runtime_json_fields(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})

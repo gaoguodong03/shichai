@@ -7,9 +7,20 @@ from enum import Enum
 class RuntimePhase(str, Enum):
     """Public runtime phases allowed by the current SSE/session contract."""
 
+    ROUTING = "routing"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    FILE_RESOLVING = "file_resolving"
+    FILE_RESOLVED = "file_resolved"
+    SKILL_SELECTING = "skill_selecting"
+    AGENT_ROUTED = "agent_routed"
+    TOOL_RUNNING = "tool_running"
+    ASSISTANT_GENERATING = "assistant_generating"
+    FINALIZING = "finalizing"
     AWAITING_USER = "awaiting_user"
-    COMPLETED = "completed"
     RECRUITING = "recruiting"
+    REVIEWING = "reviewing"
+    COMPLETED = "completed"
     STOPPED = "stopped"
     FAILED = "failed"
 
