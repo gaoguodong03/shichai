@@ -4,9 +4,12 @@ from app.api import group_chat_state as state
 from app.agent.session_runtime_logs import append_tool_execution_logs, load_tool_execution_logs
 
 
+TS1 = "2026062908104800"
+
+
 def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
 
     append_tool_execution_logs(
         "s1",
@@ -64,7 +67,7 @@ def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeyp
 
 def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
 
     append_tool_execution_logs(
         "s1",
@@ -98,7 +101,7 @@ def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, mo
 
 def test_append_tool_execution_logs_skips_unknown_sources(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
 
     append_tool_execution_logs(
         "s1",

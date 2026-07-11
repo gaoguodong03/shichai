@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import uuid
 from contextlib import suppress
@@ -29,6 +30,7 @@ ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
 RUNTIME_PHASES = {phase.value for phase in RuntimePhase}
+STORAGE_TIMESTAMP_RE = re.compile(r"\d{16}")
 
 
 def group_session_has_active_run(group_session_id: str) -> bool:
@@ -118,6 +120,9 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         }
     elif "host" in out:
         out["host"] = {}
+    for field in ("created_at", "updated_at"):
+        if field in out:
+            out[field] = _clean_storage_timestamp(out[field], field=field)
     return out
 
 
@@ -137,6 +142,17 @@ def format_storage_timestamp(value: datetime | None = None) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     dt = dt.astimezone(timezone.utc)
     return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"
+
+
+def _clean_storage_timestamp(value: Any, *, field: str) -> str:
+    text = str(value or "").strip()
+    if not STORAGE_TIMESTAMP_RE.fullmatch(text):
+        raise ValueError(f"{field} must use YYYYMMDDHHmmssSS")
+    try:
+        datetime.strptime(text[:14], "%Y%m%d%H%M%S")
+    except ValueError as exc:
+        raise ValueError(f"{field} must use YYYYMMDDHHmmssSS") from exc
+    return text
 
 
 def _canonical_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:

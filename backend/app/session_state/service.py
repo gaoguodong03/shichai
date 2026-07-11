@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 
 from app.api.group_chat_state import (
+    format_storage_timestamp,
     load_group_history,
     load_group_orchestration_state,
     load_session_definitions,
@@ -318,8 +319,8 @@ def _apply_checkpoint(session_id: str, checkpoint: Dict[str, Any], *, source_ses
         session_definitions = load_session_definitions()
         current = session_definitions.get(session_id) if isinstance(session_definitions.get(session_id), dict) else {}
         restored = copy.deepcopy(session_definition)
-        restored["updated_at"] = _now()
-        restored.setdefault("created_at", current.get("created_at") or restored.get("created_at") or _now())
+        restored["updated_at"] = format_storage_timestamp()
+        restored.setdefault("created_at", current.get("created_at") or restored.get("created_at") or format_storage_timestamp())
         session_definitions[session_id] = restored
         save_session_definitions(session_definitions)
         save_group_history(session_id, history)
@@ -386,8 +387,9 @@ def _copy_session_state(source_session_id: str, target_session_id: str, checkpoi
     base_title = str(session_definition.get("title") or "新对话").strip() or "新对话"
     if not base_title.endswith("· 分叉"):
         session_definition["title"] = f"{base_title} · 分叉"
-    session_definition["updated_at"] = _now()
-    session_definition["created_at"] = _now()
+    session_now = format_storage_timestamp()
+    session_definition["updated_at"] = session_now
+    session_definition["created_at"] = session_now
     with suppress_auto_checkpoint():
         session_definitions = load_session_definitions()
         session_definitions[target_session_id] = session_definition

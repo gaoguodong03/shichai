@@ -248,7 +248,14 @@ async def test_session_detail_uses_canonical_content(monkeypatch, tmp_path):
     session_id = "s-presentation"
 
     state.save_session_definitions(
-        {session_id: {"title": "展示内容会话", "agent_names": [], "created_at": "t1", "updated_at": "t1"}}
+        {
+            session_id: {
+                "title": "展示内容会话",
+                "agent_names": [],
+                "created_at": "2026062908104800",
+                "updated_at": "2026062908104800",
+            }
+        }
     )
     state.save_group_history(
         session_id,

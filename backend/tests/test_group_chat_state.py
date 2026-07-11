@@ -9,6 +9,9 @@ from app.api import group_chat_state as state
 LEGACY_SCENARIO_NAME = "scenario" + "_name"
 LEGACY_LEADER_AGENT_NAME = "leader_agent" + "_name"
 LEGACY_HOST_CONFIG = "host_" + "config"
+TS1 = "2026062908104800"
+TS2 = "2026062908104900"
+TS3 = "2026062908105000"
 
 
 def _body(content: str) -> dict:
@@ -17,7 +20,7 @@ def _body(content: str) -> dict:
 
 def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    sessions = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": "t", "updated_at": "t"}}
+    sessions = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": TS1, "updated_at": TS1}}
 
     state.save_session_definitions(sessions)
     state.save_group_history(
@@ -38,15 +41,25 @@ def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     assert state.load_group_history("s1")[0]["message"]["content"] == "你好"
 
 
+@pytest.mark.parametrize("field", ["created_at", "updated_at"])
+def test_session_definitions_reject_invalid_storage_timestamps(tmp_path, monkeypatch, field):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    session = {"title": "会话", "created_at": TS1, "updated_at": TS1}
+    session[field] = "2026-05-24T10:00:00+00:00"
+
+    with pytest.raises(ValueError):
+        state.save_session_definitions({"s1": session})
+
+
 def test_session_definitions_read_session_json_only(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_session_definitions({"s1": {"title": "索引标题", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "索引标题", "updated_at": TS1}})
     (tmp_path / "s1" / "meta.json").write_text(
-        '{"title": "旧会话目录标题", "updated_at": "t2"}',
+        f'{{"title": "旧会话目录标题", "updated_at": "{TS2}"}}',
         encoding="utf-8",
     )
     (tmp_path / "s1" / "session.json").write_text(
-        '{"title": "新会话目录标题", "updated_at": "t3"}',
+        f'{{"title": "新会话目录标题", "updated_at": "{TS3}"}}',
         encoding="utf-8",
     )
 
@@ -98,7 +111,7 @@ def test_session_definitions_ignore_legacy_meta_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     (tmp_path / "s1").mkdir(parents=True)
     (tmp_path / "s1" / "meta.json").write_text(
-        '{"title": "旧会话目录标题", "updated_at": "t2"}',
+        f'{{"title": "旧会话目录标题", "updated_at": "{TS2}"}}',
         encoding="utf-8",
     )
 
@@ -538,21 +551,21 @@ def test_frontend_history_message_keeps_canonical_content(tmp_path, monkeypatch)
 
 def test_stale_session_definition_save_preserves_sessions_created_later(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_session_definitions({"long": {"title": "长对话", "updated_at": "t1"}})
+    state.save_session_definitions({"long": {"title": "长对话", "updated_at": TS1}})
 
     stale_snapshot = state.load_session_definitions()
     state.save_session_definitions(
         {
-            "long": {"title": "长对话", "updated_at": "t1"},
-            "new": {"title": "期间新建", "updated_at": "t2"},
+            "long": {"title": "长对话", "updated_at": TS1},
+            "new": {"title": "期间新建", "updated_at": TS2},
         }
     )
 
-    stale_snapshot["long"]["updated_at"] = "t3"
+    stale_snapshot["long"]["updated_at"] = TS3
     state.save_session_definitions(stale_snapshot)
 
     saved = state.load_session_definitions()
-    assert saved["long"]["updated_at"] == "t3"
+    assert saved["long"]["updated_at"] == TS3
     assert saved["new"]["title"] == "期间新建"
 
 
@@ -560,36 +573,36 @@ def test_stale_session_definition_save_does_not_revert_newer_session_updates(tmp
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions(
         {
-            "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
-            "other": {"title": "旧标题", "updated_at": "2026-05-24T10:00:00+00:00"},
+            "long": {"title": "长对话", "updated_at": TS1},
+            "other": {"title": "旧标题", "updated_at": TS1},
         }
     )
 
     stale_snapshot = state.load_session_definitions()
     state.save_session_definitions(
         {
-            "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
-            "other": {"title": "新标题", "updated_at": "2026-05-24T10:01:00+00:00"},
+            "long": {"title": "长对话", "updated_at": TS1},
+            "other": {"title": "新标题", "updated_at": TS2},
         }
     )
 
-    stale_snapshot["long"]["updated_at"] = "2026-05-24T10:02:00+00:00"
+    stale_snapshot["long"]["updated_at"] = TS3
     state.save_session_definitions(stale_snapshot)
 
     saved = state.load_session_definitions()
-    assert saved["long"]["updated_at"] == "2026-05-24T10:02:00+00:00"
+    assert saved["long"]["updated_at"] == TS3
     assert saved["other"]["title"] == "新标题"
 
 
 def test_build_archive_segments_ignores_host_messages():
     messages = [
-        {"speaker": {"type": "user"}, "message_id": "u1", "message": _body("目标"), "created_at": "t1"},
-        {"speaker": {"type": "host", "agent_name": "四九"}, "message_id": "h1", "message": _body("下面请 A"), "created_at": "t1"},
+        {"speaker": {"type": "user"}, "message_id": "u1", "message": _body("目标"), "created_at": TS1},
+        {"speaker": {"type": "host", "agent_name": "四九"}, "message_id": "h1", "message": _body("下面请 A"), "created_at": TS1},
         {
             "speaker": {"type": "expert", "agent_name": "专家A", "skill": "skill-a"},
             "message_id": "a1",
             "message": _body("回答"),
-            "created_at": "t2",
+            "created_at": TS2,
         },
     ]
 
@@ -633,7 +646,7 @@ def test_runtime_clears_stale_stored_run_without_active_task(tmp_path, monkeypat
         "schedule_group_session_event",
         lambda session_id, event_type, payload=None: published.append((session_id, event_type, payload or {})),
     )
-    state.save_session_definitions({"s1": {"title": "运行态会话", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "运行态会话", "updated_at": TS1}})
 
     session_item = {}
     (tmp_path / "s1" / "runtime.json").write_text(
