@@ -227,8 +227,7 @@
 
 <script setup lang="ts">
 import { useGroupChatMessageContext } from './groupChatWorkspaceContext'
-
-type GroupMessage = any
+import type { GroupMessage } from '../../composables/useGroupMessageList'
 
 const {
   groupMessagesRef,

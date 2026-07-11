@@ -25,7 +25,6 @@ export type GroupMessage = {
   created_at?: string
   _streaming?: boolean
   _streamingStatus?: boolean
-  [key: string]: unknown
 }
 
 type GroupMessageDetail = {

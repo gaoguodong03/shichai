@@ -424,6 +424,15 @@ def test_frontend_message_rendering_does_not_read_legacy_debug_tool_trace():
         assert forbidden not in combined
 
 
+def test_frontend_message_component_uses_shared_contract_type():
+    component = read("frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue")
+    message_list = read("frontend/src/features/workspace/composables/useGroupMessageList.ts")
+
+    assert "type GroupMessage = any" not in component
+    assert "import type { GroupMessage }" in component
+    assert "[key: string]: unknown" not in message_list
+
+
 def test_frontend_group_detail_loader_only_accepts_status_ok_data_envelope():
     src = read("frontend/src/features/workspace/composables/useGroupDetailLoader.ts")
     assert "if (Array.isArray(body))" not in src
