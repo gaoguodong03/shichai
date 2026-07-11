@@ -173,6 +173,15 @@ def test_frontend_skill_reference_identity_uses_directory_name_not_display_name(
     assert "{{ s.name || s.directory_name }}" in agent_view
 
 
+def test_frontend_agent_editor_preserves_missing_skill_refs_without_display_name():
+    agent_view = read("frontend/src/features/resources/AgentView.vue")
+
+    assert "skills: normalizeSkillRefs(d.skills || [])" in agent_view
+    assert ".filter((s: { directory_name: string; name: string }) => s.directory_name && s.name)" not in agent_view
+    assert "if (!directoryName || !name) return" in agent_view
+    assert "{{ s.name || s.directory_name }}" in agent_view
+
+
 def test_frontend_resource_imports_do_not_model_legacy_skip_summaries():
     combined = "\n".join(
         read(path)
