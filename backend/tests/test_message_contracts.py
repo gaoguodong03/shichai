@@ -70,6 +70,24 @@ def test_skill_message_content_must_match_skill_result_content():
         ChatMessageRecord.model_validate(payload)
 
 
+def test_skill_result_requires_speaker_skill_directory():
+    payload = {
+        "message_id": "msg-host",
+        "speaker": {"type": "host", "agent_name": "四九"},
+        "message": {"content": "请继续"},
+        "created_at": "2026062908104900",
+        "skill_result": {
+            "execution_status": "succeeded",
+            "content": "请继续",
+            "artifacts": [],
+            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        },
+    }
+
+    with pytest.raises(ValidationError):
+        ChatMessageRecord.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     "path",
     [

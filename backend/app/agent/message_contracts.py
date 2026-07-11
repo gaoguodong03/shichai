@@ -89,6 +89,8 @@ class ChatMessageRecord(StrictContractModel):
             raise ValueError("client_message_id is only valid for user messages")
         if self.skill_result is not None and self.speaker.type == "user":
             raise ValueError("user messages must not include skill_result")
+        if self.skill_result is not None and not self.speaker.skill:
+            raise ValueError("skill_result requires speaker.skill")
         if self.skill_result is not None and self.message.content != self.skill_result.content:
             raise ValueError("message.content must match skill_result.content")
         if (self.message.attachments or self.message.target_agent_name) and self.speaker.type != "user":

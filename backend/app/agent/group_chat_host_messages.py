@@ -21,6 +21,7 @@ def _host_message_base(
     *,
     content: str,
     host_agent_name: str,
+    skill: str = "",
     current_phase: str = "",
     next_speaker: str = "",
     next_action: str = "",
@@ -30,12 +31,16 @@ def _host_message_base(
     if not message_content:
         message_content = HOST_USER_PAUSE_MESSAGE
     speaker: dict[str, Any] = {"type": "host", "agent_name": str(host_agent_name or "四九").strip() or "四九"}
-    return {
+    skill_directory = str(skill or "").strip()
+    row: dict[str, Any] = {
         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
         "speaker": speaker,
         "message": {"content": message_content},
         "created_at": _now_storage_timestamp(),
-        "skill_result": {
+    }
+    if skill_directory:
+        speaker["skill"] = skill_directory
+        row["skill_result"] = {
             "execution_status": "succeeded",
             "content": message_content,
             "artifacts": [],
@@ -43,8 +48,8 @@ def _host_message_base(
                 "agent_turn": "respond",
                 "skill_session": "release",
             },
-        },
-    }
+        }
+    return row
 
 
 def _agent_display_name(agent_name: str, agent_map: Mapping[str, Mapping[str, Any]]) -> str:
@@ -76,7 +81,6 @@ def _build_host_next_speaker_message(
     host_agent_name: str = "",
 ) -> dict[str, Any]:
     """Build the fixed host handoff bubble for an expert turn."""
-    _ = skill
     action = str(next_action or "").strip()
     if str(next_speaker or "").strip().lower() == "end" or str(current_phase or "").strip().lower() == "end":
         return _build_host_pause_message(
@@ -85,11 +89,12 @@ def _build_host_next_speaker_message(
             current_phase=current_phase or "end",
             next_action=action,
             host_agent_name=host_agent_name,
-        ) or _host_message_base(content=HOST_END_MESSAGE, host_agent_name=host_agent_name)
+        ) or _host_message_base(content=HOST_END_MESSAGE, host_agent_name=host_agent_name, skill=skill)
     next_name = _agent_display_name(next_speaker, agent_map)
     return _host_message_base(
         content=f"{HOST_DELEGATE_PREFIX} {next_name} 发言。",
         host_agent_name=host_agent_name,
+        skill=skill,
         current_phase=str(current_phase or ""),
         next_speaker=next_speaker,
         next_action=action,
@@ -105,12 +110,12 @@ def _build_host_pause_message(
     host_agent_name: str = "",
 ) -> dict[str, Any] | None:
     """Build a host pause or completion message for user-visible scheduler output."""
-    _ = skill
     action = str(next_action or "").strip()
     if str(next_speaker or "").strip().lower() == "end" or str(current_phase or "").strip().lower() == "end":
         return _host_message_base(
             content=action or HOST_END_MESSAGE,
             host_agent_name=host_agent_name,
+            skill=skill,
             current_phase=str(current_phase or "end"),
             next_speaker="end",
             next_action=action,
@@ -119,6 +124,7 @@ def _build_host_pause_message(
         return _host_message_base(
             content=action or HOST_USER_PAUSE_MESSAGE,
             host_agent_name=host_agent_name,
+            skill=skill,
             current_phase=str(current_phase or ""),
             next_speaker="user",
             next_action=action,
@@ -134,8 +140,8 @@ def _build_host_recommendation_message(
     host_agent_name: str = "",
 ) -> dict[str, Any]:
     """Build the no-expert host message."""
-    _ = (skill, picked)
-    return _host_message_base(content=content or HOST_ZERO_EXPERT_RECOMMENDATION, host_agent_name=host_agent_name or "四九")
+    _ = picked
+    return _host_message_base(content=content or HOST_ZERO_EXPERT_RECOMMENDATION, host_agent_name=host_agent_name or "四九", skill=skill)
 
 
 def _build_host_notice_message(
@@ -146,5 +152,5 @@ def _build_host_notice_message(
     meta: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a host notice from platform or credential errors."""
-    _ = (skill, meta)
-    return _host_message_base(content=content, host_agent_name=host_agent_name)
+    _ = meta
+    return _host_message_base(content=content, host_agent_name=host_agent_name, skill=skill)

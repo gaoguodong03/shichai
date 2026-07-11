@@ -24,6 +24,7 @@ def test_host_next_speaker_uses_nested_message_contract():
     )
 
     assert _content(msg) == "下面由 文字创作专家 发言。"
+    assert msg["speaker"]["skill"] == "group-host-webnovel"
     assert "content" not in msg
     assert "routing" not in msg
     ChatMessageRecord.model_validate(msg)
@@ -37,6 +38,7 @@ def test_host_recommendation_uses_current_contract_copy():
     )
 
     assert _content(msg) == HOST_ZERO_EXPERT_RECOMMENDATION
+    assert msg["speaker"]["skill"] == "group-host-webnovel"
     ChatMessageRecord.model_validate(msg)
 
 
