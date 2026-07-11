@@ -288,6 +288,37 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
+def test_write_workspace_file_tool_creates_workspace_changed_checkpoint(client, monkeypatch):
+    """工具写入工作区产物后也必须形成 workspace_changed 检查点。"""
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    create_resp = client.post("/api/sessions", json={"title": "工具写入检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        tool = create_write_workspace_file_tool(session_id)
+        out = asyncio.run(tool.ainvoke({"path": "generated.md", "content": "正文"}))
+    finally:
+        reset_current_user_identity(token)
+
+    assert "已写入" in out
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert checkpoints[-1]["trigger"] == "workspace_changed"
+
+
 def test_write_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monkeypatch):
     """工作区写工具按 user_id 隔离用户数据，不能用可变 username。"""
     from app.core.user_context import reset_current_user_identity, set_current_user_identity

@@ -1,5 +1,6 @@
 """写入当前会话工作区文件工具 — 经 OpenSandbox 挂载写入 /workspace。"""
 import json
+import logging
 import re
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,8 @@ from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.agent.workspace_visibility import WorkspacePathError, internal_system_path_error, normalize_public_workspace_path
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
+
+logger = logging.getLogger(__name__)
 
 _DSML_TOOL_CALL_RE = re.compile(r"<｜｜DSML｜｜(?:tool_calls|invoke|parameter)\b")
 _PLAIN_TOOL_CALL_RE = re.compile(
@@ -78,6 +81,15 @@ def _looks_like_model_tool_call_payload(content: str) -> bool:
     return False
 
 
+def _checkpoint_workspace_write(workspace_id: str) -> None:
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(workspace_id, trigger="workspace_changed")
+    except Exception:
+        logger.warning("workspace checkpoint failed after write_workspace_file: %s", workspace_id, exc_info=True)
+
+
 def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
     新建写入当前会话 workspace 文件的工具。
@@ -133,6 +145,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
             )
         except Exception as e:
             return f"错误：写入工作区文件失败 - {e}"
+        _checkpoint_workspace_write(workspace_id)
         return f"已写入当前 Chat 工作区文件：{normalized}"
 
     return ToolSpec.from_function(
