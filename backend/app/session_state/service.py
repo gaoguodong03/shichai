@@ -190,6 +190,40 @@ def _read_json_blob(store, blob_hash: str) -> Any:
     return json.loads(raw) if raw.strip() else {}
 
 
+def _blob_hash_from_tree_path(store, tree_hash: str, rel_path: str) -> str:
+    parts = [part for part in str(rel_path or "").replace("\\", "/").split("/") if part]
+    current_tree_hash = str(tree_hash or "").strip()
+    for index, part in enumerate(parts):
+        tree_obj = read_tree(store, current_tree_hash)
+        entries = tree_obj.get("entries") if isinstance(tree_obj, dict) else []
+        if not isinstance(entries, list):
+            raise FileNotFoundError(rel_path)
+        match = next((entry for entry in entries if isinstance(entry, dict) and entry.get("name") == part), None)
+        if not isinstance(match, dict):
+            raise FileNotFoundError(rel_path)
+        kind = str(match.get("kind") or "").strip()
+        child_hash = str(match.get("hash") or "").strip()
+        if not child_hash:
+            raise FileNotFoundError(rel_path)
+        if index == len(parts) - 1:
+            if kind != "blob":
+                raise FileNotFoundError(rel_path)
+            return child_hash
+        if kind != "tree":
+            raise FileNotFoundError(rel_path)
+        current_tree_hash = child_hash
+    raise FileNotFoundError(rel_path)
+
+
+def read_workspace_text_from_checkpoint(session_id: str, checkpoint_id: str, rel_path: str) -> str:
+    """Read a UTF-8 workspace file from one checkpoint's immutable workspace_tree."""
+    layout = _session_layout(session_id)
+    checkpoint = read_checkpoint(layout, checkpoint_id)
+    store = _object_store(session_id)
+    blob_hash = _blob_hash_from_tree_path(store, str(checkpoint.get("workspace_tree") or ""), rel_path)
+    return read_blob(store, blob_hash).decode("utf-8")
+
+
 @contextmanager
 def suppress_auto_checkpoint():
     token = _AUTO_CHECKPOINT_SUPPRESSED.set(True)

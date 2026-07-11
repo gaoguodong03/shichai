@@ -170,11 +170,12 @@ def _record_user_message_and_refresh_title(
     client_message_id: str,
     attachments: List[Dict[str, Any]] | None = None,
     target_agent_name: str | None = None,
-) -> None:
+) -> str:
     """Append a user message once and schedule title refresh while title is automatic."""
     if not user_message and not attachments and not target_agent_name:
-        return
+        return ""
     session_item = session_definitions[group_session_id]
+    turn_started_checkpoint_id = ""
     duplicate_user_message = bool(
         client_message_id
         and any(
@@ -198,7 +199,9 @@ def _record_user_message_and_refresh_title(
         if client_message_id:
             user_msg["client_message_id"] = client_message_id
         messages.append(user_msg)
-        _save_group_history(group_session_id, messages, checkpoint_trigger="turn_started")
+        checkpoint = _save_group_history(group_session_id, messages, checkpoint_trigger="turn_started")
+        if isinstance(checkpoint, dict):
+            turn_started_checkpoint_id = str(checkpoint.get("checkpoint_id") or "").strip()
         session_item["updated_at"] = format_storage_timestamp()
 
     current_title = (session_item.get("title") or "").strip()
@@ -223,3 +226,4 @@ def _record_user_message_and_refresh_title(
             max_chars=18,
             max_user_messages=6,
         )
+    return turn_started_checkpoint_id

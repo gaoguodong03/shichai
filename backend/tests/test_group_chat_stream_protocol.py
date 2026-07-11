@@ -124,7 +124,7 @@ async def test_chat_stream_registers_run_with_stable_user_id(monkeypatch, tmp_pa
 
     captured = {}
 
-    async def _register_run(_session_id: str, *, user_id: str, task):
+    async def _register_run(_session_id: str, *, user_id: str, task, **_kwargs):
         captured["user_id"] = user_id
         return "run-stable-user"
 

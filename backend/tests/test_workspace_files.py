@@ -616,6 +616,44 @@ def test_read_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monke
     assert captured["user_id"] == "user-stable-read"
 
 
+def test_read_workspace_file_uses_turn_started_checkpoint_during_active_run(client, monkeypatch):
+    """运行中的工作区读取必须使用 turn_started 检查点，而不是 live workspace。"""
+    from app.api.files import get_workspace_root
+    from app.api import group_chat_state as state
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.session_state.service import capture_session_checkpoint
+    from app.tools import read_file as read_file_module
+    from app.tools.read_file import create_read_file_tool
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, workspace_path, rel_path, **_kwargs):
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    create_resp = client.post("/api/sessions", json={"title": "读取检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        ws = get_workspace_root(session_id)
+        target = ws / "input.md"
+        target.write_text("turn-started-version", encoding="utf-8")
+        checkpoint = capture_session_checkpoint(session_id, trigger="turn_started")
+        target.write_text("live-version", encoding="utf-8")
+        state.ACTIVE_GROUP_RUNS[session_id] = {
+            "run_id": "run-read-snapshot",
+            "phase": "executing",
+            "turn_started_checkpoint_id": checkpoint["checkpoint_id"],
+        }
+        tool = create_read_file_tool(session_id)
+        out = asyncio.run(tool.ainvoke({"path": "input.md"}))
+    finally:
+        state.ACTIVE_GROUP_RUNS.pop(session_id, None)
+        reset_current_user_identity(token)
+
+    assert out == "turn-started-version"
+
+
 def test_read_file_missing_path_does_not_search_for_candidates(temp_user_data_root, monkeypatch):
     """read_file 只按调用方给出的工作区相对路径读取；缺失时不再遍历工作区猜路径。"""
     from app.api.files import get_workspace_root

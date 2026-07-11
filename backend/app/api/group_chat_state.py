@@ -391,7 +391,7 @@ def runtime_for_session(group_session_id: str, session_item: Dict[str, Any]) -> 
     return _clean_runtime_state(stored) if isinstance(stored, dict) else {"running": False}
 
 
-async def register_group_run(group_session_id: str, *, user_id: str, task: asyncio.Task[Any]) -> str:
+async def register_group_run(group_session_id: str, *, user_id: str, task: asyncio.Task[Any], turn_started_checkpoint_id: str | None = None) -> str:
     run_id = uuid.uuid4().hex
     started_at = format_storage_timestamp()
     state = {
@@ -402,6 +402,9 @@ async def register_group_run(group_session_id: str, *, user_id: str, task: async
         "phase": "routing",
         "started_at": started_at,
     }
+    checkpoint_id = str(turn_started_checkpoint_id or "").strip()
+    if checkpoint_id:
+        state["turn_started_checkpoint_id"] = checkpoint_id
     async with ACTIVE_GROUP_RUNS_LOCK:
         prev = ACTIVE_GROUP_RUNS.get(group_session_id)
         prev_task = prev.get("task") if isinstance(prev, dict) else None
@@ -548,7 +551,7 @@ def save_group_history(
     messages: List[Dict[str, Any]],
     *,
     checkpoint_trigger: str | None = "turn_started",
-) -> None:
+) -> Dict[str, Any] | None:
     from app.session_state.paths import ensure_session_layout
 
     user_ctx = get_current_user_context(default_fallback=False)
@@ -562,13 +565,15 @@ def save_group_history(
     path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
     if canonical_messages:
         schedule_group_session_event(group_session_id, "message", canonical_messages[-1])
+    checkpoint: Dict[str, Any] | None = None
     try:
         from app.session_state.service import capture_session_checkpoint
 
         if checkpoint_trigger:
-            capture_session_checkpoint(group_session_id, trigger=checkpoint_trigger)
+            checkpoint = capture_session_checkpoint(group_session_id, trigger=checkpoint_trigger)
     except Exception:
         logger.warning("session_state history checkpoint failed: %s", group_session_id, exc_info=True)
+    return checkpoint
 
 
 def cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:

@@ -208,7 +208,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     messages = load_group_history(group_session_id)
     user_text = _request_user_text(request)
-    _record_user_message_and_refresh_title(
+    turn_started_checkpoint_id = _record_user_message_and_refresh_title(
         group_session_id=group_session_id,
         session_definitions=session_definitions,
         messages=messages,
@@ -231,6 +231,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             group_session_id,
             user_id=stream_user,
             task=current_task if current_task is not None else asyncio.create_task(asyncio.sleep(0)),
+            turn_started_checkpoint_id=turn_started_checkpoint_id,
         )
         try:
             async for event in _run_contract_events(
