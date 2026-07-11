@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
 from app.agent.group_chat_expert_turn import run_one_expert_turn
 from app.agent.group_chat_host_messages import _build_host_pause_message, _build_host_recommendation_message
-from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_respond_and_recommend
+from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_respond_and_recommend, _request_skills_loader
 from app.agent.group_chat_request_inputs import request_user_text, validate_attachments
 from app.agent.group_chat_soft_stop import expert_turn_budget_exceeded
 from app.agent.group_chat_streaming import end_event_payload, serialize_sse_event, stream_background_events
@@ -320,6 +320,8 @@ async def _run_contract_events(
             discussion_goal=discussion_goal,
             user_text=user_text,
             next_action=next_action,
+            skills_loader=_request_skills_loader(),
+            llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
         ):
             yield event
         end = SseEndEvent(

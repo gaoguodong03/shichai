@@ -11,8 +11,6 @@ from typing import Any, AsyncIterator, Dict, List
 
 from app.agent.messages import AIMessage, HumanMessage  # type: ignore
 from app.agent.expert_runtime import build_expert_turn_runtime
-from app.agent.group_chat_expert_resolution import _get_llm_for_agent
-from app.agent.group_chat_host_runtime import _request_skills_loader
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_skill_session import apply_skill_result_to_orchestration_state
 from app.agent.group_chat_streaming import iter_with_keepalive, serialize_sse_event
@@ -44,9 +42,19 @@ async def run_one_expert_turn(
     discussion_goal: str,
     user_text: str,
     next_action: str,
+    skills_loader: Any | None = None,
+    llm_resolver: Any | None = None,
 ) -> AsyncIterator[str]:
     """Run one expert and emit route/progress/message events."""
     agent_profile = agent_map[agent_name]
+    if skills_loader is None:
+        from app.agent.group_chat_host_runtime import _request_skills_loader
+
+        skills_loader = _request_skills_loader()
+    if llm_resolver is None:
+        from app.agent.group_chat_expert_resolution import _get_llm_for_agent
+
+        llm_resolver = lambda profile: _get_llm_for_agent(profile, app_settings)
     runtime = await build_expert_turn_runtime(
         agent_profile=agent_profile,
         agent_name=agent_name,
@@ -58,8 +66,8 @@ async def run_one_expert_turn(
         app_settings=app_settings,
         round_user_text=user_text,
         extra_system_prompt="",
-        skills_loader=_request_skills_loader(),
-        llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
+        skills_loader=skills_loader,
+        llm_resolver=llm_resolver,
     )
     if runtime.blocked:
         error = SseErrorEvent(

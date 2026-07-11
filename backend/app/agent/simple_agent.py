@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.messages import AIMessage, BaseMessage
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent_messages import _extract_text_content
 from app.agent.simple_agent_tool_flow import (
     has_successful_workspace_write_output as _has_successful_workspace_write_output,
