@@ -222,6 +222,8 @@ def test_runtime_does_not_pass_removed_tool_stream_prompt_variables():
 
 def test_expert_turn_missing_sections_use_platform_prompt_registry():
     builder_text = (ROOT / "backend/app/agent/group_chat_prompt_builder.py").read_text(encoding="utf-8")
+    runtime_text = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
+    template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
 
     for phrase in [
         "主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）",
@@ -229,11 +231,19 @@ def test_expert_turn_missing_sections_use_platform_prompt_registry():
         "【最近讨论】\\n{recent_context}",
     ]:
         assert phrase not in builder_text
+        assert phrase not in runtime_text
+
+    assert "recent_context" not in builder_text
+    assert "recent_context" not in runtime_text
+    assert "recent_context" not in template_text
+    assert "memory_prompt" in builder_text
+    assert "memory_prompt" in runtime_text
+    assert "{memory_prompt}" in template_text
 
     for prompt_id in [
         "expert.turn.host_instruction_section.v1",
         "expert.turn.user_input_section.v1",
-        "expert.turn.recent_context_section.v1",
+        "expert.turn.memory_prompt_section.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 

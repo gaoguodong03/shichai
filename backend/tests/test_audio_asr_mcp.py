@@ -62,6 +62,9 @@ def test_default_transcription_prompt_lives_in_platform_template_file():
 
     assert "audio_asr.default_transcription.v1" in template_text
     assert "请将这段音频逐字转写为文本。只输出转写内容，不要编造。" not in module_text
+    assert "from app.agent.platform_prompts import render_platform_prompt" in module_text
+    assert "PLATFORM_PROMPT_TEMPLATES_PATH" not in module_text
+    assert "def _platform_prompt_template" not in module_text
 
 
 def test_request_transcription_uses_template_default_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

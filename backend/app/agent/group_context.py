@@ -124,8 +124,8 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
     return context
 
 
-def scheduler_recent_context(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
-    """Host scheduling context: just the recent conversation excerpt."""
+def scheduler_memory_prompt(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
+    """Host scheduling memory prompt: just the recent conversation excerpt."""
     _ = group_session_id
     return messages_to_context(messages)
 

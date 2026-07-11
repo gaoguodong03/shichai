@@ -31,7 +31,7 @@ def build_expert_turn_prompt(
     target_agent_name: str,
     discussion_goal: str,
     user_message: str,
-    recent_context: str,
+    memory_prompt: str,
     app_settings: Mapping[str, Any],
     next_action: Optional[str] = None,
 ) -> PromptBundle:
@@ -43,14 +43,14 @@ def build_expert_turn_prompt(
     """
     task_text = (next_action or "").strip() or DEFAULT_EXPERT_TASK
     current_user_input = (user_message or "").strip() or "（无）"
-    context_text = (recent_context or "").strip() or "（无）"
+    memory_prompt_text = (memory_prompt or "").strip() or "（无）"
 
     if (next_action or "").strip():
         user_content = build_checked_expert_action_prompt(
             session_id,
             target_agent_name,
             (discussion_goal or "").strip(),
-            context_text,
+            memory_prompt_text,
             dict(app_settings or {}),
             host_next_action=task_text,
         ).strip()
@@ -66,8 +66,8 @@ def build_expert_turn_prompt(
             )
         if not _has_any_section(user_content, ("最近讨论", "历史对话（供参考）", "最近几轮讨论内容")):
             user_content += "\n\n" + render_platform_prompt(
-                "expert.turn.recent_context_section.v1",
-                {"recent_context": context_text},
+                "expert.turn.memory_prompt_section.v1",
+                {"memory_prompt": memory_prompt_text},
             )
     else:
         user_content = render_platform_prompt(
@@ -75,7 +75,7 @@ def build_expert_turn_prompt(
             {
                 "discussion_goal": (discussion_goal or "").strip() or DEFAULT_DISCUSSION_GOAL,
                 "current_user_input": current_user_input,
-                "recent_context": context_text,
+                "memory_prompt": memory_prompt_text,
                 "default_task": DEFAULT_EXPERT_TASK,
             },
         )
@@ -83,7 +83,7 @@ def build_expert_turn_prompt(
     debug = {
         "has_next_action": bool((next_action or "").strip()),
         "has_user_message": bool((user_message or "").strip()),
-        "has_recent_context": bool((recent_context or "").strip()),
+        "has_memory_prompt": bool((memory_prompt or "").strip()),
         "user_content_len": len(user_content),
         "task_text_len": len(task_text),
     }

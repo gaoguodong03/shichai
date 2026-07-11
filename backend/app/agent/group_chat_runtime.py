@@ -24,7 +24,7 @@ from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_skill_session import apply_skill_result_to_orchestration_state, skill_result_from_content
 from app.agent.group_chat_streaming import iter_with_keepalive, stream_background_events
-from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_recent_context
+from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_memory_prompt
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_orchestration_fsm import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
@@ -285,7 +285,7 @@ async def _run_contract_events(
     if not agent_names:
         content, picked = await _host_only_respond_and_recommend(
             discussion_goal,
-            scheduler_recent_context(group_session_id, messages),
+            scheduler_memory_prompt(group_session_id, messages),
             available_to_add,
             "",
             group_session_id,
@@ -342,7 +342,7 @@ async def _run_contract_events(
             host_agent,
             agent_profiles,
             discussion_goal,
-            scheduler_recent_context(group_session_id, messages),
+            scheduler_memory_prompt(group_session_id, messages),
             None,
             "",
             available_to_add,
@@ -495,7 +495,7 @@ async def _run_one_expert_turn(
         target_agent_name=agent_name,
         discussion_goal=discussion_goal,
         user_message=user_text,
-        recent_context=messages_to_expert_context(messages),
+        memory_prompt=messages_to_expert_context(messages),
         app_settings=app_settings,
         next_action=next_action,
     )
