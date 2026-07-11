@@ -163,6 +163,56 @@ def test_workspace_upload_and_rename(client):
     assert r.text == "uploaded"
 
 
+def test_workspace_write_operations_create_workspace_changed_checkpoints(client):
+    """工作区显式写操作必须生成 workspace_changed 检查点。"""
+    create_resp = client.post("/api/sessions", json={"title": "工作区检查点"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    def latest_trigger() -> str:
+        resp = client.get(f"/api/sessions/{session_id}/snapshots")
+        assert resp.status_code == 200
+        checkpoints = resp.json()["data"]["checkpoints"]
+        assert checkpoints
+        return checkpoints[-1]["trigger"]
+
+    operations = [
+        lambda: client.post(
+            f"/api/sessions/{session_id}/workspace/files/mkdir",
+            json={"dirname": "notes"},
+        ),
+        lambda: client.post(
+            f"/api/sessions/{session_id}/workspace/files",
+            params={"path": "notes"},
+            json={"filename": "draft.md", "content": "v1"},
+        ),
+        lambda: client.put(
+            f"/api/sessions/{session_id}/workspace/files/content",
+            params={"path": "notes/draft.md"},
+            json={"content": "v2"},
+        ),
+        lambda: client.put(
+            f"/api/sessions/{session_id}/workspace/files/rename",
+            params={"path": "notes/draft.md"},
+            json={"target_path": "notes/final.md"},
+        ),
+        lambda: client.post(
+            f"/api/sessions/{session_id}/workspace/files/upload",
+            params={"path": "notes"},
+            files={"file": ("upload.txt", b"uploaded")},
+        ),
+        lambda: client.delete(
+            f"/api/sessions/{session_id}/workspace/files/content",
+            params={"path": "notes/upload.txt"},
+        ),
+    ]
+
+    for operation in operations:
+        resp = operation()
+        assert resp.status_code == 200
+        assert latest_trigger() == "workspace_changed"
+
+
 def test_workspace_upload_large_file(client):
     """大文件上传应分块落盘并保持内容完整"""
     payload = (b"audio-data-" * 130000) + b"tail"
