@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, SkillResult
+from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, SkillResult, WorkspaceAttachment
 
 
 def test_user_message_record_uses_nested_message_object():
@@ -49,6 +49,22 @@ def test_expert_message_record_uses_current_skill_result_shape():
     assert "attachments" not in dumped["message"]
     assert "target_agent_name" not in dumped["message"]
     assert dumped["skill_result"]["artifacts"][0]["path"] == "outline.md"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/etc/passwd",
+        "C:/Users/admin/secret.txt",
+        "../outside.txt",
+        "docs/../../outside.txt",
+        "memory/facts.md",
+        "execution_logs/tool-execution.jsonl",
+    ],
+)
+def test_workspace_attachment_rejects_non_public_workspace_relative_paths(path):
+    with pytest.raises(ValidationError):
+        WorkspaceAttachment.model_validate({"type": "workspace_file", "path": path, "name": "bad"})
 
 
 @pytest.mark.parametrize(

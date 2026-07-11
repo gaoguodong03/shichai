@@ -14,6 +14,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent.structured_output_contracts import ArtifactRef, SkillNextAction
+from app.agent.workspace_visibility import WorkspacePathError, normalize_public_workspace_path
 
 
 class StrictContractModel(BaseModel):
@@ -39,6 +40,14 @@ class WorkspaceAttachment(StrictContractModel):
     type: Literal["workspace_file"]
     path: str = Field(min_length=1)
     name: str | None = Field(default=None, min_length=1)
+
+    @field_validator("path")
+    @classmethod
+    def _validate_public_workspace_path(cls, value: str) -> str:
+        try:
+            return normalize_public_workspace_path(value)
+        except WorkspacePathError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 class MessageBody(StrictContractModel):
