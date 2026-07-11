@@ -133,6 +133,20 @@ def _json_result(**kwargs: Any) -> str:
     return json.dumps(kwargs, ensure_ascii=False)
 
 
+def _checkpoint_workspace_script_write(workspace_id: str) -> None:
+    """脚本执行完成后为 workspace 当前状态创建 workspace_changed 检查点。"""
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(workspace_id, trigger="workspace_changed")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "skill_script_workspace_checkpoint_failed workspace_id=%s err=%s",
+            workspace_id,
+            exc,
+        )
+
+
 def _validate_skill_script_stdout(stdout: str) -> str | None:
     raw = str(stdout or "").strip()
     if not raw:
@@ -465,6 +479,7 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         stdout = str(out.get("stdout") or "").strip()
         stderr = str(out.get("stderr") or "").strip()
         sandbox_trace = out.get("_sandbox_trace") if isinstance(out.get("_sandbox_trace"), dict) else {}
+        _checkpoint_workspace_script_write(workspace_id)
         if isinstance(exit_code, int) and exit_code != 0:
             result_payload = {
                 "ok": False,

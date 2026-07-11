@@ -33,8 +33,9 @@ class _FakeLLM:
 
 
 class _FakeScriptGateway:
-    def __init__(self):
+    def __init__(self, *, write_workspace_file: bool = False):
         self.calls = []
+        self.write_workspace_file = write_workspace_file
 
     async def execute(self, *, tool_name, tool_kind, payload, context, runner):
         self.calls.append(
@@ -45,6 +46,12 @@ class _FakeScriptGateway:
                 "context": context,
             }
         )
+        if self.write_workspace_file:
+            from pathlib import Path
+
+            workspace_root = Path(str(context.workspace_id))
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            (workspace_root / "script-output.md").write_text("script output", encoding="utf-8")
         return SimpleNamespace(
             ok=True,
             output={
@@ -208,3 +215,63 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
     assert call["tool_name"].startswith("run_skill_script_")
     assert call["context"].user_id == user
     assert call["payload"]["__sandbox_env"]["SKILL_REQUIREMENTS_B64"]
+
+
+def test_skill_script_workspace_write_creates_workspace_changed_checkpoint(_frontend_flow_env, monkeypatch):
+    """脚本工具写入 workspace 后，必须形成可回滚的 workspace_changed 检查点。"""
+    from app.agent import group_chat_runtime as group_chat
+    from app.main import app
+    from app.tools import run_skill_script
+
+    user = _frontend_flow_env
+    fake_gateway = _FakeScriptGateway(write_workspace_file=True)
+    fake_llm = _FakeLLM(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-check-pkg",
+                        "name": "run_skill_script_sandbox-dependency-verify",
+                        "args": {"package": "pendulum"},
+                    }
+                ],
+            ),
+            AIMessage(content="pendulum 版本检查通过。"),
+        ]
+    )
+
+    from app.agent import group_chat_expert_resolution as expert_resolution
+
+    monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: fake_llm)
+    monkeypatch.setattr(expert_resolution, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
+    monkeypatch.setattr(run_skill_script, "_SCRIPT_GATEWAY", fake_gateway)
+
+    client = TestClient(app)
+    headers = {"X-User-Name": user}
+    create_resp = client.post(
+        "/api/sessions",
+        json={
+            "title": "脚本写入检查点",
+            "agent_names": ["沙箱依赖验证专家"],
+        },
+        headers=headers,
+    )
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    chat_resp = client.post(
+        f"/api/sessions/{session_id}/chat",
+        json={
+            "message": "运行脚本检查 pendulum 这个 Python 包版本。",
+            "client_message_id": "script-checkpoint-1",
+            "target_agent_name": "沙箱依赖验证专家",
+        },
+        headers=headers,
+    )
+
+    assert chat_resp.status_code == 200
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots", headers=headers)
+    assert snapshots_resp.status_code == 200
+    triggers = [item["trigger"] for item in snapshots_resp.json()["data"]["checkpoints"]]
+    assert "workspace_changed" in triggers

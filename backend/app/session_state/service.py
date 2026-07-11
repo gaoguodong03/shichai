@@ -237,12 +237,14 @@ def auto_checkpoint_suppressed() -> bool:
     return bool(_AUTO_CHECKPOINT_SUPPRESSED.get())
 
 
-def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapshot") -> Dict[str, Any]:
-    """Capture the current file-backed session state as a checkpoint object."""
-    if auto_checkpoint_suppressed():
-        return {"skipped": True, "trigger": trigger}
-
-    layout = _session_layout(session_id)
+def _build_session_checkpoint(
+    session_id: str,
+    *,
+    trigger: str,
+    checkpoint_id: str | None,
+    parent_checkpoint_id: str | None,
+) -> Dict[str, Any]:
+    """Build a complete checkpoint object without updating the session checkpoint chain."""
     store = _object_store(session_id)
     session_definition = _session_definition_snapshot(session_id)
     history = load_group_history(session_id)
@@ -259,22 +261,10 @@ def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapsh
         workspace_tree=workspace_tree,
         memory_tree=memory_tree,
     )
-
-    chain = load_chain(layout)
-    head = load_head(layout)
-    if head and trigger not in {"manual_snapshot", "rollback"}:
-        try:
-            current = read_checkpoint(layout, head)
-            if str(current.get("state_hash") or "") == state_hash:
-                return {**current, "existing": True}
-        except Exception:
-            pass
-
-    checkpoint_id = f"checkpoint-{uuid.uuid4().hex[:16]}"
     last_message_id = str(history[-1].get("message_id") or "").strip() if history else None
-    checkpoint = {
+    return {
         "checkpoint_id": checkpoint_id,
-        "parent_checkpoint_id": head,
+        "parent_checkpoint_id": parent_checkpoint_id,
         "created_at": _now(),
         "trigger": trigger,
         "session_blob": session_blob,
@@ -285,6 +275,31 @@ def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapsh
         "state_hash": state_hash,
         "last_message_id": last_message_id,
     }
+
+
+def capture_session_checkpoint(session_id: str, *, trigger: str = "manual_snapshot") -> Dict[str, Any]:
+    """Capture the current file-backed session state as a checkpoint object."""
+    if auto_checkpoint_suppressed():
+        return {"skipped": True, "trigger": trigger}
+
+    layout = _session_layout(session_id)
+    chain = load_chain(layout)
+    head = load_head(layout)
+    checkpoint_id = f"checkpoint-{uuid.uuid4().hex[:16]}"
+    checkpoint = _build_session_checkpoint(
+        session_id,
+        trigger=trigger,
+        checkpoint_id=checkpoint_id,
+        parent_checkpoint_id=head,
+    )
+    if head and trigger not in {"manual_snapshot", "rollback"}:
+        try:
+            current = read_checkpoint(layout, head)
+            if str(current.get("state_hash") or "") == str(checkpoint.get("state_hash") or ""):
+                return {**current, "existing": True}
+        except Exception:
+            pass
+
     write_checkpoint(layout, checkpoint_id, checkpoint)
     chain.append(checkpoint_id)
     save_chain(layout, chain)
@@ -455,18 +470,23 @@ def clone_session_from_checkpoint(
     elif normalized_message_id:
         source = _checkpoint_for_message(session_id, message_id=normalized_message_id)
     else:
-        source = capture_session_checkpoint(session_id, trigger="clone")
-        if source.get("skipped"):
-            raise HTTPException(status_code=400, detail="Unable to snapshot source session")
+        layout = _session_layout(session_id)
+        source = _build_session_checkpoint(
+            session_id,
+            trigger="clone",
+            checkpoint_id=None,
+            parent_checkpoint_id=load_head(layout),
+        )
     new_session_id = f"group-{uuid.uuid4().hex[:12]}"
     copied = _copy_session_state(session_id, new_session_id, source)
     cloned_session_definition = load_session_definitions().get(new_session_id) or {}
+    source_checkpoint_id = source.get("checkpoint_id") if isinstance(source.get("checkpoint_id"), str) else None
     return {
         "source_session_id": session_id,
         "session_id": new_session_id,
         "title": str(cloned_session_definition.get("title") or "").strip() or None,
         "checkpoint_id": copied["checkpoint_id"],
-        "source_checkpoint_id": source.get("checkpoint_id"),
+        "source_checkpoint_id": source_checkpoint_id,
     }
 
 

@@ -258,6 +258,43 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     assert checkpoints[0]["trigger"] == "clone"
 
 
+def test_clone_current_state_does_not_append_clone_checkpoint_to_source(client: TestClient):
+    """clone 只在新会话创建 clone 初始检查点，不改写源会话检查点链。"""
+    create_resp = client.post("/api/sessions", json={"title": "克隆当前状态"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = _set_user()
+    try:
+        save_group_history(
+            session_id,
+            [_user_msg("msg-live", "尚未形成检查点的当前消息")],
+            checkpoint_trigger=None,
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    before_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert before_resp.status_code == 200
+    before_ids = [item["checkpoint_id"] for item in before_resp.json()["data"]["checkpoints"]]
+
+    clone_resp = client.post(f"/api/sessions/{session_id}/clone")
+    assert clone_resp.status_code == 200
+    cloned_session_id = clone_resp.json()["data"]["session_id"]
+
+    source_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert source_resp.status_code == 200
+    source_checkpoints = source_resp.json()["data"]["checkpoints"]
+    assert [item["checkpoint_id"] for item in source_checkpoints] == before_ids
+    assert "clone" not in [item["trigger"] for item in source_checkpoints]
+
+    cloned_resp = client.get(f"/api/sessions/{cloned_session_id}/snapshots")
+    assert cloned_resp.status_code == 200
+    cloned_checkpoints = cloned_resp.json()["data"]["checkpoints"]
+    assert len(cloned_checkpoints) == 1
+    assert cloned_checkpoints[0]["trigger"] == "clone"
+
+
 def test_clone_and_rollback_reject_running_session(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "运行中禁止分叉回滚"})
     assert create_resp.status_code == 200
