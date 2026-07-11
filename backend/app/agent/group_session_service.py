@@ -29,6 +29,7 @@ from app.api.group_chat_state import (
     runtime_for_session as _runtime_for_session,
     save_group_history as _save_group_history,
     save_session_definitions as _save_session_definitions,
+    schedule_group_session_event as _schedule_group_session_event,
     write_group_orchestration_state as _write_group_orchestration_state,
 )
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
@@ -344,6 +345,7 @@ async def delete_group_session(group_session_id: str):
             shutil.rmtree(layout.session_root)
         except Exception:
             logger.warning("删除群聊 %s 的会话目录失败，可手动清理。", group_session_id, exc_info=True)
+    _schedule_group_session_event(group_session_id, "deleted")
     return {"status": "ok", "data": {"id": group_session_id, "deleted": True}}
 
 async def stop_group_session_run(group_session_id: str):

@@ -347,6 +347,54 @@ async def test_session_events_publisher_rejects_chat_stream_event_names(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_delete_group_session_publishes_deleted_session_event(monkeypatch, tmp_path):
+    from app.agent import group_session_service
+    from app.api import group_chat_state as state
+    from app.session_state import paths as session_paths
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    async def _cancel_noop(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr(group_session_service, "_cancel_group_session_run", _cancel_noop)
+    monkeypatch.setattr(group_session_service, "get_current_user", lambda: SimpleNamespace(ctx=SimpleNamespace()))
+    monkeypatch.setattr(
+        session_paths.SessionLayoutPaths,
+        "from_user_ctx",
+        staticmethod(lambda _ctx, sid: SimpleNamespace(session_root=tmp_path / sid)),
+    )
+
+    class FakeSandboxService:
+        async def dispose_session(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(
+        "app.agent.sandbox_workspace_access.get_shared_sandbox_service",
+        lambda: FakeSandboxService(),
+    )
+    published: list[tuple[str, str, dict[str, Any]]] = []
+
+    def _record_event(session_id: str, event_type: str, payload: dict[str, Any] | None = None):
+        published.append((session_id, event_type, payload or {}))
+
+    monkeypatch.setattr(group_session_service, "_schedule_group_session_event", _record_event, raising=False)
+    state.save_session_definitions(
+        {
+            "s-delete-events-contract": {
+                "title": "删除事件协议",
+                "agent_names": [],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+
+    await group_session_service.delete_group_session("s-delete-events-contract")
+
+    assert published == [("s-delete-events-contract", "deleted", {})]
+
+
+@pytest.mark.asyncio
 async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
