@@ -29,6 +29,7 @@ ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
+GROUP_SESSION_EVENT_TYPES = {"message", "runtime", "deleted", "error"}
 RUNTIME_PHASES = {phase.value for phase in RuntimePhase}
 STORAGE_TIMESTAMP_RE = re.compile(r"\d{16}")
 
@@ -195,6 +196,9 @@ async def publish_group_session_event(
     event_type: str,
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
+    event_type = str(event_type or "").strip()
+    if event_type not in GROUP_SESSION_EVENT_TYPES:
+        raise ValueError(f"unsupported session event type: {event_type or '<empty>'}")
     event = {"__event_type": event_type}
     if event_type == "message" and payload:
         payload = frontend_history_message(payload)

@@ -336,6 +336,17 @@ async def test_session_events_message_publisher_rejects_legacy_message_fields(mo
 
 
 @pytest.mark.asyncio
+async def test_session_events_publisher_rejects_chat_stream_event_names(monkeypatch, tmp_path):
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    for event_type in ["route", "progress", "end", "session_update", "tool_start", "tool_result"]:
+        with pytest.raises(ValueError):
+            await state.publish_group_session_event("s-events-name-contract", event_type, {"run_id": "run-legacy"})
+
+
+@pytest.mark.asyncio
 async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
