@@ -52,6 +52,30 @@ def test_expert_message_record_uses_current_skill_result_shape():
 
 
 @pytest.mark.parametrize(
+    "created_at",
+    [
+        "2026-06-29T08:10:49Z",
+        "20260629081049",
+        "2026132908104800",
+        "2026023008104800",
+        "2026062924104800",
+        "t",
+        "",
+    ],
+)
+def test_chat_message_record_requires_storage_timestamp_format(created_at):
+    payload = {
+        "message_id": "msg-1",
+        "speaker": {"type": "host", "agent_name": "四九"},
+        "message": {"content": "请继续"},
+        "created_at": created_at,
+    }
+
+    with pytest.raises(ValidationError):
+        ChatMessageRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
     "old_key, value",
     [
         ("role", "assistant"),

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import re
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent.structured_output_contracts import ArtifactRef, SkillNextAction
 
@@ -58,6 +61,18 @@ class ChatMessageRecord(StrictContractModel):
     created_at: str = Field(min_length=1)
     client_message_id: str | None = Field(default=None, min_length=1)
     skill_result: SkillResult | None = None
+
+    @field_validator("created_at")
+    @classmethod
+    def _validate_created_at_format(cls, value: str) -> str:
+        text = str(value or "").strip()
+        if not re.fullmatch(r"\d{16}", text):
+            raise ValueError("created_at must use YYYYMMDDHHmmssSS")
+        try:
+            datetime.strptime(text[:14], "%Y%m%d%H%M%S")
+        except ValueError as exc:
+            raise ValueError("created_at must use YYYYMMDDHHmmssSS") from exc
+        return text
 
     @model_validator(mode="after")
     def _validate_message_shape(self) -> "ChatMessageRecord":
