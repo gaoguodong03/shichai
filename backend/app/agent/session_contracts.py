@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.message_contracts import WorkspaceAttachment
+from app.agent.runtime_status import RuntimePhase
 
 
 class StrictApiModel(BaseModel):
@@ -74,7 +75,7 @@ class SseRouteEvent(StrictApiModel):
 class SseProgressEvent(StrictApiModel):
     type: Literal["progress"] = "progress"
     run_id: str = Field(min_length=1)
-    phase: str = Field(min_length=1)
+    phase: RuntimePhase
     agent_name: str | None = Field(default=None, min_length=1)
     skill: str | None = Field(default=None, min_length=1)
     text: str = ""

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, SessionUpdateRequest
+from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, SessionUpdateRequest, SseProgressEvent
 
 
 @pytest.mark.parametrize(
@@ -78,3 +78,9 @@ def test_group_chat_request_accepts_attachments_and_target_agent():
 def test_session_update_rejects_extra_fields():
     with pytest.raises(ValidationError):
         SessionUpdateRequest.model_validate({"host_snapshot": {"name": "额外主持人"}})
+
+
+@pytest.mark.parametrize("phase", ["running", "agent_running", "message_ready", "正在执行"])
+def test_sse_progress_event_rejects_non_contract_phase(phase):
+    with pytest.raises(ValidationError):
+        SseProgressEvent.model_validate({"type": "progress", "run_id": "run-1", "phase": phase})
