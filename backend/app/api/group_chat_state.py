@@ -91,6 +91,10 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
         }
         if any(row.values()) and next_speaker != "invite":
             out["host_scheduler"] = row
+            continuation = out.get("continuation") if isinstance(out.get("continuation"), dict) else None
+            owner = str((continuation or {}).get("owner_agent_name") or "").strip()
+            if owner and next_speaker and next_speaker != owner:
+                out.pop("continuation", None)
     return out
 
 
