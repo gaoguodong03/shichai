@@ -177,9 +177,41 @@ def test_frontend_agent_editor_preserves_missing_skill_refs_without_display_name
     agent_view = read("frontend/src/features/resources/AgentView.vue")
 
     assert "skills: normalizeSkillRefs(d.skills || [])" in agent_view
+    assert "name: String(s.name || s.directory_name || '').trim()" not in agent_view
+    assert "name: String(s.name || '').trim()" in agent_view
     assert ".filter((s: { directory_name: string; name: string }) => s.directory_name && s.name)" not in agent_view
-    assert "if (!directoryName || !name) return" in agent_view
+    assert "if (!directoryName || !name) return" not in agent_view
+    assert "if (!directoryName) return" in agent_view
     assert "{{ s.name || s.directory_name }}" in agent_view
+
+
+def test_frontend_resource_collections_keep_skills_without_display_name():
+    src = read("frontend/src/features/resources/useResourceCollections.ts")
+
+    assert "name: String(s.name || '').trim()" in src
+    assert ".filter((s: SkillRow) => s.directory_name && s.name)" not in src
+    assert ".filter((s: SkillRow) => s.directory_name)" in src
+
+
+def test_frontend_host_settings_show_missing_skill_directory_reference():
+    src = read("frontend/src/features/settings/AppSettingsView.vue")
+
+    assert "const missingHostSkillRef = computed(() => {" in src
+    assert "return directoryName && !skills.value.some((s) => s.directory_name === directoryName)" in src
+    assert "缺失 Skill：{{ missingHostSkillRef.directory_name }}" in src
+    assert "if (!directoryName || !name) return" not in src
+    assert "if (!directoryName) return" in src
+
+
+def test_frontend_host_settings_keeps_skill_display_name_separate_from_directory_identity():
+    src = read("frontend/src/features/settings/AppSettingsView.vue")
+
+    assert "name: String(s.name || s.directory_name || '')" not in src
+    assert "name: String(s.name || '')" in src
+    assert ")).filter((s) => !!s.directory_name && !!s.name)" not in src
+    assert ")).filter((s) => !!s.directory_name)" in src
+    assert "const name = String(skill.name || directoryName).trim()" not in src
+    assert "const name = String(skill.name || '').trim()" in src
 
 
 def test_frontend_resource_imports_do_not_model_legacy_skip_summaries():

@@ -138,7 +138,7 @@ export function useResourceCollections(args: {
             name: String(s.name || '').trim(),
             description: s.description,
           }))
-          .filter((s: SkillRow) => s.directory_name && s.name)
+          .filter((s: SkillRow) => s.directory_name)
         syncSelectedResourceId({
           active: currentModule.value === 'resource' && resourceSubModule.value === 'skill',
           selectedId,

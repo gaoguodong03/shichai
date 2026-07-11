@@ -94,6 +94,9 @@
               <p v-else-if="hiddenSkillCount > 0" class="text-xs text-muted">
                 已显示 {{ visibleSkills.length }} / {{ filteredSkills.length }} 个 Skill，可搜索更多。
               </p>
+              <p v-if="missingHostSkillRef" class="mt-2 text-xs text-red-600">
+                缺失 Skill：{{ missingHostSkillRef.directory_name }}
+              </p>
               <p v-else-if="!skills.length" class="text-xs text-muted">
                 当前技能库为空，请先到左侧“技能”中新建或导入 Skill。
               </p>
@@ -183,6 +186,13 @@ const missingHostLlmName = computed(() => {
   const name = String(form.value.llm_name || '').trim()
   return name && !llmProviders.value[name] ? name : ''
 })
+const missingHostSkillRef = computed(() => {
+  const directoryName = String(form.value.skill_directory || '').trim()
+  if (!directoryName) return null
+  return directoryName && !skills.value.some((s) => s.directory_name === directoryName)
+    ? { name: form.value.skill_name || directoryName, directory_name: directoryName }
+    : null
+})
 
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
@@ -197,7 +207,7 @@ function applyHostData(d: Record<string, unknown>) {
 function toggleSkill(skill: { name: string; directory_name: string }) {
   const directoryName = String(skill.directory_name || '').trim()
   const name = String(skill.name || '').trim()
-  if (!directoryName || !name) return
+  if (!directoryName) return
   if (form.value.skill_directory === directoryName) {
     form.value.skill_name = ''
     form.value.skill_directory = ''
@@ -215,9 +225,9 @@ async function loadSkills() {
     if (j?.status === 'ok' && Array.isArray(j?.data?.skills)) {
       skills.value = (j.data.skills as Array<Record<string, unknown>>).map((s) => ({
         directory_name: String(s.directory_name || ''),
-        name: String(s.name || s.directory_name || ''),
+        name: String(s.name || ''),
         description: String(s.description || ''),
-      })).filter((s) => !!s.directory_name && !!s.name)
+      })).filter((s) => !!s.directory_name)
     } else {
       skills.value = []
     }

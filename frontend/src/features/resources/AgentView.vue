@@ -89,7 +89,7 @@
                   : 'bg-card text-muted border-border-light hover:bg-list-hover'"
                 @click="toggleSkill(s)"
               >
-                {{ s.name }}
+                {{ s.name || s.directory_name }}
               </button>
             </div>
             <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
@@ -205,7 +205,7 @@ async function fetchSkills() {
       .map((s: any) => ({
         ...s,
         directory_name: String(s.directory_name || '').trim(),
-        name: String(s.name || s.directory_name || '').trim(),
+        name: String(s.name || '').trim(),
       }))
       .filter((s: { directory_name: string; name: string }) => s.directory_name)
   }
@@ -266,7 +266,7 @@ function normalizeSkillRefs(raw: SkillRef[]): SkillRef[] {
 function toggleSkill(skill: { name: string; directory_name: string }) {
   const directoryName = String(skill.directory_name || '').trim()
   const name = String(skill.name || '').trim()
-  if (!directoryName || !name) return
+  if (!directoryName) return
   const current = normalizeSkillRefs(form.value.skills)
   if (current.some((x) => x.directory_name === directoryName)) {
     form.value.skills = current.filter((x) => x.directory_name !== directoryName)
