@@ -507,6 +507,7 @@ def test_code_and_tests_do_not_carry_legacy_secret_contract_literals():
         "settings/" + "secrets.enc.json",
         "${" + "vault:",
         "settings_" + "secrets.py",
+        "set" + "Vault",
     ]
     roots = [
         PROJECT_ROOT / "backend" / "app",

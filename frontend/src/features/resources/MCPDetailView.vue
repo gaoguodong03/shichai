@@ -138,7 +138,7 @@
           <div v-for="row in envRows" :key="row.id" class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-2 items-center">
             <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="MINIMAX_API_KEY" />
             <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="${env:MINIMAX_API_KEY}" />
-            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
+            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setEnvValue(row, $event)">
               <option value="">填入变量</option>
               <option v-for="s in envVarItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
             </select>
@@ -154,7 +154,7 @@
           <div v-for="row in headerRows" :key="row.id" class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-2 items-center">
             <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Authorization" />
             <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Bearer ${env:API_TOKEN}" />
-            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
+            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setEnvValue(row, $event)">
               <option value="">填入变量</option>
               <option v-for="s in envVarItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
             </select>
@@ -293,7 +293,7 @@ function removeHeaderRow(id: number) {
   headerRows.value = headerRows.value.filter((row) => row.id !== id)
 }
 
-function setVaultValue(row: KeyValueRow, event: Event) {
+function setEnvValue(row: KeyValueRow, event: Event) {
   const select = event.target as HTMLSelectElement
   const id = select.value.trim()
   if (id) row.value = '${env:' + id + '}'
