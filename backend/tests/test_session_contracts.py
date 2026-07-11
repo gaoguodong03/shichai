@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, SessionUpdateRequest, SseProgressEvent
+from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, SessionUpdateRequest, SseEndEvent, SseProgressEvent
 
 
 @pytest.mark.parametrize(
@@ -84,3 +84,17 @@ def test_session_update_rejects_extra_fields():
 def test_sse_progress_event_rejects_non_contract_phase(phase):
     with pytest.raises(ValidationError):
         SseProgressEvent.model_validate({"type": "progress", "run_id": "run-1", "phase": phase})
+
+
+def test_sse_end_event_dedupes_suggested_add_agent_names():
+    parsed = SseEndEvent.model_validate(
+        {
+            "type": "end",
+            "run_id": "run-1",
+            "phase": "recruiting",
+            "waiting_for_user": True,
+            "suggested_add_agent_names": [" 写作专家 ", "", "写作专家", "检索专家"],
+        }
+    )
+
+    assert parsed.suggested_add_agent_names == ["写作专家", "检索专家"]

@@ -89,6 +89,11 @@ class SseEndEvent(StrictApiModel):
     suggested_next_speaker: str | None = Field(default=None, min_length=1)
     suggested_add_agent_names: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _dedupe_suggested_add_agent_names(self) -> "SseEndEvent":
+        self.suggested_add_agent_names = _dedupe_names(self.suggested_add_agent_names)
+        return self
+
 
 class SseErrorEvent(StrictApiModel):
     type: Literal["error"] = "error"
