@@ -545,9 +545,10 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         return _json_result(**result_payload)
 
     manifest = _load_manifest(script_root)
+    script_path = str(manifest.get("entry") or "").strip()
     tool_description = str(manifest.get("description") or "执行当前 Skill 的标准脚本。").strip()
 
-    return ToolSpec.from_function(
+    tool = ToolSpec.from_function(
         name="run_skill_script",
         description=(
             f"{tool_description}"
@@ -556,3 +557,11 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         coroutine=run_skill_script,
         args_schema=_input_schema_from_manifest(manifest),
     )
+    tool.metadata.update(
+        {
+            "source": "script",
+            "provider": directory_name,
+            "provider_tool": script_path,
+        }
+    )
+    return tool

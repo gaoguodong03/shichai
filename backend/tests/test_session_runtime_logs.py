@@ -76,7 +76,14 @@ def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, mo
         skill="report-writer",
         tool_results=[
             {
-                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script", "arguments": {}},
+                "tool_call": {
+                    "id": "call-1",
+                    "name": "run_skill_script",
+                    "kind": "script",
+                    "provider": "report-writer",
+                    "provider_tool": "scripts/build.py",
+                    "arguments": {},
+                },
                 "execution_status": "succeeded",
                 "message": "脚本完成",
                 "output": {
@@ -96,6 +103,8 @@ def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, mo
 
     rows = load_tool_execution_logs("s1")
 
+    assert rows[0]["tool_call"]["provider"] == "report-writer"
+    assert rows[0]["tool_call"]["provider_tool"] == "scripts/build.py"
     assert rows[0]["artifacts"] == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
 
 

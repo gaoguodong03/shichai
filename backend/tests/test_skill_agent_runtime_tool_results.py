@@ -38,6 +38,30 @@ def test_script_nonzero_result_becomes_failed_tool_result():
     assert result["output"]["stdout"] == "partial stdout"
 
 
+def test_script_tool_result_uses_skill_directory_and_manifest_entry_identity():
+    tool = SimpleNamespace(
+        name="run_skill_script_report-writer",
+        metadata={
+            "source": "script",
+            "provider": "report-writer",
+            "provider_tool": "scripts/build.py",
+        },
+    )
+
+    result = _tool_result_record_from_raw(
+        tool_name=tool.name,
+        tool=tool,
+        arguments={"topic": "合同"},
+        tool_call_id="call-script",
+        raw_result=json.dumps({"ok": True, "stdout": "{}", "stderr": "", "returncode": 0}, ensure_ascii=False),
+    )
+
+    assert result["tool_call"]["kind"] == "script"
+    assert result["tool_call"]["provider"] == "report-writer"
+    assert result["tool_call"]["provider_tool"] == "scripts/build.py"
+    assert result["tool_call"]["name"] == "scripts/build.py"
+
+
 def test_mcp_tool_result_keeps_provider_identity_without_wrapper_name():
     result = _tool_result_record_from_raw(
         tool_name="mcp_Linkup_linkup-fetch_3270ad4e",

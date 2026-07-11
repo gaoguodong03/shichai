@@ -499,6 +499,9 @@ def test_run_skill_script_tool_schema_comes_from_manifest_args(monkeypatch, tmp_
         reset_current_user_identity(token)
 
     assert "抓取公开网页" in tool.description
+    assert tool.metadata["source"] == "script"
+    assert tool.metadata["provider"] == "webv10"
+    assert tool.metadata["provider_tool"] == "crawl_and_store.py"
     props = tool.args_schema["properties"]
     assert "script_path" not in props
     assert "cli_args" not in props
