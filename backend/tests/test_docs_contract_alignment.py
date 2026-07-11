@@ -444,7 +444,6 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
 
     for name in [
         "def iter_run_skill_raw_output_payloads",
-        "def run_skill_outputs_request_agent_turn_continue",
         "def remember_successful_workspace_writes",
         "def all_workspace_write_calls_already_succeeded",
         "def post_tool_synthesis_should_use_bound_client",
@@ -455,6 +454,7 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
     for old_private_definition in [
         "def _iter_run_skill_raw_output_payloads",
         "def _run_skill_outputs_request_agent_turn_continue",
+        "def run_skill_outputs_request_agent_turn_continue",
         "def _remember_successful_workspace_writes",
         "def _all_workspace_write_calls_already_succeeded",
         "def _post_tool_synthesis_should_use_bound_client",

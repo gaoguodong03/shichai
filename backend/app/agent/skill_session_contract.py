@@ -12,13 +12,25 @@ from app.agent.platform_prompts import render_platform_prompt
 
 
 class SkillNextActionDict(TypedDict):
-    agent_turn: Literal["respond", "continue"]
-    skill_session: Literal["keep", "release"]
+    handoff: Literal["user", "host", "end"]
+    resume: Literal["same_skill", "same_agent", "host", "none"]
+    reason: Literal[
+        "stage_gate",
+        "missing_input",
+        "user_confirmation",
+        "stage_completed",
+        "final_delivery",
+        "failure",
+        "protocol_error",
+    ]
+    instruction: str
 
 
 DEFAULT_SKILL_NEXT_ACTION: SkillNextActionDict = {
-    "agent_turn": "respond",
-    "skill_session": "release",
+    "handoff": "host",
+    "resume": "none",
+    "reason": "stage_completed",
+    "instruction": "本轮专家回复已完成，请主持人判断下一步。",
 }
 
 

@@ -44,4 +44,5 @@ class ToolResultRecord(StrictTraceModel):
     execution_status: Literal["succeeded", "blocked", "failed"]
     message: str
     output: ToolOutput = Field(default_factory=ToolOutput)
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
     error_log: ToolErrorLog | None = None

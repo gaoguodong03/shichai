@@ -219,10 +219,8 @@ export function useWorkspaceContentProviders(args: {
     copyAgentMessageToClipboard,
     isMessageCopied,
     deleteGroupMessage,
-    forkMessageState,
-    rollbackMessageState,
-    canMessageStateAction,
-    messageStateActionBusy,
+    messageExecutionLogs, messageExecutionLogRows, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
+    forkMessageState, rollbackMessageState, canMessageStateAction, messageStateActionBusy,
     scrollGroupToBottom,
     scrollLatestAssistantRowToLowerMiddle,
     scrollGroupAssistantMessageIntoView,
@@ -557,10 +555,8 @@ export function useWorkspaceContentProviders(args: {
     copyAgentMessageToClipboard,
     isMessageCopied,
     saveAgentMessageToFile,
-    forkMessageState,
-    rollbackMessageState,
-    canMessageStateAction,
-    messageStateActionBusy,
+    messageExecutionLogs, messageExecutionLogRows, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
+    forkMessageState, rollbackMessageState, canMessageStateAction, messageStateActionBusy,
   })
 
   provideGroupChatComposerContext({

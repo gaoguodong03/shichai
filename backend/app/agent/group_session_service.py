@@ -150,7 +150,11 @@ async def get_group_session(group_session_id: str):
     if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
     session_item = session_definitions[group_session_id]
-    messages = _load_group_history(group_session_id)
+    try:
+        messages = _load_group_history(group_session_id)
+    except ValueError as exc:
+        logger.warning("session history contract violation session=%s error=%s", group_session_id, exc)
+        raise HTTPException(status_code=422, detail=f"session history violates ChatMessageRecord: {exc}") from exc
     instances = load_agent_instances()
     enriched_instances = await enrich_agent_instances(instances, workspace_id=group_session_id)
     agent_map_raw = _agent_name_map(enriched_instances)

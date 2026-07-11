@@ -34,6 +34,28 @@ interface ChatOnceResponseData {
   error?: Record<string, unknown> | null
 }
 
+export interface MessageExecutionLogSummary {
+  log_id?: string
+  created_at?: string
+  source?: string
+  agent_name?: string
+  skill?: string
+  tool_name?: string
+  provider?: string
+  provider_tool?: string
+  argument_summary?: string
+  output_summary?: string
+  artifact_paths?: string[]
+  status?: 'succeeded' | 'blocked' | 'failed' | string
+  duration_ms?: number
+  detail_available?: boolean
+}
+
+interface MessageExecutionLogsResponseData {
+  message_id: string
+  logs: MessageExecutionLogSummary[]
+}
+
 function chatRequestBody(payload: ChatStreamRequestPayload) {
   const body: {
     message: string
@@ -150,4 +172,13 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
     method: 'POST',
     body: JSON.stringify(chatRequestBody(payload)),
   })
+}
+
+export async function fetchMessageExecutionLogs(
+  sessionId: string,
+  rawMessageId: string,
+): Promise<ApiResult<MessageExecutionLogsResponseData>> {
+  const id = encodeURIComponent(sessionId || 'default')
+  const messageId = encodeURIComponent(rawMessageId || '')
+  return apiFetch(`/sessions/${id}/messages/${messageId}/execution-logs`)
 }

@@ -1108,6 +1108,82 @@
   line-height: 1;
   white-space: nowrap;
 }
+.group-chat-action-terminal:hover {
+  color: var(--color-accent-text, #2563eb);
+}
+.group-chat-execution-log-panel {
+  align-self: flex-start;
+  width: min(520px, 100%);
+  margin-top: 0.25rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+.group-chat-execution-log-empty {
+  padding: 0.55rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.group-chat-execution-log-list {
+  display: flex;
+  flex-direction: column;
+}
+.group-chat-execution-log-item + .group-chat-execution-log-item {
+  border-top: 1px solid var(--color-border-light);
+}
+.group-chat-execution-log-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+.group-chat-execution-log-summary:hover {
+  background: var(--color-list-hover);
+}
+.group-chat-execution-log-tool {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.group-chat-execution-log-status,
+.group-chat-execution-log-source {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.group-chat-execution-log-detail {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.7rem;
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-list-hover);
+}
+.group-chat-execution-log-detail div {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.45rem;
+  font-size: 0.76rem;
+}
+.group-chat-execution-log-detail span {
+  color: var(--color-text-muted);
+}
+.group-chat-execution-log-detail p {
+  margin: 0;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .group-chat-save-file-btn {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;

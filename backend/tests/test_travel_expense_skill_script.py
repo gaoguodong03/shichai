@@ -39,7 +39,8 @@ def test_travel_expense_script_runs_without_pandas_for_single_city():
     assert payload["execution_status"] == "succeeded"
     assert "result_code" not in payload
     assert "message" not in payload
-    assert payload["next_action"]["skill_session"] == "keep"
+    assert payload["next_action"]["handoff"] == "user"
+    assert payload["next_action"]["resume"] == "same_skill"
     assert payload["artifacts"] == []
     assert "江苏南京市（常规时段）住宿费标准" in payload["content"]
     assert "其他人员380元/人·天" in payload["content"]
@@ -49,7 +50,8 @@ def test_travel_expense_script_does_not_treat_person_type_as_other_region():
     payload = _run_script("--query", "北京上海广州深圳其他人员住宿标准")
 
     assert payload["execution_status"] == "succeeded"
-    assert payload["next_action"]["skill_session"] == "keep"
+    assert payload["next_action"]["handoff"] == "user"
+    assert payload["next_action"]["resume"] == "same_skill"
     assert payload["artifacts"] == []
     assert "北京全市（常规时段）其他人员住宿费上限为500元/人·天" in payload["content"]
     assert "上海全市（常规时段）其他人员住宿费上限为500元/人·天" in payload["content"]
@@ -66,4 +68,5 @@ def test_travel_expense_script_handles_missing_place_as_keep():
     assert "message" not in payload
     assert "content" in payload
     assert payload["artifacts"] == []
-    assert payload["next_action"]["skill_session"] == "keep"
+    assert payload["next_action"]["handoff"] == "user"
+    assert payload["next_action"]["resume"] == "same_skill"

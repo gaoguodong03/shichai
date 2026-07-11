@@ -45,8 +45,10 @@ def _host_message_base(
             "content": message_content,
             "artifacts": [],
             "next_action": {
-                "agent_turn": "respond",
-                "skill_session": "release",
+                "handoff": "host",
+                "resume": "none",
+                "reason": "stage_completed",
+                "instruction": message_content,
             },
         }
     return row

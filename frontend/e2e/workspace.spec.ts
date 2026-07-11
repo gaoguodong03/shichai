@@ -225,7 +225,12 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
             { type: 'file', name: 'one.md', path: 'one.md' },
             { type: 'file', name: 'two.md', path: 'two.md' },
           ],
-          next_action: { agent_turn: 'respond', skill_session: 'release' },
+          next_action: {
+            handoff: 'host',
+            resume: 'none',
+            reason: 'stage_completed',
+            instruction: '产物已经写入工作区。',
+          },
         },
       },
     ]
@@ -237,8 +242,34 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('heading', { name: '已有验收会话' }).click()
 
     const row = page.locator('[data-message-id="assistant-artifacts"]')
-    await expect(row.getByRole('button', { name: 'artifact: file' })).toHaveCount(2)
+    await expect(row.getByRole('button', { name: /artifact:/ })).toHaveCount(0)
+    await row.getByRole('button', { name: '查看工具日志' }).click()
+    await expect(row.locator('.group-chat-execution-log-panel')).toContainText('write_workspace_file')
+    await row.locator('.group-chat-execution-log-summary').click()
+    await expect(row.locator('.group-chat-execution-log-detail')).toContainText('demo.md')
     await expect(row.getByText('产物已经写入工作区。')).toBeVisible()
+  })
+
+  test('主持人消息也通过右侧终端入口展示调度日志', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].messages = [
+      {
+        message_id: 'host-log-message',
+        speaker: { type: 'host', agent_name: '四九', skill: 'group-host' },
+        message: { content: '下面由 文档合著专家 发言。' },
+        created_at: '2026052310000000',
+      },
+    ]
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+
+    const row = page.locator('[data-message-id="host-log-message"]')
+    await row.getByRole('button', { name: '查看工具日志' }).click()
+    await expect(row.locator('.group-chat-execution-log-panel')).toContainText('write_workspace_file')
   })
 
   test('mock 后端按 target_agent_name 路由到用户选择的专家', async ({ page }) => {

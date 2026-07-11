@@ -1,19 +1,23 @@
-"""群聊记忆存储：维护专家回合提炼出的 facts.md，并构建主持人派发上下文。"""
+"""群聊记忆存储：维护 session 级 memory/facts.md，并构建主持人派发上下文。"""
 from __future__ import annotations
 
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.api.files import get_workspace_root_path
+from app.core.security import get_current_user
+from app.session_state.paths import ensure_session_layout
 
 
-def _workspace_root(session_id: str, workspace_root: Optional[Path] = None) -> Path:
-    return workspace_root.resolve() if workspace_root else get_workspace_root_path(session_id)
+def _session_root(session_id: str, workspace_root: Optional[Path] = None) -> Path:
+    if workspace_root:
+        root = workspace_root.resolve()
+        return root.parent if root.name == "workspace" else root
+    return ensure_session_layout(get_current_user().ctx, session_id).session_root
 
 
 def _memory_root(session_id: str, workspace_root: Optional[Path] = None) -> Path:
-    root = _workspace_root(session_id, workspace_root=workspace_root)
+    root = _session_root(session_id, workspace_root=workspace_root)
     mem = root / "memory"
     mem.mkdir(parents=True, exist_ok=True)
     return mem

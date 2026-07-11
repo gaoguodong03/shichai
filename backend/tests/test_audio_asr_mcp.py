@@ -109,4 +109,9 @@ def test_transcribe_audio_file_returns_current_stdout_shape_for_errors():
     assert "message" not in result
     assert "content" in result
     assert result["artifacts"] == []
-    assert result["next_action"] == {"agent_turn": "respond", "skill_session": "release"}
+    assert result["next_action"] == {
+        "handoff": "host",
+        "resume": "none",
+        "reason": "stage_completed",
+        "instruction": result["content"],
+    }

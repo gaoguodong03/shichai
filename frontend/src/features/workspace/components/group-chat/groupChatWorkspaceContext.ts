@@ -50,6 +50,16 @@ export interface GroupChatMessageContext {
   copyAgentMessageToClipboard: ContextValue
   isMessageCopied: ContextValue
   saveAgentMessageToFile: ContextValue
+  messageExecutionLogs: ContextValue
+  messageExecutionLogRows: ContextValue
+  canShowMessageExecutionLogs: ContextValue
+  isMessageExecutionLogsLoading: ContextValue
+  isMessageExecutionLogsOpen: ContextValue
+  expandedExecutionLogKey: ContextValue
+  executionLogKey: ContextValue
+  toggleExecutionLogDetail: ContextValue
+  isExecutionLogDetailOpen: ContextValue
+  toggleMessageExecutionLogs: ContextValue
   forkMessageState: ContextValue
   rollbackMessageState: ContextValue
   canMessageStateAction: ContextValue

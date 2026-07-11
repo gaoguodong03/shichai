@@ -36,6 +36,28 @@ class _ScriptJsonTool:
         return self._raw_result
 
 
+def _v2_stdout_payload(
+    *,
+    execution_status="succeeded",
+    instruction="处理完成。",
+    artifacts=None,
+    handoff="host",
+    resume="none",
+    reason="stage_completed",
+):
+    return {
+        "schema_version": "expert_final_state.v2",
+        "execution_status": execution_status,
+        "artifacts": artifacts or [],
+        "next_action": {
+            "handoff": handoff,
+            "resume": resume,
+            "reason": reason,
+            "instruction": instruction,
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_skill_tool_rejects_generic_run_skill_script_alias():
     tool = _DummyTool("run_skill_script_app-icon-generator")
@@ -113,12 +135,13 @@ async def test_skill_tool_exec_supports_async_only_tool():
 
 @pytest.mark.asyncio
 async def test_skill_script_tool_message_exposes_only_standard_stdout_summary():
-    stdout_payload = {
-        "execution_status": "succeeded",
-        "content": "请继续写入报告。",
-        "artifacts": [{"type": "file", "name": "报告", "path": "outputs/report.md"}],
-        "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-    }
+    stdout_payload = _v2_stdout_payload(
+        instruction="请继续写入报告。",
+        artifacts=[{"type": "file", "name": "报告", "path": "outputs/report.md"}],
+        handoff="user",
+        resume="same_skill",
+        reason="stage_gate",
+    )
     raw_result = json.dumps(
         {
             "ok": True,
@@ -154,7 +177,8 @@ async def test_skill_script_tool_message_exposes_only_standard_stdout_summary():
 
     assert "请继续写入报告。" in text
     assert "outputs/report.md" in text
-    assert "agent_turn" in text
+    assert "handoff" in text
+    assert "agent_turn" not in text
     assert '"stdout"' not in text
     assert '"stderr"' not in text
     assert "returncode" not in text
@@ -165,12 +189,11 @@ async def test_skill_script_tool_message_exposes_only_standard_stdout_summary():
 
 @pytest.mark.asyncio
 async def test_failed_standard_skill_script_stdout_is_not_cached():
-    stdout_payload = {
-        "execution_status": "failed",
-        "content": "脚本参数无效，请修正后重试。",
-        "artifacts": [],
-        "next_action": {"agent_turn": "respond", "skill_session": "release"},
-    }
+    stdout_payload = _v2_stdout_payload(
+        execution_status="failed",
+        instruction="脚本参数无效，请修正后重试。",
+        reason="failure",
+    )
     raw_result = json.dumps(
         {
             "ok": True,

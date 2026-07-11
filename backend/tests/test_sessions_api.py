@@ -97,6 +97,91 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     assert get_after_delete.status_code == 404
 
 
+def test_get_session_reports_invalid_history_without_rewriting(client: TestClient):
+    from app.core.user_context import get_current_user_context
+
+    create_resp = client.post("/api/sessions", json={"title": "旧历史错误会话"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    ctx = get_current_user_context()
+    assert ctx is not None
+    history_path = ctx.sessions_dir / session_id / "history.json"
+    history_path.write_text(
+        json.dumps(
+            [
+                {
+                    "message_id": "msg-legacy",
+                    "role": "user",
+                    "content": "旧顶层正文",
+                    "timestamp": "2026-06-30T07:43:34.035353+00:00",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    original = history_path.read_text(encoding="utf-8")
+
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+
+    assert detail_resp.status_code == 422
+    assert "history message violates ChatMessageRecord" in detail_resp.json()["detail"]
+    assert history_path.read_text(encoding="utf-8") == original
+
+
+def test_get_message_execution_logs_returns_folded_summaries(client: TestClient):
+    from app.agent.session_runtime_logs import append_tool_execution_logs
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    create_resp = client.post("/api/sessions", json={"title": "日志会话"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    long_content = "正文" * 300
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        append_tool_execution_logs(
+            session_id,
+            message_id="msg-expert-1",
+            agent_name="文档合著专家",
+            skill="document-coauthor",
+            tool_results=[
+                {
+                    "tool_call": {
+                        "id": "call-1",
+                        "name": "write_workspace_file",
+                        "kind": "workspace",
+                        "provider": "workspace",
+                        "provider_tool": "write_workspace_file",
+                        "arguments": {"path": "drafts/outline.md", "content": long_content},
+                    },
+                    "execution_status": "succeeded",
+                    "output": {"text": "已写入 drafts/outline.md", "json_data": {}, "stdout": long_content, "stderr": ""},
+                    "artifacts": [{"type": "file", "name": "大纲", "path": "drafts/outline.md"}],
+                }
+            ],
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    resp = client.get(f"/api/sessions/{session_id}/messages/msg-expert-1/execution-logs")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    data = body["data"]
+    assert data["message_id"] == "msg-expert-1"
+    assert len(data["logs"]) == 1
+    row = data["logs"][0]
+    assert row["tool_name"] == "write_workspace_file"
+    assert row["source"] == "workspace"
+    assert row["status"] == "succeeded"
+    assert row["argument_summary"] == "path=drafts/outline.md; content=<600 chars>"
+    assert row["output_summary"] == "已写入 drafts/outline.md"
+    assert row["artifact_paths"] == ["drafts/outline.md"]
+    assert row["detail_available"] is True
+    assert long_content not in json.dumps(row, ensure_ascii=False)
+
+
 def test_session_definition_mutations_use_contract_checkpoint_trigger(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "检查点触发源"})
     assert create_resp.status_code == 200

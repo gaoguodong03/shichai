@@ -58,10 +58,15 @@ class _FakeScriptGateway:
                 "exit_code": 0,
                 "stdout": json.dumps(
                     {
+                        "schema_version": "expert_final_state.v2",
                         "execution_status": "succeeded",
-                        "content": "pendulum==3.0.0",
                         "artifacts": [],
-                        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                        "next_action": {
+                            "handoff": "host",
+                            "resume": "none",
+                            "reason": "stage_completed",
+                            "instruction": "pendulum==3.0.0",
+                        },
                     },
                     ensure_ascii=False,
                 ),
@@ -120,10 +125,15 @@ parser.add_argument('--package', required=True)
 args = parser.parse_args()
 import json
 print(json.dumps({
+    "schema_version": "expert_final_state.v2",
     "execution_status": "succeeded",
-    "content": f"{args.package}==3.0.0",
     "artifacts": [],
-    "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    "next_action": {
+        "handoff": "host",
+        "resume": "none",
+        "reason": "stage_completed",
+        "instruction": f"{args.package}==3.0.0",
+    },
 }, ensure_ascii=False))
 """,
         encoding="utf-8",
@@ -205,7 +215,7 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
     assert data["route"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["skill"] == "sandbox-dependency-verify"
-    assert assistant_msg["message"]["content"] == "pendulum==3.0.0"
+    assert assistant_msg["message"]["content"] == "pendulum 版本检查通过。"
     assert fake_gateway.calls
 
     call = fake_gateway.calls[0]

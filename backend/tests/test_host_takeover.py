@@ -71,7 +71,7 @@ def test_host_snapshot_runtime_shape_does_not_emit_legacy_skills_list():
 
 
 @pytest.mark.asyncio
-async def test_continuation_routes_directly_without_host_decision(monkeypatch, tmp_path):
+async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
@@ -87,8 +87,13 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
         },
     )
 
-    async def _host_should_not_run(*_args, **_kwargs):
-        raise AssertionError("continuation must bypass host scheduler")
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "等待确认",
+            "next_speaker": "user",
+            "next_action": "请确认是否继续。",
+            "suggested_add_agent_names": [],
+        }
 
     captured = {}
 
@@ -98,7 +103,7 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
         if False:
             yield ""
 
-    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_should_not_run)
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
     monkeypatch.setattr(runtime, "run_one_expert_turn", _fake_expert_turn)
     monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
 
@@ -120,7 +125,8 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
     ]
 
     assert captured == {"agent_name": "文书专员", "next_action": "继续根据用户补充写正文。"}
-    assert any('"suggested_next_speaker": "文书专员"' in event for event in events)
+    assert any('"message": {"content": "请确认是否继续。"}' in event for event in events)
+    assert any('"phase": "awaiting_user"' in event for event in events)
 
 
 @pytest.mark.asyncio
@@ -140,14 +146,19 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         },
     )
 
-    host_calls = 0
+    expert_calls = 0
 
     async def _host_decision(*_args, **_kwargs):
-        raise AssertionError("message text must not enter host scheduler")
+        return {
+            "current_phase": "等待确认",
+            "next_speaker": "user",
+            "next_action": "请确认是否继续旧 Skill。",
+            "suggested_add_agent_names": [],
+        }
 
     async def _expert_turn(**kwargs):
-        nonlocal host_calls
-        host_calls += 1
+        nonlocal expert_calls
+        expert_calls += 1
         assert kwargs["agent_name"] == "文书专员"
         assert kwargs["next_action"] == "继续旧 Skill"
         yield 'event: end\ndata: {"type":"end","run_id":"run-1","phase":"awaiting_user","waiting_for_user":true}\n\n'
@@ -173,17 +184,8 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         )
     ]
 
-    assert host_calls == 1
-    loaded = state.load_group_orchestration_state("s-host-takeover-text")
-    assert loaded == {
-        "continuation": {
-            "owner_agent_name": "文书专员",
-            "skill_policy": "keep",
-            "skill": "writer-skill",
-            "next_action": "继续旧 Skill",
-        }
-    }
-    assert any('"suggested_next_speaker": "文书专员"' in event for event in events)
+    assert expert_calls == 1
+    assert any('"message": {"content": "请确认是否继续旧 Skill。"}' in event for event in events)
 
 
 @pytest.mark.asyncio
@@ -375,3 +377,48 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     assert "只允许输出上述字段" in user_prompt
     assert '"next_action"' in user_prompt
     assert "scheduler_state" not in session_item
+
+
+@pytest.mark.asyncio
+async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeClient:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return FakeResponse(
+                    '安排如下：\n```json\n{"current_phase":"阶段1","next_speaker":"写作专家","next_action":"请写大纲"}\n```'
+                )
+            return FakeResponse('{"current_phase":"阶段1","next_speaker":"写作专家","next_action":"请写大纲"}')
+
+    class FakeLlm:
+        def get_client(self):
+            return FakeClient()
+
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._request_skills_loader", lambda: None)
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+
+    out = await _host_decide_by_agent(
+        llm=FakeLlm(),
+        host_agent={"name": "四九"},
+        agent_profiles=[{"name": "写作专家", "description": "写作"}],
+        discussion_goal="写文章",
+        recent_messages="用户：写文章",
+        last_speaker_agent_name="写作专家",
+        extra_system_prompt="",
+        group_session_id="group-1",
+        app_settings={},
+        host_scheduler_state={"current_phase": "阶段1"},
+    )
+
+    assert len(calls) == 2
+    assert out["next_speaker"] == "写作专家"
+    assert out["next_action"] == "请写大纲"
+    retry_prompt = calls[1][1].content
+    assert "主持人调度输出未通过平台 JSON 协议校验" in retry_prompt
+    assert '"suggested_add_agent_names"' in retry_prompt

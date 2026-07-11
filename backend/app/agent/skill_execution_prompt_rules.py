@@ -5,16 +5,11 @@ platform_prompt_templates.json 提供，不在运行时文件中散落大段提�
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List
 
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.skill_tool_result_records import _tool_mcp_identity
 from app.agent.tool_spec import ToolSpec
-
-
-def _current_workspace_file_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
 
 
 def skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
@@ -28,6 +23,7 @@ def skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     if "read_workspace_file" in names:
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.read.v1", {}))
     if "write_workspace_file" in names:
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.artifact.v1", {}))
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.write.v1", {}))
     if "edit_workspace_file" in names:
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.edit.v1", {}))
@@ -39,14 +35,11 @@ def skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.list.v1", {}))
     workspace_tool_rules = ""
     if file_lines:
-        timestamp_rule = ""
-        if "write_workspace_file" in names:
-            timestamp_rule = render_platform_prompt("skill.execution.timestamp_rule.v1", {"timestamp": _current_workspace_file_timestamp()})
         workspace_tool_rules = render_platform_prompt(
             "skill.execution.workspace_rules.v1",
             {
                 "file_tool_lines": "\n".join(file_lines),
-                "timestamp_rule": timestamp_rule,
+                "timestamp_rule": "",
                 "read_rule": render_platform_prompt("skill.execution.workspace_read_rule.v1", {}) if "read_workspace_file" in names else "",
                 "write_rule": render_platform_prompt("skill.execution.workspace_write_rule.v1", {}) if "write_workspace_file" in names or "edit_workspace_file" in names else "",
                 "workspace_task_file_rule": render_platform_prompt("skill.execution.workspace_task_file_rule.v1", {}) if "write_workspace_file" in names else "",

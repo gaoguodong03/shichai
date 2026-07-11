@@ -456,7 +456,12 @@ def test_group_history_loads_canonical_messages_without_runtime_compat(tmp_path,
                         "execution_status": "succeeded",
                         "content": "回答",
                         "artifacts": [],
-                        "next_action": {"agent_turn": "respond", "skill_session": "keep"},
+                        "next_action": {
+                            "handoff": "user",
+                            "resume": "same_skill",
+                            "reason": "missing_input",
+                            "instruction": "回答",
+                        },
                     },
                 }
             ],

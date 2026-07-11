@@ -16,8 +16,17 @@ from pydantic import ValidationError
 from app.agent.group_chat_tool_result_content import problem_tool_result_content
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 
-_DEFAULT_NEXT_ACTION = {"agent_turn": "respond", "skill_session": "release"}
+_DEFAULT_NEXT_ACTION = {
+    "handoff": "host",
+    "resume": "none",
+    "reason": "stage_completed",
+    "instruction": "本轮专家回复已完成，请主持人判断下一步。",
+}
 _GENERIC_EMPTY_CONTENT = {"", "模型没有返回可展示的文字内容。", "无可展示内容。"}
+_DETERMINISTIC_TOOL_SUMMARY_PREFIXES = (
+    "工具已执行完成。以下是本轮工具返回摘要：",
+    "工具已执行完成，但本轮没有捕获到可展示的工具返回内容。",
+)
 _HIDDEN_STATE_START = "[[SKILL_SESSION_STATE]]"
 _HIDDEN_STATE_END = "[[/SKILL_SESSION_STATE]]"
 _HIDDEN_STATE_TAIL_RE = re.compile(
@@ -61,7 +70,7 @@ def _script_stdout_payload_from_result(result: dict[str, Any]) -> tuple[SkillScr
         if parsed is not None:
             return parsed, ""
     if str(result.get("execution_status") or "").strip() == "succeeded":
-        return None, "脚本 stdout 不符合平台协议：缺少 next_action 或字段结构非法。"
+        return None, "脚本 stdout 不符合平台协议：缺少 schema_version、next_action 或字段结构非法。"
     return None, ""
 
 
@@ -93,7 +102,7 @@ def _hidden_state_payload_from_content(content: str) -> tuple[str, SkillScriptSt
     visible = text[: match.start()].strip()
     payload = _strict_skill_stdout_payload(match.group("body"))
     if payload is None:
-        return visible, None, "专家隐藏状态块不符合平台协议：缺少 next_action 或字段结构非法。"
+        return visible, None, "专家隐藏状态块不符合平台协议：缺少 schema_version、next_action 或字段结构非法。"
     return visible, payload, ""
 
 
@@ -107,12 +116,25 @@ def _skill_result_display_content(
     script_payload: SkillScriptStdoutPayload | None,
     flow_payload: SkillScriptStdoutPayload | None,
 ) -> str:
-    """Select the message fact content without letting script output be LLM-rewritten."""
+    """Select visible expert text; v2 control payloads do not carry message content."""
+    text = visible_content.strip()
+    is_tool_summary = any(text.startswith(prefix) for prefix in _DETERMINISTIC_TOOL_SUMMARY_PREFIXES)
+    if visible_content and text not in _GENERIC_EMPTY_CONTENT and not (is_tool_summary and script_payload is not None):
+        return visible_content
     if script_payload is not None:
-        return script_payload.content or "无可展示内容。"
+        return script_payload.next_action.instruction or "无可展示内容。"
     if flow_payload is not None:
-        return visible_content or flow_payload.content or "无可展示内容。"
+        return flow_payload.next_action.instruction or "无可展示内容。"
     return visible_content or "无可展示内容。"
+
+
+def _protocol_error_next_action(message: str) -> dict[str, str]:
+    return {
+        "handoff": "host",
+        "resume": "none",
+        "reason": "protocol_error",
+        "instruction": str(message or "Skill 流程控制信号不符合平台协议。").strip(),
+    }
 
 
 def skill_result_from_content(
@@ -143,10 +165,16 @@ def skill_result_from_content(
     if protocol_error:
         normalized = "failed"
         display_content = protocol_error
+        next_action = _protocol_error_next_action(protocol_error)
     elif problem_content and display_content.strip() in _GENERIC_EMPTY_CONTENT:
         display_content = problem_content
-    result_artifacts = script_payload.artifacts if script_payload is not None else list(artifacts or [])
-    return {
+    if script_payload is not None:
+        result_artifacts = script_payload.artifacts
+    elif flow_payload is not None:
+        result_artifacts = flow_payload.artifacts
+    else:
+        result_artifacts = list(artifacts or [])
+    result = {
         "execution_status": normalized,
         "content": display_content,
         "artifacts": [
@@ -156,6 +184,7 @@ def skill_result_from_content(
         ],
         "next_action": next_action,
     }
+    return result
 
 
 def apply_skill_result_to_orchestration_state(
@@ -167,16 +196,17 @@ def apply_skill_result_to_orchestration_state(
 ) -> bool:
     """Apply message-level Skill session policy to orchestration_state."""
     next_action = skill_result.get("next_action") if isinstance(skill_result.get("next_action"), dict) else {}
-    skill_policy = str(next_action.get("skill_session") or "release").strip()
+    resume = str(next_action.get("resume") or "none").strip()
     previous_host_scheduler = orchestration_state.pop("host_scheduler", None)
-    if skill_policy == "keep":
+    if resume in {"same_skill", "same_agent"}:
+        instruction = str(next_action.get("instruction") or skill_result.get("content") or "").strip()
         row = {
             "owner_agent_name": str(agent_name or "").strip(),
-            "skill_policy": "keep",
-            "next_action": str(skill_result.get("content") or "").strip(),
+            "skill_policy": "keep" if resume == "same_skill" else "release",
+            "next_action": instruction,
         }
         skill_name = str(skill or "").strip()
-        if skill_name:
+        if resume == "same_skill" and skill_name:
             row["skill"] = skill_name
         previous = orchestration_state.get("continuation")
         orchestration_state["continuation"] = row

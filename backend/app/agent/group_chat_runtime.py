@@ -15,7 +15,11 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
 from app.agent.group_chat_expert_turn import run_one_expert_turn
-from app.agent.group_chat_host_messages import _build_host_pause_message, _build_host_recommendation_message
+from app.agent.group_chat_host_messages import (
+    _build_host_next_speaker_message,
+    _build_host_pause_message,
+    _build_host_recommendation_message,
+)
 from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_respond_and_recommend, _request_skills_loader
 from app.agent.group_chat_request_inputs import request_user_text, validate_attachments
 from app.agent.group_chat_soft_stop import expert_turn_budget_exceeded
@@ -26,6 +30,7 @@ from app.agent.group_host_decision import _apply_decision_to_ctx, finalize_host_
 from app.agent.group_orchestration_fsm import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent
+from app.agent.session_runtime_logs import append_host_execution_log
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
     build_session_payload,
@@ -69,6 +74,32 @@ def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
         "system_prompt": str(host.get("system_prompt") or "").strip(),
         "skill_directory": skill_directory,
     }
+
+
+def _record_host_message_execution_log(
+    group_session_id: str,
+    *,
+    host_msg: Dict[str, Any],
+    host_agent: Dict[str, Any],
+    current_phase: str = "",
+    next_speaker: str = "",
+    next_action: str = "",
+    status: str = "succeeded",
+) -> None:
+    """Link one persisted host bubble to its scheduler execution-log fact."""
+    speaker = host_msg.get("speaker") if isinstance(host_msg.get("speaker"), dict) else {}
+    message = host_msg.get("message") if isinstance(host_msg.get("message"), dict) else {}
+    append_host_execution_log(
+        group_session_id,
+        message_id=str(host_msg.get("message_id") or "").strip(),
+        host_name=str(speaker.get("agent_name") or host_agent.get("name") or "四九").strip() or "四九",
+        skill=str(speaker.get("skill") or host_agent.get("skill_directory") or "").strip(),
+        current_phase=current_phase,
+        next_speaker=next_speaker,
+        next_action=next_action,
+        content=str(message.get("content") or "").strip(),
+        status=status,
+    )
 
 
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
@@ -192,6 +223,15 @@ async def _run_contract_events(
             host_agent_name=host_name,
         )
         host_msg = frontend_history_message(host_msg)
+        _record_host_message_execution_log(
+            group_session_id,
+            host_msg=host_msg,
+            host_agent=host_agent,
+            current_phase=str(finalized.get("current_phase") or "招募"),
+            next_speaker="user",
+            next_action=content,
+            status="blocked",
+        )
         messages.append(host_msg)
         save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
         session_item["updated_at"] = format_storage_timestamp()
@@ -219,9 +259,11 @@ async def _run_contract_events(
         default_next_action=next_action,
     )
     next_speaker = ""
+    route_source = ""
     if entry_route:
         next_speaker = str(entry_route["next_speaker"]).strip()
         next_action = str(entry_route["next_action"]).strip() or next_action
+        route_source = str(entry_route.get("route_source") or "")
     if route_state_changed:
         write_group_orchestration_state(group_session_id, orchestration_state)
     suggested_add: list[str] = []
@@ -251,52 +293,89 @@ async def _run_contract_events(
         applied_decision = _apply_decision_to_ctx(decision, default_next_action=next_action)
         next_speaker = str(applied_decision["next_speaker"])
         next_action = str(applied_decision["next_action"])
+        route_source = "host_scheduler"
         suggested_add = list(applied_decision["suggested_add_agent_names"])
         host_scheduler = dict(applied_decision["host_scheduler"])
         orchestration_state["host_scheduler"] = host_scheduler
         write_group_orchestration_state(group_session_id, orchestration_state)
         save_session_definitions(session_definitions)
 
-    if next_speaker in {"user", "end"}:
-        host_msg = _build_host_pause_message(
-            skill=str(host_agent.get("skill_directory") or ""),
-            next_speaker=next_speaker,
-            current_phase=str(host_scheduler.get("current_phase") or ""),
-            next_action=next_action,
-            host_agent_name=host_name,
-        )
-        if host_msg:
+    turns = 0
+    suppress_handoff = route_source == "target_agent"
+    while True:
+        if next_speaker in {"user", "end"}:
+            host_msg = _build_host_pause_message(
+                skill=str(host_agent.get("skill_directory") or ""),
+                next_speaker=next_speaker,
+                current_phase=str(host_scheduler.get("current_phase") or ""),
+                next_action=next_action,
+                host_agent_name=host_name,
+            )
+            if host_msg:
+                host_msg = frontend_history_message(host_msg)
+                _record_host_message_execution_log(
+                    group_session_id,
+                    host_msg=host_msg,
+                    host_agent=host_agent,
+                    current_phase=str(host_scheduler.get("current_phase") or ""),
+                    next_speaker=next_speaker,
+                    next_action=next_action,
+                    status="succeeded" if next_speaker == "end" else "blocked",
+                )
+                messages.append(host_msg)
+                save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
+                session_item["updated_at"] = format_storage_timestamp()
+                save_session_definitions(session_definitions)
+                yield serialize_sse_event("message", host_msg)
+            phase = "completed" if next_speaker == "end" else ("recruiting" if suggested_add else "awaiting_user")
+            end = SseEndEvent(
+                type="end",
+                run_id=run_id,
+                phase=phase,
+                waiting_for_user=next_speaker != "end",
+                suggested_add_agent_names=suggested_add,
+            )
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
+
+        if next_speaker not in agent_names:
+            error = SseErrorEvent(
+                type="error",
+                run_id=run_id,
+                code="invalid_next_speaker",
+                message=f"Host selected an agent outside current agent_names: {next_speaker}",
+            )
+            yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
+
+        if not suppress_handoff:
+            host_msg = _build_host_next_speaker_message(
+                skill=str(host_agent.get("skill_directory") or ""),
+                next_speaker=next_speaker,
+                agent_map=agent_map,
+                current_phase=str(host_scheduler.get("current_phase") or ""),
+                next_action=next_action,
+                host_agent_name=host_name,
+            )
             host_msg = frontend_history_message(host_msg)
+            _record_host_message_execution_log(
+                group_session_id,
+                host_msg=host_msg,
+                host_agent=host_agent,
+                current_phase=str(host_scheduler.get("current_phase") or ""),
+                next_speaker=next_speaker,
+                next_action=next_action,
+                status="succeeded",
+            )
             messages.append(host_msg)
-            save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
+            save_group_history(group_session_id, messages)
             session_item["updated_at"] = format_storage_timestamp()
             save_session_definitions(session_definitions)
             yield serialize_sse_event("message", host_msg)
-        phase = "completed" if next_speaker == "end" else ("recruiting" if suggested_add else "awaiting_user")
-        end = SseEndEvent(
-            type="end",
-            run_id=run_id,
-            phase=phase,
-            waiting_for_user=next_speaker != "end",
-            suggested_add_agent_names=suggested_add,
-        )
-        yield serialize_sse_event("end", end_event_payload(end))
-        return
+        suppress_handoff = False
 
-    if next_speaker not in agent_names:
-        error = SseErrorEvent(
-            type="error",
-            run_id=run_id,
-            code="invalid_next_speaker",
-            message=f"Host selected an agent outside current agent_names: {next_speaker}",
-        )
-        yield serialize_sse_event("error", error.model_dump(exclude_none=True))
-        end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
-        yield serialize_sse_event("end", end_event_payload(end))
-        return
-
-    turns = 0
-    while next_speaker in agent_names:
         turns += 1
         if expert_turn_budget_exceeded(turns):
             end = SseEndEvent(
@@ -324,12 +403,39 @@ async def _run_contract_events(
             llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
         ):
             yield event
-        end = SseEndEvent(
-            type="end",
-            run_id=run_id,
-            phase="awaiting_user",
-            waiting_for_user=True,
-            suggested_next_speaker=next_speaker,
+        latest_state = load_group_orchestration_state(group_session_id)
+        host_scheduler = (
+            dict(latest_state.get("host_scheduler") or {})
+            if isinstance(latest_state.get("host_scheduler"), dict)
+            else host_scheduler
         )
-        yield serialize_sse_event("end", end_event_payload(end))
-        return
+        decision = await _host_decide_by_agent(
+            _get_llm_for_agent(host_agent, app_settings),
+            host_agent,
+            agent_profiles,
+            discussion_goal,
+            scheduler_memory_prompt(group_session_id, messages),
+            next_speaker,
+            "",
+            available_to_add,
+            group_session_id=group_session_id,
+            messages=messages,
+            app_settings=app_settings,
+            user_message=user_text,
+            session_item=session_item,
+            host_scheduler_state=host_scheduler,
+        )
+        decision = finalize_host_scheduler_decision(
+            decision,
+            agent_names=agent_names,
+            available_to_add=available_to_add,
+            user_text=user_text,
+        )
+        applied_decision = _apply_decision_to_ctx(decision, default_next_action=next_action)
+        next_speaker = str(applied_decision["next_speaker"])
+        next_action = str(applied_decision["next_action"])
+        suggested_add = list(applied_decision["suggested_add_agent_names"])
+        host_scheduler = dict(applied_decision["host_scheduler"])
+        latest_state["host_scheduler"] = host_scheduler
+        write_group_orchestration_state(group_session_id, latest_state)
+        save_session_definitions(session_definitions)

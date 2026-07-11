@@ -16,7 +16,8 @@ from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.skill_session_locks import clear_skill_session_lock, locked_skill_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
-from app.agent.structured_output_contracts import ExpertSkillSelectionPayload, parse_strict_pydantic_object
+from app.agent.structured_llm_output import invoke_pydantic_llm_output
+from app.agent.structured_output_contracts import ExpertSkillSelectionPayload
 from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.agent.platform_prompts import render_platform_prompt
 
@@ -101,11 +102,13 @@ async def expert_llm_pick_skill(
     user_prompt = render_platform_prompt("expert.select_skill.user_prompt.v1", {})
     try:
         client = llm.get_client()
-        out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=user_prompt)])
-        raw = out.content if hasattr(out, "content") else str(out)
-        if isinstance(raw, list):
-            raw = "".join(str(x) for x in raw)
-        parsed = parse_strict_pydantic_object(str(raw), ExpertSkillSelectionPayload)
+        retry_prompt = user_prompt + "\n\n" + render_platform_prompt("expert.select_skill.protocol_retry.v1", {})
+        parsed = await invoke_pydantic_llm_output(
+            client,
+            [SystemMessage(content=sys_msg), HumanMessage(content=user_prompt)],
+            ExpertSkillSelectionPayload,
+            retry_messages=[SystemMessage(content=sys_msg), HumanMessage(content=retry_prompt)],
+        )
         picked = parsed.selected_skill.strip()
         valid = {str(x).strip() for x in skill_directories}
         if picked and picked in valid:

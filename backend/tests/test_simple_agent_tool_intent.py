@@ -10,7 +10,6 @@ from app.agent.simple_agent_finalization import (
 )
 from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent import SimpleAgent
-from app.agent.simple_agent_tool_flow import is_run_skill_script_workflow_step as _is_run_skill_script_workflow_step
 from app.agent.tool_spec import ToolSpec
 
 
@@ -34,6 +33,28 @@ class _FakeLLM:
 
     def get_client(self):
         return self._client
+
+
+def _v2_skill_stdout(
+    *,
+    execution_status="succeeded",
+    instruction="处理完成。",
+    artifacts=None,
+    handoff="host",
+    resume="none",
+    reason="stage_completed",
+):
+    return {
+        "schema_version": "expert_final_state.v2",
+        "execution_status": execution_status,
+        "artifacts": artifacts or [],
+        "next_action": {
+            "handoff": handoff,
+            "resume": resume,
+            "reason": reason,
+            "instruction": instruction,
+        },
+    }
 
 
 class _BindingSensitiveState:
@@ -73,6 +94,38 @@ class _BindingSensitiveClient:
 class _BindingSensitiveLLM:
     def __init__(self, state: _BindingSensitiveState):
         self._client = _BindingSensitiveClient(state)
+
+    def get_client(self):
+        return self._client
+
+
+class _RepeatedToolSynthesisState:
+    def __init__(self, *, tool_call: AIMessage, final_message: AIMessage):
+        self.tool_call = tool_call
+        self.final_message = final_message
+        self.bound_calls = 0
+        self.unbound_calls = 0
+
+
+class _RepeatedToolSynthesisClient:
+    def __init__(self, state: _RepeatedToolSynthesisState, *, bound: bool = False):
+        self._state = state
+        self._bound = bound
+
+    def bind_tools(self, tools, *args, **kwargs):
+        return _RepeatedToolSynthesisClient(self._state, bound=True)
+
+    async def ainvoke(self, messages):
+        if self._bound:
+            self._state.bound_calls += 1
+            return self._state.tool_call
+        self._state.unbound_calls += 1
+        return self._state.final_message
+
+
+class _RepeatedToolSynthesisLLM:
+    def __init__(self, state: _RepeatedToolSynthesisState):
+        self._client = _RepeatedToolSynthesisClient(state)
 
     def get_client(self):
         return self._client
@@ -191,7 +244,12 @@ def test_mcp_direct_final_does_not_treat_artifact_ref_as_message_content():
             "execution_status": "succeeded",
             "content": "",
             "artifacts": [{"type": "markdown", "name": "报告", "path": "reports/report.md"}],
-            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            "next_action": {
+                "handoff": "host",
+                "resume": "none",
+                "reason": "stage_completed",
+                "instruction": "报告已生成。",
+            },
         },
         ensure_ascii=False,
     )
@@ -510,6 +568,55 @@ async def test_simple_agent_uses_bound_tools_when_synthesizing_after_search_resu
 
 
 @pytest.mark.asyncio
+async def test_simple_agent_uses_unbound_final_reply_after_repeated_synthesis_tool_call():
+    list_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-list", "name": "list_workspace_directory", "args": {}}],
+    )
+    state = _RepeatedToolSynthesisState(
+        tool_call=list_call,
+        final_message=AIMessage(content="工作区当前为空；我将直接基于用户要求起草文章。"),
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(tool_state, tools):
+        last = tool_state["messages"][-1]
+        tool_name = last.tool_calls[0]["name"]
+        calls.append(tool_name)
+        return {
+            "messages": [ToolMessage(content="目录 . 下：（空）", tool_call_id="tc-list")],
+            "tool_calls": [{"tool": tool_name, "arguments": {}}],
+            "tool_raw_outputs": ["目录 . 下：（空）"],
+        }
+
+    agent = SimpleAgent(
+        llm=_RepeatedToolSynthesisLLM(state),
+        tools=[ToolSpec(name="list_workspace_directory", description="list workspace")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="写一篇沈腾演艺生涯文章")]})
+
+    assert calls == ["list_workspace_directory"]
+    assert state.bound_calls == 2
+    assert state.unbound_calls == 1
+    final_text = str(out["messages"][-1].content)
+    assert "工作区当前为空" in final_text
+    assert "工具已执行完成。以下是本轮工具返回摘要" not in final_text
+    assert any(
+        item.get("source") == "post_tool_synthesis_repeated_tool_calls_ignored"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+    assert any(
+        item.get("source") == "post_tool_synthesis_unbound_after_repeated_tool_call"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
 async def test_simple_agent_stream_ignores_plain_write_workspace_file_text_call_without_visible_protocol():
     response = AIMessage(
         content=(
@@ -811,12 +918,12 @@ async def test_simple_agent_continues_after_script_next_action_to_write_workspac
         calls.append(tool_name)
         if tool_name.startswith("run_skill_script"):
             raw = json.dumps(
-                {
-                    "execution_status": "succeeded",
-                    "content": "Skill 模板目录已新建，请继续写入 SKILL.md。",
-                    "artifacts": [{"type": "directory", "name": "demo", "path": "skills/demo"}],
-                    "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-                },
+                _v2_skill_stdout(
+                    instruction="Skill 模板目录已新建，请继续写入 SKILL.md。",
+                    artifacts=[{"type": "directory", "name": "demo", "path": "skills/demo"}],
+                    handoff="host",
+                    resume="none",
+                ),
                 ensure_ascii=False,
             )
             return {
@@ -860,10 +967,6 @@ async def test_simple_agent_continues_after_script_next_action_to_write_workspac
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     assert str(out["messages"][-1].content) == "已新建并写入 skills/demo/SKILL.md"
-    assert any(
-        item.get("source") == "script_workflow_step_continue"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
 
 
 @pytest.mark.asyncio
@@ -905,12 +1008,12 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                     "code": "script_executed",
                     "message": "脚本执行成功。",
                     "stdout": json.dumps(
-                        {
-                            "execution_status": "succeeded",
-                            "content": "Skill 模板目录已新建，请继续编辑 SKILL.md。",
-                            "artifacts": [{"type": "directory", "name": "toutiao-summary", "path": "skills/toutiao-summary"}],
-                            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-                        },
+                        _v2_skill_stdout(
+                            instruction="Skill 模板目录已新建，请继续编辑 SKILL.md。",
+                            artifacts=[{"type": "directory", "name": "toutiao-summary", "path": "skills/toutiao-summary"}],
+                            handoff="host",
+                            resume="none",
+                        ),
                         ensure_ascii=False,
                     ),
                 },
@@ -959,10 +1062,10 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-summary skill")]})
 
-    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    assert calls == ["run_skill_script_skill-builder"]
     assert str(out["messages"][-1].content) == "已新建并完善 skills/toutiao-summary/SKILL.md"
     assert any(
-        item.get("source") == "script_workflow_step_continue"
+        item.get("source") in {"synthesize_final_after_tool_success", "post_tool_synthesis"}
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -994,12 +1097,12 @@ async def test_simple_agent_continues_after_script_next_action_payload_without_t
     )
     final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     raw = json.dumps(
-        {
-            "execution_status": "succeeded",
-            "content": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行必要验证。",
-            "artifacts": [{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
-            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-        },
+        _v2_skill_stdout(
+            instruction="Skill 模板目录已新建，请继续编辑 SKILL.md 并运行必要验证。",
+            artifacts=[{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
+            handoff="host",
+            resume="none",
+        ),
         ensure_ascii=False,
     )
     calls: list[str] = []
@@ -1046,19 +1149,14 @@ async def test_simple_agent_continues_after_script_next_action_payload_without_t
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
-    assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     final_text = str(out["messages"][-1].content)
     assert final_text == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "工具已执行完成" not in final_text
-    assert any(
-        item.get("source") == "script_workflow_step_continue"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_continues_after_next_action_agent_turn_continue():
+async def test_simple_agent_finalizer_can_continue_with_workspace_write_after_script_stdout():
     init_call = AIMessage(
         content="",
         tool_calls=[
@@ -1084,12 +1182,12 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
     )
     final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     raw = json.dumps(
-        {
-            "execution_status": "succeeded",
-            "content": "Skill 模板目录已新建，请继续编辑 SKILL.md。",
-            "artifacts": [{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
-            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-        },
+        _v2_skill_stdout(
+            instruction="Skill 模板目录已新建，请继续编辑 SKILL.md。",
+            artifacts=[{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
+            handoff="host",
+            resume="none",
+        ),
         ensure_ascii=False,
     )
     calls: list[str] = []
@@ -1136,25 +1234,9 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
-    assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     assert str(out["messages"][-1].content) == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "工具已执行完成" not in str(out["messages"][-1].content)
-
-
-def test_script_stdout_without_next_action_does_not_continue_workflow():
-    raw = json.dumps(
-        {
-            "execution_status": "succeeded",
-            "content": "Skill 模板目录已新建。",
-            "artifacts": [{"type": "directory", "name": "toutiao-news-summary", "path": "skills/toutiao-news-summary"}],
-        },
-        ensure_ascii=False,
-    )
-
-    assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is False
-
-
 
 
 @pytest.mark.asyncio
@@ -1271,12 +1353,12 @@ async def test_simple_agent_stream_continues_after_script_next_action_to_write_w
         calls.append(tool_name)
         if tool_name.startswith("run_skill_script"):
             raw = json.dumps(
-                {
-                    "execution_status": "succeeded",
-                    "content": "Skill 模板目录已新建，请继续写入 SKILL.md。",
-                    "artifacts": [{"type": "directory", "name": "demo", "path": "skills/demo"}],
-                    "next_action": {"agent_turn": "continue", "skill_session": "keep"},
-                },
+                _v2_skill_stdout(
+                    instruction="Skill 模板目录已新建，请继续写入 SKILL.md。",
+                    artifacts=[{"type": "directory", "name": "demo", "path": "skills/demo"}],
+                    handoff="host",
+                    resume="none",
+                ),
                 ensure_ascii=False,
             )
             return {
@@ -1321,7 +1403,7 @@ async def test_simple_agent_stream_continues_after_script_next_action_to_write_w
             final_debug = ev.get("tool_attempt_debug") or []
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert any(item.get("source") == "script_workflow_step_continue" for item in final_debug)
+    assert final_debug
 
 
 @pytest.mark.asyncio
@@ -1620,7 +1702,7 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
             }
         ],
     )
-    should_not_call = AIMessage(content="不应该为了音频转写再次调用模型")
+    synthesized = AIMessage(content=f"音频转写完成：\n{transcript}")
 
     async def _tool_runner(state, tools):
         raw = json.dumps(
@@ -1628,7 +1710,12 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
                 "execution_status": "succeeded",
                 "content": transcript,
                 "artifacts": [],
-                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                "next_action": {
+                    "handoff": "host",
+                    "resume": "none",
+                    "reason": "stage_completed",
+                    "instruction": "音频转写完成，请生成最终回复。",
+                },
             },
             ensure_ascii=False,
         )
@@ -1644,8 +1731,14 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([asr_call, should_not_call]),
-        tools=[],
+        llm=_FakeLLM([asr_call, synthesized]),
+        tools=[
+            ToolSpec.from_function(
+                name="audio-asr_transcribe_audio_file",
+                description="audio asr",
+                func=lambda: None,
+            )
+        ],
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=4,
@@ -1653,10 +1746,9 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="转文字")]})
 
-    assert str(out["messages"][-1].content) == transcript
-    assert "不应该" not in str(out["messages"][-1].content)
+    assert str(out["messages"][-1].content) == f"音频转写完成：\n{transcript}"
     assert any(
-        item.get("source") == "mcp_tool_result_direct_final"
+        item.get("source") in {"post_tool_synthesis", "post_tool_synthesis_unbound", "synthesize_final_after_tool_success"}
         for item in (out.get("tool_attempt_debug") or [])
     )
 

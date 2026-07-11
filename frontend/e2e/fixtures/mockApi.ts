@@ -24,8 +24,10 @@ type ArtifactRef = {
 }
 
 type SkillNextAction = {
-  agent_turn: 'respond' | 'continue'
-  skill_session: 'keep' | 'release'
+  handoff: 'user' | 'host' | 'end'
+  resume: 'same_skill' | 'same_agent' | 'host' | 'none'
+  reason: 'stage_gate' | 'missing_input' | 'user_confirmation' | 'stage_completed' | 'final_delivery' | 'failure' | 'protocol_error'
+  instruction: string
 }
 
 type SkillResult = {
@@ -478,7 +480,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           execution_status: 'succeeded',
           content: answer,
           artifacts: [],
-          next_action: { agent_turn: 'respond', skill_session: 'release' },
+          next_action: { handoff: 'host', resume: 'none', reason: 'stage_completed', instruction: answer },
         },
       })
       return eventStream(route, [
@@ -493,7 +495,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
             execution_status: 'succeeded',
             content: answer,
             artifacts: [],
-            next_action: { agent_turn: 'respond', skill_session: 'release' },
+            next_action: { handoff: 'host', resume: 'none', reason: 'stage_completed', instruction: answer },
           },
         }],
         ['end', { type: 'end', run_id: 'run-e2e', phase: 'awaiting_user', waiting_for_user: true }],
@@ -501,6 +503,28 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     if (path.match(/^\/sessions\/[^/]+\/chat\/stop$/) && method === 'POST') {
       return ok(route)
+    }
+    const executionLogsMatch = path.match(/^\/sessions\/([^/]+)\/messages\/([^/]+)\/execution-logs$/)
+    if (executionLogsMatch && method === 'GET') {
+      const messageId = decodeURIComponent(executionLogsMatch[2])
+      return ok(route, {
+        message_id: messageId,
+        logs: [
+          {
+            log_id: 'log-e2e-1',
+            created_at: now,
+            source: 'workspace',
+            tool_name: 'write_workspace_file',
+            provider: 'workspace',
+            provider_tool: 'write_workspace_file',
+            argument_summary: 'path=demo.md; content=<120 chars>',
+            output_summary: '已写入工作区文件。',
+            artifact_paths: ['demo.md'],
+            status: 'succeeded',
+            detail_available: true,
+          },
+        ],
+      })
     }
     if (path.match(/^\/sessions\/[^/]+\/messages\/[^/]+$/) && method === 'DELETE') {
       return ok(route)

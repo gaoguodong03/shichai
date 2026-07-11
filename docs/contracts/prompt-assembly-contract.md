@@ -77,6 +77,8 @@ user_prompt
 
 其中 `agent_prompt` 是当前主持人的提示词，`host_select_agent_prompt` 包含可选专家列表、调度规则和主持人输出字段要求。
 
+主持人选择专家属于机器可读 LLM 控制结构。运行时必须通过统一结构化输出入口把模型返回值解析为 Pydantic 主持人调度模型，再交给主持人决策后处理；不得在调用点手写 JSON 解析或从自然语言中抽取字段。
+
 ### 5.2 专家选择 Skill
 
 专家选择 Skill 时，只组装专家选择 Skill 需要的 Prompt 块：
@@ -91,6 +93,8 @@ user_prompt
 ```
 
 其中 `agent_prompt` 是当前专家的提示词，`expert_select_skill_prompt` 包含可选 Skill 列表和选择结果字段要求。
+
+专家选择 Skill 属于机器可读 LLM 控制结构。运行时必须通过统一结构化输出入口把模型返回值解析为 Pydantic Skill 选择模型，再校验 `selected_skill` 是否属于候选 Skill；不得在调用点手写 JSON 解析或从自然语言中抽取 Skill 名称。
 
 ### 5.3 专家通过 Skill 执行能力
 

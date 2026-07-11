@@ -37,6 +37,19 @@ class CapturingLlm:
         return AIMessage(content=self.content)
 
 
+class SequencedCapturingLlm:
+    def __init__(self, *contents):
+        self.contents = list(contents)
+        self.calls = []
+
+    def get_client(self):
+        return self
+
+    async def ainvoke(self, messages):
+        self.calls.append(messages)
+        return AIMessage(content=self.contents.pop(0))
+
+
 def test_resolve_expert_skill_uses_locked_skill_first():
     loader = FakeSkillsLoader({"sk1": "body 1", "sk2": "body 2"})
     orchestration_state = {
@@ -105,6 +118,42 @@ def test_resolve_expert_skill_uses_expert_profile_in_multi_skill_prompt():
     assert llm.messages is not None
     assert "负责资料检索和事实核验" in llm.messages[0].content
     assert "你必须优先核验来源可靠性。" in llm.messages[0].content
+
+
+def test_resolve_expert_skill_retries_protocol_output_before_blocking():
+    loader = FakeSkillsLoader({"writer": "写作正文", "research": "检索正文"})
+    llm = SequencedCapturingLlm(
+        '我选择：{"selected_skill":"research"}',
+        '{"selected_skill":"research"}',
+    )
+
+    skill, content, debug = asyncio.run(
+        resolve_expert_skill(
+            agent_profile={
+                "name": "专家A",
+                "description": "负责资料检索和事实核验",
+                "skills": [
+                    {"name": "写作", "directory_name": "writer"},
+                    {"name": "检索", "directory_name": "research"},
+                ],
+            },
+            agent_name="专家A",
+            discussion_goal="整理竞品资料",
+            messages=[],
+            session_item={},
+            orchestration_state={},
+            app_settings={},
+            round_user_text="先查资料",
+            skills_loader=loader,
+            llm_resolver=lambda _agent_profile: llm,
+        )
+    )
+
+    assert skill == "research"
+    assert content == "检索正文"
+    assert debug["strategy"] == "expert_llm_pick"
+    assert len(llm.calls) == 2
+    assert "专家 Skill 选择输出未通过平台 JSON 协议校验" in llm.calls[1][1].content
 
 
 def test_build_expert_turn_runtime_creates_agent_entry_bundle():

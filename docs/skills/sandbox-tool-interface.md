@@ -39,6 +39,10 @@
 - 用户说“查看/读取/打开某文件”时，优先使用 `read_workspace_file`。
 - 如果用户只给文件名且不确定位置，先调用 `list_workspace_directory`。
 
+### `create_workspace_artifact`
+
+用于新建大纲、正文、资料包、报告、阶段产物和最终产物。模型只传 `title`、`content`、可选 `kind` / `directory` / `extension`；平台负责生成工作区相对路径、当前时间戳和同名版本后缀。
+
 ### `write_workspace_file`
 
 写入或覆盖当前会话工作区文本文件。
@@ -56,7 +60,7 @@
 
 - `content` 不能为空。
 - `path` 是工作区相对路径；必要的父目录由沙箱侧处理。
-- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-当前文件时间戳.扩展名`，当前文件时间戳由运行提示提供。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区产物都使用 `create_workspace_artifact`，由平台生成时间戳文件名和同名版本后缀。
 - 用户要求“保存/写入/生成文件”时，应调用此工具，而不是只在自然语言里说“已保存”。
 
 ### `edit_workspace_file`
@@ -172,9 +176,9 @@ manifest 示例：
 - 没有 `scripts/manifest.json` 时，平台不注入脚本工具；不要回退到默认 `cli_args` 或让模型指定脚本路径。
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
-- 脚本 stdout 应输出单个 JSON 对象，并使用标准字段 `execution_status`、`content`、`artifacts`、`next_action`。`content` 是脚本文本结果，平台不做 LLM 总结或改写；`artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`。`next_action.agent_turn` 控制当前专家本轮继续行动还是回复用户，`next_action.skill_session` 控制下一条用户消息是否回到同一专家和同一 Skill；两者是独立维度，四种组合都合法。
-- 脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：本轮回复协议错误，并释放 Skill 会话锁。
-- MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后如需决定本轮是否继续或跨轮是否锁定 Skill，应由专家最终回复末尾的隐藏状态块表达。
+- 脚本 stdout 应输出单个 JSON 对象，并使用标准字段 `schema_version`、`execution_status`、`artifacts`、`next_action`。`artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`。`next_action.handoff` 控制当前专家回合结束后等待用户、交回主持人或结束；`next_action.resume` 控制下一条用户消息是否保留同一专家或同一 Skill 的续跑意图。阶段名、等待点和下一步说明写入 `next_action.instruction`。
+- 脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：本轮回复协议错误，并设置 `handoff=host`、`resume=none`、`reason=protocol_error`。
+- MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后应进入专家最终回复阶段，由专家最终回复末尾的隐藏状态块表达阶段交接、等待用户或续跑意图。
 - 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/skills/skill-standard.md` 的“给 Skill 作者的脚本函数调用建议”。
 
 何时使用：

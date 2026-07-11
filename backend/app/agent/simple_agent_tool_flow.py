@@ -1,8 +1,8 @@
 """Pure tool-output flow helpers used by SimpleAgent.
 
-This module decides whether tool outputs imply script continuation, whether
-workspace write calls have already succeeded, and which client should synthesize
-post-tool output. It does not call the model or execute tools.
+This module decides whether workspace write calls have already succeeded and
+which client should synthesize post-tool output. It does not call the model or
+execute tools.
 """
 from __future__ import annotations
 
@@ -13,10 +13,12 @@ from app.agent.simple_agent_finalization import _json_loads_maybe
 from app.agent.simple_agent_tool_errors import _normalize_workspace_path_for_compare
 from app.agent.simple_agent_tool_ids import _tool_call_args
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
-
-RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE = "continue"
-WORKSPACE_WRITE_SUCCESS_MARKER = "已写入当前 Chat 工作区文件："
+WORKSPACE_WRITE_SUCCESS_MARKERS = (
+    "已写入当前 Chat 工作区文件：",
+    "已创建工作区产物：",
+)
 WORKSPACE_MUTATING_TOOL_NAMES = {
+    "create_workspace_artifact",
     "write_workspace_file",
     "edit_workspace_file",
     "rename_workspace_file",
@@ -51,23 +53,9 @@ def iter_strict_skill_stdout_payloads(tool_out: dict[str, Any]) -> list[SkillScr
     return out
 
 
-def run_skill_outputs_request_agent_turn_continue(tool_out: dict[str, Any]) -> bool:
-    """Return whether strict script stdout requests another agent turn."""
-    payloads = iter_strict_skill_stdout_payloads(tool_out)
-    if not payloads:
-        return False
-    saw_continue = False
-    for payload in payloads:
-        if payload.execution_status == "failed":
-            return False
-        if payload.next_action.agent_turn == RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
-            saw_continue = True
-    return saw_continue
-
-
 def has_successful_workspace_write_output(raw_outputs: list[str]) -> bool:
     """Return whether a tool output contains the canonical workspace-write success marker."""
-    return any(WORKSPACE_WRITE_SUCCESS_MARKER in str(raw or "") for raw in raw_outputs or [])
+    return any(marker in str(raw or "") for raw in raw_outputs or [] for marker in WORKSPACE_WRITE_SUCCESS_MARKERS)
 
 
 def has_workspace_mutating_tool_call(tool_calls: list[Any]) -> bool:
@@ -125,11 +113,6 @@ def all_workspace_write_calls_already_succeeded(tool_calls: list[Any], seen_keys
             return False
         saw_write = True
     return saw_write
-
-
-def is_run_skill_script_workflow_step(tool_out: dict[str, Any]) -> bool:
-    """Compatibility predicate for script-driven continue steps."""
-    return run_skill_outputs_request_agent_turn_continue(tool_out)
 
 
 def post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> bool:

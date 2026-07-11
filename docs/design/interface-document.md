@@ -332,7 +332,53 @@ DELETE /api/sessions/{session_id}/messages/{message_id}
 
 从会话历史中删除单条消息，避免污染后续上下文。
 
-### 5.10 会话事件流
+### 5.10 消息执行日志
+
+```http
+GET /api/sessions/{session_id}/messages/{message_id}/execution-logs
+```
+
+用于消息右侧“终端/日志”入口。接口按 `message_id` 读取 `sessions/{session_id}/execution_logs/tool-execution.jsonl` 中关联的执行日志；它不读取 `history.json` 的消息正文，也不把日志写回消息结构。
+
+该接口返回的是执行日志摘要视图，不是聊天消息结构。响应里的 `source`、`provider`、`provider_tool`、`status`、`argument_summary`、`output_summary` 只用于日志面板和排障；前端不得把它们写回 `history.json`，后端也不得用它们替代 `speaker.skill`、`skill_result.execution_status`、`message.content` 或主持人路由字段。
+
+响应：
+
+```json
+{
+  "status": "ok",
+  "data": {
+    "message_id": "msg-xxxx",
+    "logs": [
+      {
+        "log_id": "log-xxxx",
+        "created_at": "2026071116143000",
+        "source": "workspace",
+        "agent_name": "文档合著专家",
+        "skill": "document-coauthor",
+        "tool_name": "write_workspace_file",
+        "provider": "workspace",
+        "provider_tool": "write_workspace_file",
+        "argument_summary": "path=shenteng-career/沈腾演艺生涯大纲.md",
+        "output_summary": "已写入工作区文件。",
+        "artifact_paths": ["shenteng-career/沈腾演艺生涯大纲.md"],
+        "status": "succeeded",
+        "duration_ms": 123,
+        "detail_available": true
+      }
+    ]
+  }
+}
+```
+
+前端展示规则：
+
+- 专家和主持人消息右侧显示终端图标，点击后按 `message_id` 拉取关联执行日志。
+- 点击图标后先打开折叠日志列表，按工具调用分组展示 `tool_name`、状态、时间和摘要。
+- 点击某条日志后再展开详情，包括参数摘要、输出摘要、产物路径、错误信息和耗时。
+- 长参数、长 stdout/stderr 和正文型 `arguments.content` 默认折叠或摘要化；聊天消息正文只展示 `message.content`；`skill_result.artifacts` 不渲染为聊天气泡 meta 标签，产物路径只在执行日志详情中展示。
+
+### 5.11 会话事件流
 
 ```http
 GET /api/sessions/{session_id}/events/stream
@@ -357,9 +403,9 @@ Accept: text/event-stream
 - 关闭浏览器窗口或断开 `/events/stream` 只取消本次订阅，不停止后端运行。
 - 停止当前回复必须调用 `POST /api/sessions/{session_id}/chat/stop`。
 - 后端发现 `runtime.json.running=true` 但进程内任务不存在且超过过期阈值时，清理运行态并推送 `runtime`，`running=false`、`phase="failed"`。
-- 新窗口通过 `GET /api/sessions/{session_id}` 读取历史消息；`/events/stream` 不回放历史 `/chat/stream` 事件。
+- 新窗口通过 `GET /api/sessions/{session_id}` 读取历史消息；消息工具日志通过 `GET /api/sessions/{session_id}/messages/{message_id}/execution-logs` 按需读取；`/events/stream` 不回放历史 `/chat/stream` 事件。
 
-### 5.11 导出会话 Markdown
+### 5.12 导出会话 Markdown
 
 ```http
 POST /api/sessions/{session_id}/export
@@ -377,7 +423,7 @@ POST /api/sessions/{session_id}/export
 }
 ```
 
-### 5.12 会话快照、克隆和回滚
+### 5.13 会话快照、克隆和回滚
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -429,7 +475,7 @@ POST /api/sessions/{session_id}/export
 - `message_id` 不存在、对象缺失或 hash 校验失败时返回错误，不进行猜测恢复。
 - 检查点默认逻辑永久保留，不自动清理或压缩。
 
-### 5.13 会话归档
+### 5.14 会话归档
 
 ```http
 GET /api/sessions/{session_id}/archive
@@ -459,11 +505,12 @@ data: {"key":"value"}
 约束：
 
 - 前端不自行推断主持人调度结果，只消费后端 `route` 和 `end`。
+- 主持人调度专家时，后端应先发送一条标准 `message` 事件作为主持人可见交接消息，再发送专家 `route` 事件；用户通过 `target_agent_name` 明确指定专家时可省略该主持人交接消息。
 - `route` 不返回 `expert_route_debug`、`skill_route_debug`、`routing`、`route_source`。`route_source` 只用于后端内部日志和测试断言，不进入 API 响应或 SSE 事件。
 - `progress.phase` 必须等于当前 `runtime.json.phase`；平台不使用 `meta.phase`。
 - `end.waiting_for_user=true` 表示界面应等待用户继续输入或确认。
 - 平台不提供 `discussion_ended` 字段；`end` 表示当前回合结束，不表示整个会话关闭。
-- `tool_start`、`tool_result` 不作为顶层 SSE 事件；工具明细进入执行 trace、运行日志或 `skill_result.artifacts`。
+- `tool_start`、`tool_result` 不作为顶层 SSE 事件；工具明细进入执行 trace、运行日志或 `skill_result.artifacts`，前端通过消息右侧终端图标按 `message_id` 拉取执行日志。
 - `error.message` 只放错误文本，不承载附件、主持人下一步或完整消息结构；需要给用户展示的恢复说明应另发标准 `message` 事件。
 - 前端可以把 `progress.phase` 映射成中文 UI 文案，但不能把 UI 文案或本地 `_streaming` 状态写回 API、历史、运行态或 mock。
 - 前端不得从 `message.content` 正则推断招募专家、下一位专家、文件引用或路由结果；这些必须来自结构化字段。

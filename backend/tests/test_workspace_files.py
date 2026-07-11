@@ -514,9 +514,10 @@ def test_write_workspace_file_tool_advertises_project_filename_contract():
     tool = create_write_workspace_file_tool("sess-contract")
     path_description = WriteWorkspaceFileInput.model_fields["path"].description or ""
 
-    assert "文件名-当前文件时间戳.扩展名" in path_description
-    assert "不替换或校验时间戳" in path_description
-    assert "不替换或校验时间戳" in tool.description
+    assert "明确相对路径" in path_description
+    assert "不生成时间戳" in path_description
+    assert "create_workspace_artifact" in path_description
+    assert "create_workspace_artifact" in tool.description
 
 
 def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, monkeypatch):
@@ -550,6 +551,90 @@ def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, mo
     assert "错误：文件已存在" in overwrite_out
     ws = get_workspace_root("sess-no-overwrite")
     assert (ws / "article.md").read_text(encoding="utf-8") == "full article"
+
+
+def test_create_workspace_artifact_versions_same_title_without_model_path_retry(temp_user_data_root, monkeypatch):
+    """create_workspace_artifact 应由平台负责同标题产物的唯一命名和版本化。"""
+    from app.api.files import get_workspace_root
+    from app.tools import create_workspace_artifact as artifact_tool_module
+    from app.tools.create_workspace_artifact import create_workspace_artifact_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(artifact_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    monkeypatch.setattr(artifact_tool_module, "_workspace_artifact_timestamp", lambda: "2026071119330600")
+
+    tool = create_workspace_artifact_tool("sess-artifact-version")
+    first = asyncio.run(
+        tool.ainvoke(
+            {
+                "title": "沈腾演艺生涯介绍",
+                "kind": "大纲",
+                "content": "first outline",
+            }
+        )
+    )
+    second = asyncio.run(
+        tool.ainvoke(
+            {
+                "title": "沈腾演艺生涯介绍",
+                "kind": "大纲",
+                "content": "second outline",
+            }
+        )
+    )
+
+    assert "已创建工作区产物：沈腾演艺生涯介绍-大纲-2026071119330600.md" in first
+    assert "已创建工作区产物：沈腾演艺生涯介绍-大纲-2026071119330600-02.md" in second
+    ws = get_workspace_root("sess-artifact-version")
+    assert (ws / "沈腾演艺生涯介绍-大纲-2026071119330600.md").read_text(encoding="utf-8") == "first outline"
+    assert (ws / "沈腾演艺生涯介绍-大纲-2026071119330600-02.md").read_text(encoding="utf-8") == "second outline"
+
+
+def test_create_workspace_artifact_result_records_public_artifact(temp_user_data_root, monkeypatch):
+    from app.agent.group_chat_tool_result_content import collect_artifacts
+    from app.agent.skill_tool_result_records import _tool_result_record_from_raw
+    from app.tools import create_workspace_artifact as artifact_tool_module
+    from app.tools.create_workspace_artifact import create_workspace_artifact_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(artifact_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    monkeypatch.setattr(artifact_tool_module, "_workspace_artifact_timestamp", lambda: "2026071119330600")
+
+    tool = create_workspace_artifact_tool("sess-artifact-record")
+    raw = asyncio.run(tool.ainvoke({"title": "沈腾演艺生涯介绍", "kind": "大纲", "content": "outline"}))
+    record = _tool_result_record_from_raw(
+        tool_name="create_workspace_artifact",
+        tool=tool,
+        arguments={"title": "沈腾演艺生涯介绍", "kind": "大纲"},
+        tool_call_id="call-1",
+        raw_result=raw,
+    )
+
+    assert collect_artifacts([record]) == [
+        {
+            "type": "file",
+            "name": "沈腾演艺生涯介绍-大纲-2026071119330600.md",
+            "path": "沈腾演艺生涯介绍-大纲-2026071119330600.md",
+        }
+    ]
 
 
 def test_write_workspace_file_allows_explicit_overwrite(temp_user_data_root, monkeypatch):
@@ -738,8 +823,8 @@ def test_read_workspace_file_tool_uses_stable_user_id(temp_user_data_root, monke
     assert captured["user_id"] == "user-stable-read"
 
 
-def test_read_workspace_file_uses_turn_started_checkpoint_during_active_run(client, monkeypatch):
-    """运行中的工作区读取必须使用 turn_started 检查点，而不是 live workspace。"""
+def test_read_workspace_file_uses_live_workspace_during_active_run(client, monkeypatch):
+    """运行中的工作区工具读取 live workspace；turn_started 检查点不改变工具 IO 目标。"""
     from app.api.files import get_workspace_root
     from app.api import group_chat_state as state
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
@@ -773,7 +858,89 @@ def test_read_workspace_file_uses_turn_started_checkpoint_during_active_run(clie
         state.ACTIVE_GROUP_RUNS.pop(session_id, None)
         reset_current_user_identity(token)
 
-    assert out == "turn-started-version"
+    assert out == "live-version"
+
+
+def test_read_workspace_file_reads_new_live_workspace_path_during_active_run(client, monkeypatch):
+    """即使文件在 turn_started 检查点之后才出现，工作区工具也必须读取 live workspace。"""
+    from app.api.files import get_workspace_root
+    from app.api import group_chat_state as state
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.session_state.service import capture_session_checkpoint
+    from app.tools import read_file as read_file_module
+    from app.tools.read_file import create_read_file_tool
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, workspace_path, rel_path, **_kwargs):
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    create_resp = client.post("/api/sessions", json={"title": "同轮写读"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        ws = get_workspace_root(session_id)
+        checkpoint = capture_session_checkpoint(session_id, trigger="turn_started")
+        target = ws / "outline.md"
+        target.write_text("same-turn-write", encoding="utf-8")
+        state.ACTIVE_GROUP_RUNS[session_id] = {
+            "run_id": "run-read-same-turn-write",
+            "phase": "executing",
+            "turn_started_checkpoint_id": checkpoint["checkpoint_id"],
+        }
+        tool = create_read_file_tool(session_id)
+        out = asyncio.run(tool.ainvoke({"path": "outline.md"}))
+    finally:
+        state.ACTIVE_GROUP_RUNS.pop(session_id, None)
+        reset_current_user_identity(token)
+
+    assert out == "same-turn-write"
+
+
+def test_write_then_read_workspace_file_in_active_run_uses_live_workspace(client, monkeypatch):
+    """真实 write_workspace_file 成功后，同一 active run 的 read_workspace_file 能读到该文件。"""
+    from app.api import group_chat_state as state
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.session_state.service import capture_session_checkpoint
+    from app.tools import read_file as read_file_module
+    from app.tools import write_workspace_file as write_file_module
+    from app.tools.read_file import create_read_file_tool
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, workspace_path, rel_path, **_kwargs):
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
+            target = workspace_path / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    fake_svc = _FakeSandboxService()
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: fake_svc)
+    monkeypatch.setattr(write_file_module, "get_shared_sandbox_service", lambda: fake_svc)
+    create_resp = client.post("/api/sessions", json={"title": "写后读取"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        checkpoint = capture_session_checkpoint(session_id, trigger="turn_started")
+        state.ACTIVE_GROUP_RUNS[session_id] = {
+            "run_id": "run-write-read",
+            "phase": "executing",
+            "turn_started_checkpoint_id": checkpoint["checkpoint_id"],
+        }
+        write_tool = create_write_workspace_file_tool(session_id)
+        read_tool = create_read_file_tool(session_id)
+        write_out = asyncio.run(write_tool.ainvoke({"path": "outline.md", "content": "same-turn-write"}))
+        read_out = asyncio.run(read_tool.ainvoke({"path": "outline.md"}))
+    finally:
+        state.ACTIVE_GROUP_RUNS.pop(session_id, None)
+        reset_current_user_identity(token)
+
+    assert "已写入当前 Chat 工作区文件：outline.md" in write_out
+    assert read_out == "same-turn-write"
 
 
 def test_read_file_missing_path_does_not_search_for_candidates(temp_user_data_root, monkeypatch):

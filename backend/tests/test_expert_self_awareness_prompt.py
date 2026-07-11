@@ -84,17 +84,18 @@ def test_create_skill_execution_agent_omits_legacy_prompt_scaffolding():
     assert "- read_workspace_file: 读文件" in prompt
 
 
-def test_create_skill_execution_agent_injects_current_workspace_file_timestamp(monkeypatch):
-    import app.agent.skill_execution_prompt_rules as prompt_rules
-
-    monkeypatch.setattr(prompt_rules, "_current_workspace_file_timestamp", lambda: "2026070422145700")
-
+def test_create_skill_execution_agent_prefers_workspace_artifact_tool_for_new_outputs():
     agent = create_skill_execution_agent(
         llm=object(),
-        tools=[ToolSpec(name="write_workspace_file", description="写文件")],
+        tools=[
+            ToolSpec(name="create_workspace_artifact", description="创建产物"),
+            ToolSpec(name="write_workspace_file", description="写文件"),
+        ],
         skill_full_content="按技能正文执行。",
     )
     prompt = agent.system_prompt
 
-    assert "当前文件时间戳：`2026070422145700`" in prompt
-    assert "新建工作区文件时直接把这个时间戳写入文件名" in prompt
+    assert "create_workspace_artifact" in prompt
+    assert "平台负责唯一命名和版本化" in prompt
+    assert "当前文件时间戳" not in prompt
+    assert "新建工作区文件时直接把这个时间戳写入文件名" not in prompt

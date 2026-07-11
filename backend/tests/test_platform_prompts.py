@@ -89,7 +89,9 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         assert phrase not in combined
     for prompt_id in [
         "host.system.boundary.v1",
+        "host.select_next_speaker.protocol_retry.v1",
         "expert.select_skill.user_prompt.v1",
+        "expert.select_skill.protocol_retry.v1",
         "expert.action.default.v1",
         "expert.action.memory.v1",
         "expert.action.structured_missing.v1",
@@ -399,6 +401,10 @@ def test_write_workspace_file_tool_messages_use_platform_prompt_registry():
         assert phrase not in tool_text
 
     for prompt_id in [
+        "workspace.artifact.create.missing_title.v1",
+        "workspace.artifact.create.missing_content.v1",
+        "workspace.artifact.create.failed.v1",
+        "workspace.artifact.create.success.v1",
         "workspace.write_file.json_wrapped_path_error.v1",
         "workspace.write_file.missing_path.v1",
         "workspace.write_file.missing_content.v1",
@@ -553,12 +559,18 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
 
     for prompt_id in [
         "tool.description.read_workspace_file.v1",
+        "tool.description.create_workspace_artifact.v1",
         "tool.description.write_workspace_file.v1",
         "tool.description.edit_workspace_file.v1",
         "tool.description.rename_workspace_file.v1",
         "tool.description.mkdir_workspace.v1",
         "tool.description.list_workspace_directory.v1",
         "tool.schema.read_workspace_file.path.v1",
+        "tool.schema.create_workspace_artifact.title.v1",
+        "tool.schema.create_workspace_artifact.content.v1",
+        "tool.schema.create_workspace_artifact.kind.v1",
+        "tool.schema.create_workspace_artifact.directory.v1",
+        "tool.schema.create_workspace_artifact.extension.v1",
         "tool.schema.write_workspace_file.path.v1",
         "tool.schema.write_workspace_file.content.v1",
         "tool.schema.write_workspace_file.overwrite.v1",

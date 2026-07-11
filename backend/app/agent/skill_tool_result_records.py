@@ -8,6 +8,7 @@ from app.agent.tool_trace_contracts import ToolResultRecord
 
 
 _WORKSPACE_TOOL_NAMES = {
+    "create_workspace_artifact",
     "read_workspace_file",
     "write_workspace_file",
     "edit_workspace_file",
@@ -109,6 +110,12 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     message = "工具执行成功"
     output: dict[str, Any] = {"text": text}
     error_log = None
+    artifacts = raw_payload.get("artifacts") if isinstance(raw_payload, dict) and isinstance(raw_payload.get("artifacts"), list) else []
+    if isinstance(raw_payload, dict):
+        raw_message = str(raw_payload.get("message") or "").strip()
+        if raw_message:
+            message = raw_message
+            output = {"text": raw_message, "json_data": raw_payload}
     if str(tool_name or "").startswith("run_skill_script_") and isinstance(raw_payload, dict):
         stdout = str(raw_payload.get("stdout") or "")
         stderr = str(raw_payload.get("stderr") or "")
@@ -128,6 +135,8 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     }
     if error_log is not None:
         payload["error_log"] = error_log
+    if artifacts:
+        payload["artifacts"] = artifacts
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
 
 

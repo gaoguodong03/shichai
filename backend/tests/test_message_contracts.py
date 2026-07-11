@@ -5,6 +5,15 @@ from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, Skill
 from app.agent.structured_output_contracts import ArtifactRef
 
 
+def v2_next_action(instruction="本轮专家回复已完成，请主持人判断下一步。"):
+    return {
+        "handoff": "host",
+        "resume": "none",
+        "reason": "stage_completed",
+        "instruction": instruction,
+    }
+
+
 def test_user_message_record_uses_nested_message_object():
     message = ChatMessageRecord(
         message_id="msg-user",
@@ -41,7 +50,7 @@ def test_expert_message_record_uses_current_skill_result_shape():
             "execution_status": "succeeded",
             "content": "大纲已完成",
             "artifacts": [{"type": "markdown", "name": "大纲", "path": "outline.md"}],
-            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            "next_action": v2_next_action("大纲已完成"),
         },
     )
 
@@ -50,6 +59,27 @@ def test_expert_message_record_uses_current_skill_result_shape():
     assert "attachments" not in dumped["message"]
     assert "target_agent_name" not in dumped["message"]
     assert dumped["skill_result"]["artifacts"][0]["path"] == "outline.md"
+
+
+def test_skill_result_rejects_workflow_state_field():
+    payload = {
+        "execution_status": "blocked",
+        "content": "请先补充这篇文章的想法。",
+        "artifacts": [],
+        "next_action": {
+            "handoff": "user",
+            "resume": "same_skill",
+            "reason": "missing_input",
+            "instruction": "等待用户补充文章想法后，由文档合著专家继续上下文收集。",
+        },
+        "workflow_state": {
+            "stage": "context_collection",
+            "stage_status": "waiting_confirmation",
+        },
+    }
+
+    with pytest.raises(ValidationError):
+        SkillResult.model_validate(payload)
 
 
 def test_skill_message_content_must_match_skill_result_content():
@@ -62,7 +92,7 @@ def test_skill_message_content_must_match_skill_result_content():
             "execution_status": "succeeded",
             "content": "脚本原始正文",
             "artifacts": [],
-            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            "next_action": v2_next_action("脚本原始正文"),
         },
     }
 
@@ -80,7 +110,7 @@ def test_skill_result_requires_speaker_skill_directory():
             "execution_status": "succeeded",
             "content": "请继续",
             "artifacts": [],
-            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            "next_action": v2_next_action("请继续"),
         },
     }
 
@@ -201,7 +231,7 @@ def test_skill_result_rejects_old_fields(old_key, value):
         "execution_status": "succeeded",
         "content": "完成",
         "artifacts": [],
-        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        "next_action": v2_next_action("完成"),
         old_key: value,
     }
 

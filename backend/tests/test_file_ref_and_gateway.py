@@ -361,11 +361,13 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     assert "上一位专家的可见发言在最近讨论中" in instructions
     assert "不限于用户显式要求保存或读取" in instructions
     assert "只有在工具返回写入成功后，才能对用户说文件已保存至工作区" in instructions
-    assert "当前文件时间戳" in instructions
-    assert "文件名-当前文件时间戳.扩展名" in instructions
+    assert "create_workspace_artifact" in instructions
+    assert "平台负责唯一命名和版本化" in instructions
+    assert "当前文件时间戳" not in instructions
+    assert "文件名-当前文件时间戳.扩展名" not in instructions
     assert "网页采集、资料检索、素材整理" in instructions
     assert "每一条独立素材" in instructions
-    assert "分开调用 `write_workspace_file`" in instructions
+    assert "分开调用 `create_workspace_artifact`" in instructions
     assert "memory/" not in instructions
     assert "必须先调用 `write_workspace_file` 新建或覆盖该文件" not in instructions
 
@@ -535,6 +537,29 @@ async def test_build_tools_does_not_inject_script_tool_without_manifest(monkeypa
 
     names = {getattr(tool, "name", "") for tool in tools}
     assert not any(name.startswith("run_skill_script_") for name in names)
+
+
+@pytest.mark.asyncio
+async def test_build_tools_injects_artifact_writer_before_low_level_workspace_write(monkeypatch, tmp_path):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-artifact-tool", username="artifact-tool@example.com")
+    try:
+        monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: [])
+        tools = await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "artifact-skill"}]},
+            "workspace-artifact-tool",
+            resolved_skill="artifact-skill",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    names = [getattr(tool, "name", "") for tool in tools]
+    assert "create_workspace_artifact" in names
+    assert "write_workspace_file" in names
+    assert names.index("create_workspace_artifact") < names.index("write_workspace_file")
 
 
 @pytest.mark.asyncio

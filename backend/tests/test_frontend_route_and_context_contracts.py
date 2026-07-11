@@ -424,6 +424,29 @@ def test_frontend_message_rendering_does_not_read_legacy_debug_tool_trace():
         assert forbidden not in combined
 
 
+def test_frontend_message_execution_logs_are_loaded_by_message_id():
+    chat_api = read("frontend/src/api/chat.ts")
+    message_list = read("frontend/src/features/workspace/composables/useGroupMessageList.ts")
+    component = read("frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue")
+
+    assert "fetchMessageExecutionLogs" in chat_api
+    assert "`/sessions/${id}/messages/${messageId}/execution-logs`" in chat_api
+    assert "messageExecutionLogs" in message_list
+    assert "toggleMessageExecutionLogs" in message_list
+    assert "fetchMessageExecutionLogs(" in message_list
+    assert "message_id" in message_list
+    assert "group-chat-action-terminal" in component
+    assert "查看工具日志" in component
+    assert "messageExecutionLogRows(msg)" in component
+    assert "expandedExecutionLogKey" in component
+    assert "暂无工具日志" not in component
+    assert "artifactDisplayMeta(item).label" not in component
+    assert "getArtifactDisplayItems" not in component
+    assert "artifact_paths" in component
+    assert component.index("group-chat-bubble-name") < component.index("group-chat-action-terminal")
+    assert component.index("group-chat-action-terminal") < component.index("group-chat-bubble-body")
+
+
 def test_frontend_message_component_uses_shared_contract_type():
     component = read("frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue")
     message_list = read("frontend/src/features/workspace/composables/useGroupMessageList.ts")

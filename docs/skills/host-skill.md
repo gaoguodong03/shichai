@@ -18,7 +18,7 @@
 | 输出对象 | 平台调度器。 | 用户和平台工具循环。 |
 | 输出结构 | `current_phase`、`next_speaker`、`next_action`，必要时等待用户或结束。 | 自然语言正文、工具结果总结、隐藏状态块或脚本 stdout JSON。 |
 | 工作区文件 | 不读、不写、不列目录。 | 可按绑定能力读写当前会话工作区。 |
-| Skill 会话锁 | 不负责保持专家 Skill 会话锁。 | 可通过 `next_action.skill_session` 控制锁定或释放。 |
+| Skill 续跑状态 | 不负责直接写专家续跑状态。 | 可通过最终状态块的 `next_action.resume` 声明下一轮是否续跑同一专家或同一 Skill。 |
 
 ## 3. 使用方式
 

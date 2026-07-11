@@ -11,7 +11,6 @@ from app.agent.simple_agent_finalization import (
     _final_synthesis_instruction,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
-    _run_skill_script_stdout_direct_final_message,
     _script_dependency_direct_final_message,
     _should_force_final_after_tool_success,
     _summary_after_llm_failure_message,
@@ -20,7 +19,6 @@ from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
     _user_text_for_bound_skill_introspection,
 )
-from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent_messages import (
     _ai_response_hit_output_limit,
     _continuation_instruction,
@@ -42,7 +40,6 @@ from app.agent.simple_agent_tool_flow import (
     all_workspace_write_calls_already_succeeded as _all_workspace_write_calls_already_succeeded,
     has_successful_workspace_write_output as _has_successful_workspace_write_output,
     has_workspace_mutating_tool_call as _has_workspace_mutating_tool_call,
-    is_run_skill_script_workflow_step as _is_run_skill_script_workflow_step,
     post_tool_synthesis_should_use_bound_client as _post_tool_synthesis_should_use_bound_client,
     read_file_should_synthesize_after_result as _read_file_should_synthesize_after_result,
     remember_successful_workspace_writes as _remember_successful_workspace_writes,
@@ -56,6 +53,39 @@ from app.agent.simple_agent_tool_ids import (
 from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary
 
 logger = logging.getLogger(__name__)
+
+
+def _last_tool_attempt_source(tool_attempt_debug: list[dict[str, Any]], source: str) -> bool:
+    return bool(tool_attempt_debug and tool_attempt_debug[-1].get("source") == source)
+
+
+async def _unbound_final_after_repeated_synthesis_tool_call(
+    agent: Any,
+    messages: list[BaseMessage],
+    all_tool_raw_outputs: list[str],
+    tool_attempt_debug: list[dict[str, Any]],
+    *,
+    step: int,
+):
+    if not _last_tool_attempt_source(tool_attempt_debug, "post_tool_synthesis_repeated_tool_calls_ignored"):
+        return None
+    final_message = await agent._call_model(agent.llm.get_client(), messages, step=step)
+    final_message = _final_response_or_tool_summary(
+        final_message,
+        all_tool_raw_outputs,
+        tool_attempt_debug,
+    )
+    if not _extract_text_content(final_message).strip():
+        final_message = _deterministic_tool_summary_message(all_tool_raw_outputs)
+    messages.append(final_message)
+    tool_attempt_debug.append(
+        {
+            "source": "post_tool_synthesis_unbound_after_repeated_tool_call",
+            "matched": True,
+            "content_preview": _extract_text_content(final_message)[:240],
+        }
+    )
+    return final_message
 
 
 async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_mode=None, config: dict | None = None):
@@ -278,38 +308,6 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 )
                 yield {"type": "agent_step", "step": step + 2, "message": tool_error_message}
                 break
-            script_stdout_final_message = _run_skill_script_stdout_direct_final_message(tool_out)
-            if script_stdout_final_message is not None:
-                messages.append(script_stdout_final_message)
-                tool_attempt_debug.append(
-                    {
-                        "source": "run_skill_script_stdout_direct_final",
-                        "matched": True,
-                        "content_preview": _extract_text_content(script_stdout_final_message)[:240],
-                    }
-                )
-                yield {"type": "agent_step", "step": step + 2, "message": script_stdout_final_message}
-                break
-            mcp_direct_final_message = _mcp_tool_result_direct_final_message(tool_out)
-            if mcp_direct_final_message is not None:
-                messages.append(mcp_direct_final_message)
-                tool_attempt_debug.append(
-                    {
-                        "source": "mcp_tool_result_direct_final",
-                        "matched": True,
-                        "content_preview": _extract_text_content(mcp_direct_final_message)[:240],
-                    }
-                )
-                yield {"type": "agent_step", "step": step + 2, "message": mcp_direct_final_message}
-                break
-            if _is_run_skill_script_workflow_step(tool_out):
-                tool_attempt_debug.append(
-                    {
-                        "source": "script_workflow_step_continue",
-                        "matched": True,
-                    }
-                )
-                continue
             if _should_force_final_after_tool_success(agent.system_prompt, tool_out):
                 messages.append(_final_synthesis_instruction(agent.system_prompt, tool_out))
                 final_message = await agent._call_model(agent.llm.get_client(), messages, step=step + 2)
@@ -399,6 +397,16 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                         "tool_attempt_debug": tool_attempt_debug,
                     }
                     continue
+                repeated_tool_final_message = await _unbound_final_after_repeated_synthesis_tool_call(
+                    agent,
+                    messages,
+                    all_tool_raw_outputs,
+                    tool_attempt_debug,
+                    step=step + 2,
+                )
+                if repeated_tool_final_message is not None:
+                    yield {"type": "agent_step", "step": step + 2, "message": repeated_tool_final_message}
+                    break
                 final_message = _final_response_or_tool_summary(
                     final_message,
                     all_tool_raw_outputs,
@@ -458,6 +466,16 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                         "tool_attempt_debug": tool_attempt_debug,
                     }
                     continue
+                repeated_tool_final_message = await _unbound_final_after_repeated_synthesis_tool_call(
+                    agent,
+                    messages,
+                    all_tool_raw_outputs,
+                    tool_attempt_debug,
+                    step=step + 2,
+                )
+                if repeated_tool_final_message is not None:
+                    yield {"type": "agent_step", "step": step + 2, "message": repeated_tool_final_message}
+                    break
                 final_message = _final_response_or_tool_summary(
                     final_message,
                     all_tool_raw_outputs,

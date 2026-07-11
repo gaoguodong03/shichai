@@ -42,17 +42,22 @@ def _tool_result(
     execution_status: str,
     content: str,
     artifacts: list[dict[str, str]] | None = None,
-    agent_turn: str = "respond",
-    skill_session: str = "release",
+    handoff: str = "host",
+    resume: str = "none",
+    reason: str = "stage_completed",
+    instruction: str = "",
 ) -> str:
+    final_instruction = instruction.strip() if instruction else content
     return _json(
         {
             "execution_status": execution_status,
             "content": content,
             "artifacts": artifacts or [],
             "next_action": {
-                "agent_turn": agent_turn,
-                "skill_session": skill_session,
+                "handoff": handoff,
+                "resume": resume,
+                "reason": reason,
+                "instruction": final_instruction,
             },
         }
     )
@@ -193,7 +198,9 @@ def generate_image(
             execution_status="blocked",
             content="缺少 description，请传入具体图片提示词。",
             artifacts=[],
-            skill_session="keep",
+            handoff="user",
+            resume="same_agent",
+            reason="missing_input",
         )
 
     try:

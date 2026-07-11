@@ -6,8 +6,14 @@ from typing import Any, Dict, List, Optional
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
-from app.agent.group_host_decision import heuristic_recommend_agents, parse_strict_host_scheduler_output
+from app.agent.group_host_decision import (
+    heuristic_recommend_agents,
+    host_protocol_error_decision,
+    host_scheduler_decision_from_payload,
+)
 from app.agent.platform_prompts import render_platform_prompt
+from app.agent.structured_llm_output import invoke_pydantic_llm_output
+from app.agent.structured_output_contracts import HostSchedulerDecisionPayload, StructuredOutputProtocolError
 from app.api.settings_app import load_app_settings
 from app.core.security import get_current_user
 from app.skills.loader import get_skills_loader_for_user
@@ -96,7 +102,6 @@ async def _host_decide_by_agent(
     _ = (
         messages,
         orphan_session_agent_names,
-        host_mode,
     )
     settings = load_app_settings() if app_settings is None else app_settings
     credential_notice = _llm_credential_notice_for_agent(host_agent, settings)
@@ -138,11 +143,25 @@ async def _host_decide_by_agent(
             {"last_speaker_agent_name": last_speaker_agent_name},
         )
 
-    response = await llm.get_client().ainvoke([SystemMessage(content=system_content), HumanMessage(content=prompt)])
-    raw = response.content if hasattr(response, "content") else str(response)
-    if isinstance(raw, list):
-        raw = "".join(str(item) for item in raw)
-    decision = parse_strict_host_scheduler_output(str(raw or ""), agent_profiles, host_mode="recruitment")
+    client = llm.get_client()
+    messages_for_llm = [SystemMessage(content=system_content), HumanMessage(content=prompt)]
+    retry_prompt = prompt + "\n\n" + render_platform_prompt("host.select_next_speaker.protocol_retry.v1", {})
+    retry_messages = [SystemMessage(content=system_content), HumanMessage(content=retry_prompt)]
+
+    def _validate_host_payload(payload: HostSchedulerDecisionPayload) -> None:
+        host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
+
+    try:
+        payload = await invoke_pydantic_llm_output(
+            client,
+            messages_for_llm,
+            HostSchedulerDecisionPayload,
+            retry_messages=retry_messages,
+            post_validate=_validate_host_payload,
+        )
+        decision = host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
+    except StructuredOutputProtocolError as exc:
+        decision = host_protocol_error_decision(str(exc))
     state = {
         "current_phase": str(decision.get("current_phase") or "").strip(),
         "next_speaker": str(decision.get("next_speaker") or "").strip(),

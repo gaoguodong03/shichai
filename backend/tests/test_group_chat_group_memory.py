@@ -88,7 +88,8 @@ def test_action_prompt_short_default_avoids_meta_task_preface():
 
 def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     gc = _get_memory_prompt_module()
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     host_msg = {
@@ -107,9 +108,10 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
         workspace_root=ws,
     )
 
-    assert not (ws / "memory" / "facts.md").exists()
-    assert not (ws / "memory" / "messages").exists()
-    assert not (ws / "memory" / "logs").exists()
+    assert not (session_root / "memory" / "facts.md").exists()
+    assert not (session_root / "memory" / "messages").exists()
+    assert not (session_root / "memory" / "logs").exists()
+    assert not (ws / "memory").exists()
 
     assistant_msg = {
         "message_id": "expert-1",
@@ -126,16 +128,18 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
         workspace_root=ws,
     )
 
-    facts = (ws / "memory" / "facts.md").read_text(encoding="utf-8")
+    assert not (ws / "memory").exists()
+    facts = (session_root / "memory" / "facts.md").read_text(encoding="utf-8")
     assert "- 用户希望输出周报" in facts
     assert "- 需要包含趋势图表" in facts
-    assert not (ws / "memory" / "messages").exists()
-    assert not (ws / "memory" / "logs").exists()
+    assert not (session_root / "memory" / "messages").exists()
+    assert not (session_root / "memory" / "logs").exists()
 
 
 def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp_path):
     gc = _get_memory_prompt_module()
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     assistant_msg = {
@@ -147,7 +151,12 @@ def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp
             "execution_status": "succeeded",
             "content": "已完成周报初稿，并保存到工作区。",
             "artifacts": [{"type": "markdown", "name": "周报", "path": "reports/weekly.md"}],
-            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            "next_action": {
+                "handoff": "host",
+                "resume": "none",
+                "reason": "stage_completed",
+                "instruction": "已完成周报初稿，并保存到工作区。",
+            },
         },
     }
 
@@ -160,7 +169,8 @@ def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp
         workspace_root=ws,
     )
 
-    index = (ws / "memory" / "index.md").read_text(encoding="utf-8")
+    assert not (ws / "memory").exists()
+    index = (session_root / "memory" / "index.md").read_text(encoding="utf-8")
     assert "agent_name: 写作专家" in index
     assert "skill: weekly-report" in index
     assert "summary: 已完成周报初稿，并保存到工作区。" in index

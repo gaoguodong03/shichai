@@ -14,9 +14,7 @@ from app.agent.workspace_visibility import (
     normalize_public_workspace_path,
 )
 from app.api.files import get_workspace_root_path
-from app.api.group_chat_state import ACTIVE_GROUP_RUNS
 from app.core.security import get_current_user
-from app.session_state.service import read_workspace_text_from_checkpoint
 
 
 class ReadFileInput(BaseModel):
@@ -84,17 +82,6 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
             return internal_system_path_error(rel)
         if is_internal_diagnostic_workspace_path(rel):
             return internal_diagnostic_path_error(rel)
-        active_run = ACTIVE_GROUP_RUNS.get(session_id)
-        checkpoint_id = str((active_run or {}).get("turn_started_checkpoint_id") or "").strip() if isinstance(active_run, dict) else ""
-        if checkpoint_id:
-            try:
-                return read_workspace_text_from_checkpoint(session_id, checkpoint_id, rel)
-            except FileNotFoundError:
-                return render_platform_prompt("workspace.read_file.not_found.v1", {"path": raw})
-            except UnicodeDecodeError:
-                return render_platform_prompt("workspace.read_file.non_utf8.v1", {"path": raw})
-            except Exception as e:
-                return render_platform_prompt("workspace.read_file.read_failed.v1", {"error": e})
         ws_root = get_workspace_root_path(session_id)
         svc = get_shared_sandbox_service()
         try:

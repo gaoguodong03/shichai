@@ -42,6 +42,7 @@ def _filter_redundant_workspace_mcp_tools(tools: List) -> List:
 
 _FILE_CAP_TO_TOOL = (
     ("read", "read_workspace_file"),
+    ("write", "create_workspace_artifact"),
     ("write", "write_workspace_file"),
     ("edit", "edit_workspace_file"),
     ("rename", "rename_workspace_file"),

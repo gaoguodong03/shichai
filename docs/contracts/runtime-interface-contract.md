@@ -97,10 +97,11 @@ session_chat_stream(session_id, GroupChatRequest)
 流式返回由 `run_events()` 产生。正常情况下事件顺序是：
 
 ```text
-route?          # 命中专家后发出
-  -> progress*  # 模型等待、工具运行、生成中等运行阶段
-  -> message*   # 主持人气泡或专家最终消息
-  -> end        # 本轮结束状态
+message?       # 主持人调度发言；用户指定专家时可省略
+  -> route?    # 命中专家后发出
+  -> progress* # 模型等待、工具运行、生成中等运行阶段
+  -> message*  # 专家最终消息，或主持人收束消息
+  -> end       # 本轮结束状态
 ```
 
 异常时可能出现：
@@ -120,12 +121,12 @@ message? -> error? -> end
 | 优先级 | 条件 | 后端动作 | 关键字段 |
 | --- | --- | --- | --- |
 | 1 | 会话内 0 个专家 | 主持人回复并推荐专家，直接 `end` | `agent_names`, `suggested_add_agent_names` |
-| 2 | 请求指定了 `target_agent_name` | 清理短期续跑状态，直达该专家 | `target_agent_name` |
-| 3 | `host_scheduler.next_speaker` 是场内专家 | 按主持人调度状态，直达该专家 | `orchestration_state.json.host_scheduler` |
-| 4 | 有效短期续跑状态 | 跳过主持人，直达续跑专家 | `orchestration_state.json.continuation` |
-| 5 | 以上都不命中 | 调用主持人调度 | `next_speaker`, `next_action` |
+| 2 | 请求指定了 `target_agent_name` | 本轮按用户显式选择交给该专家 | `target_agent_name` |
+| 3 | 以上都不命中 | 调用主持人调度；主持人决定专家、用户或结束 | `next_speaker`, `next_action`, `orchestration_state.json.host_scheduler`, `orchestration_state.json.continuation` |
 
 `message` 正文不再承担路由控制职责。`@专家`、自然语言点名、`host_takeover_requested`、`ignore_auto_agent_name`、`ignore_auto_skill`、`action` 都不是当前请求契约；如出现在请求体顶层，应按非法字段拒绝。
+
+主持人是多专家体系的控制平面。除用户通过 `target_agent_name` 明确指定本轮专家外，用户输入、专家交付、专家等待用户后的继续、阶段推进和结束判断都应先回到主持人。主持人调度到专家时必须生成一条标准主持人消息，例如“请文档合著专家发言。”；该消息进入 `history.json`，并使用普通 `message` 事件推给前端。
 
 统一路由决策只允许以下字段：
 
@@ -162,9 +163,9 @@ message? -> error? -> end
 
 前端只消费后端最终返回的 `suggested_add_agent_names`。是否展示邀请条由后端事件决定，不再依赖会话定义里的模式字段。
 
-### 3.3 短期续跑短路
+### 3.3 短期续跑状态
 
-跨请求续跑由 `orchestration_state.json` 的 `continuation` 表示：
+跨请求续跑意图由 `orchestration_state.json` 的 `continuation` 表示：
 
 ```json
 {
@@ -181,15 +182,16 @@ message? -> error? -> end
 
 | 条件 | 结果 |
 | --- | --- |
-| `host_scheduler.next_speaker` 是场内专家 | 按主持人调度，直达该专家，并清理冲突的 `continuation`。 |
-| `continuation.owner_agent_name` 为空 | 走主持人 |
-| `continuation.owner_agent_name` 不在当前 `agent_names` | 走主持人，并清理 `continuation` |
-| `continuation.skill_policy == "keep"` | 直达 owner，并锁定 `continuation.skill` |
-| `continuation.skill_policy == "release"` | 直达 owner，但不锁定 Skill，由专家重新选择 Skill |
+| 请求指定了 `target_agent_name` | 按用户显式选择交给该专家，并清理冲突的 `continuation`。 |
+| `host_scheduler.next_speaker` 是场内专家 | 先恢复主持人阶段，再由主持人发出可见交接消息后进入该专家。 |
+| `continuation.owner_agent_name` 为空 | 走主持人。 |
+| `continuation.owner_agent_name` 不在当前 `agent_names` | 走主持人，并清理 `continuation`。 |
+| `continuation.skill_policy == "keep"` | 把 owner、Skill 和 `next_action` 作为主持人调度提示；主持人通常应继续交给同一专家同一 Skill，但不得跳过主持人消息。 |
+| `continuation.skill_policy == "release"` | 把上一轮已释放的信息交给主持人；主持人重新判断专家、用户或结束。 |
 
-`message` 文本不清理 `continuation`，也不触发主持人接管。需要指定本轮专家时使用请求字段 `target_agent_name`；需要跨轮回到主持人或改变续跑状态时，由后端根据 `skill_result.next_action` 和 `orchestration_state.json` 的结构化字段决定。
+`message` 文本不清理 `continuation`。需要指定本轮专家时使用请求字段 `target_agent_name`；需要跨轮锁定或释放 Skill 时，由后端根据 `skill_result.next_action` 和 `orchestration_state.json` 的结构化字段把状态交给主持人判断。
 
-这表示：`next_speaker=user` 和 `continuation` 不是一回事。`next_speaker=user` 只是本轮等用户；`continuation` 表示下一轮用户消息要接回哪个专家，以及是否继续锁定 Skill。
+这表示：`next_speaker=user` 和 `continuation` 不是一回事。`next_speaker=user` 只是本轮等用户；`continuation` 表示下一轮用户消息到来时，主持人应看到的续跑锁定意图和上下文依据。
 
 ### 3.4 主持人调度
 
@@ -201,6 +203,22 @@ _host_decide_by_agent(...)
   -> finalize_host_scheduler_decision(...)
   -> _apply_decision_to_ctx(...)
 ```
+
+主持人调度到专家时，平台先写入一条主持人可见消息，再进入专家执行。主持人消息仍使用标准消息结构：
+
+```json
+{
+  "speaker": {
+    "type": "host",
+    "agent_name": "四九"
+  },
+  "message": {
+    "content": "请文档合著专家发言。"
+  }
+}
+```
+
+主持人消息的正文来自平台对严格调度结果的展示化处理，不允许依赖旧字段 `announcement`、`speaker_task`、`next_prompt` 或 `handoff_reason`。主持人消息只负责说明交接，不承载工具日志、专家产物或隐藏状态块。
 
 如果没有会话 `host` 或主持人失败，则进入协议错误或等待用户状态，不再回退到旧 `leader` 路径：
 
@@ -222,7 +240,9 @@ interrupt_reason = "protocol_error"
 
 `current_phase`、`next_speaker`、`next_action` 必填，`suggested_add_agent_names` 可选。`suggested_add_agent_names` 出现时，`next_speaker` 必须是 `"user"`；招募不再使用 `"invite"` 表达。
 
-`group_host_decision.py` 使用严格结构解析，`extra="forbid"`。多余字段、非 JSON、非法 `next_speaker` 都会转成系统保护决策。`speaker_task`、`reason`、`invite`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 和 id 类字段都不是主持人 JSON 契约的一部分：
+平台所有要求 LLM 返回机器可读控制结构的调用，都必须经统一结构化输出入口完成 `LLM raw output -> strict JSON object -> Pydantic model_validate`。该规则适用于主持人调度、专家 Skill 选择，以及以后新增的任何会驱动平台分支、路由、状态、工具、落盘或前端结构展示的 LLM 输出字段。普通专家正文、标题、摘要和展示文案不属于机器可读控制结构，不使用该入口。
+
+`group_host_decision.py` 使用严格结构解析，`extra="forbid"`。多余字段、非 JSON、非法 `next_speaker` 都不是可展示的主持人业务回复。主持人模型第一次输出未通过结构校验时，平台只允许按同一字段 schema 做一次协议重问；重问仍未通过时才转成系统保护决策，等待用户或管理员重试。平台不得从非标准文本中抽取字段、不得把模型解释文字当主持人消息展示，也不得把旧字段补丁化映射成当前字段。`speaker_task`、`reason`、`invite`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 和 id 类字段都不是主持人 JSON 契约的一部分：
 
 ```text
 next_speaker = "user"
@@ -252,9 +272,10 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 3. 构造专家输入：讨论目标、本轮用户输入、最近讨论、路由决策 `next_action`。
 4. `agent.astream(...)` 进入 `SimpleAgent` 工具循环。
 5. 收集模型文本和工具调用；工具 stdout、stderr、退出码和耗时写入执行 trace 或运行日志。
-6. 从脚本 stdout 或专家隐藏状态块解析标准 `next_action`，沉淀为消息级 `skill_result.next_action`。
-7. 写入专家消息、历史、记忆。
-8. 根据 `skill_result.next_action`、hook、soft stop 和 Skill 状态决定 `end` 或交回主持人。
+6. 如果本轮调用了 workspace、MCP、HTTP API 或脚本工具，必须进入工具后 finalizer；finalizer 禁止再次调用工具，必须产出用户可见专家回复。
+7. 从脚本 stdout 或专家隐藏状态块解析 `expert_final_state.v2`，沉淀为消息级 `skill_result.next_action`。
+8. 写入专家消息、历史、记忆。
+9. 根据 `skill_result.next_action.handoff` 决定当前 stream 是等待用户、交回主持人继续调度，还是结束；根据 `skill_result.next_action.resume` 更新下一轮 `continuation`。
 
 专家执行最多 32 轮；超过后用 `timeout_or_budget_exceeded` 中断并等待用户。
 
@@ -335,7 +356,14 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 
 平台不使用 `meta.phase`。运行阶段只能由后端写入 `runtime.json.phase`，再由 `progress.phase` 原样同步给前端。前端不得自定义第二套 `status` / `phase` 枚举来覆盖后端阶段。
 
-`tool_start`、`tool_result` 不作为顶层 SSE 业务事件。工具 stdout、stderr、退出码、调用参数、结构化返回和调用耗时属于执行 trace 或运行日志；面向用户可展示的工具产物写入 `skill_result.artifacts`。
+`tool_start`、`tool_result` 不作为顶层 SSE 业务事件。工具 stdout、stderr、退出码、调用参数、结构化返回和调用耗时属于执行 trace 或运行日志；面向用户可展示的工具产物写入 `skill_result.artifacts`。前端可以在消息右侧展示折叠的“终端/日志”入口，但该入口读取的是按 `message_id` 关联的运行日志，不改变 SSE 事件类型，也不把工具细节塞进 `message.content`。
+
+工作区写入分两层：
+
+- `create_workspace_artifact` 是模型优先使用的高层产物写入工具。模型只提供 `title`、`content`、可选 `kind` / `directory` / `extension`，平台负责生成安全文件名、附加当前时间戳、检测同名冲突并自动追加版本后缀（如 `-02`）。该工具用于新建大纲、正文、资料包、报告、阶段产物和最终产物。
+- `write_workspace_file` 是低层路径写入工具。只有用户明确指定已有路径、固定文件名或确需 `overwrite=true` 时才使用；它按传入 `path` 原样写入，默认不覆盖同名文件。
+
+模型不得为了规避冲突自行猜测时间戳、循环改文件名或在同名错误后随意传 `overwrite=true`。新产物的唯一命名和版本化是平台职责。
 
 ### 4.6 SSE message 事件
 
@@ -355,6 +383,21 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 `skill_result.execution_status` 只允许 `succeeded`、`blocked`、`failed`。`blocked` 表示 Skill 或工具执行到明确等待点，需要用户补充材料、文件、链接、确认或参数；`failed` 表示本步失败，`message.content` 和 `skill_result.content` 必须给出面向用户的失败原因。
 
 消息事件不保存 `role`、顶层 `content`、顶层 `agent_name`、顶层 `skill`、`timestamp`、`turn_id`、`debug`、`required_user_fields`、`handoff_reason`、`interrupt_reason`、`presentation_content`、`tool_raw_results`、`tool_debug`、`tool_results` 作为核心字段。需要给用户看的补充说明使用 `message.content`；需要跨刷新接续的短期状态写入 `orchestration_state.json`。工具 stdout、stderr、退出码、调用参数、结构化返回和调用耗时只属于执行 trace 或运行日志，不进入前端消息 payload，也不进入提示词字段。
+
+同名字段必须按命名空间读取：
+
+| 字段路径 | 可进入 `message` 事件 | 可驱动路由 / 会话状态 | 说明 |
+| --- | --- | --- | --- |
+| `message.content` | 是 | 否 | 可见正文和上下文来源；不解析文件引用、专家路由或工具结果。 |
+| `skill_result.content` | 随 `skill_result` 进入 | 是，限 Skill 结果展示和 continuation 文案 | 有 `skill_result` 时必须与 `message.content` 一致。 |
+| `tool_call.arguments.content` | 否 | 否 | 只属于工具调用参数；日志面板可摘要显示。 |
+| `skill_result.execution_status` | 随 `skill_result` 进入 | 是，限 Skill 本步结果 | 不等于工具日志 `status` 或 SSE `phase`。 |
+| `tool_execution.status` | 否 | 否 | 只属于消息右侧工具日志。 |
+| `progress.phase` / `end.phase` | 各自事件内 | 是，限前端运行态 | 不等于接口 `status` 或 Skill `execution_status`。 |
+| `tool_execution.source` / `provider` / `provider_tool` | 否 | 否 | 只属于日志和 trace；不得作为路由、Skill 选择或消息事实。 |
+| `message.target_agent_name` | 是，且仅用户消息 | 是，限本轮用户显式指定专家 | 不等于主持人 `next_speaker` 或 `suggested_next_speaker`。 |
+
+工具日志 UI 以 `message_id` 为入口：消息右侧的终端图标只表示该消息有关联执行日志。点击后先展示折叠的工具日志列表，例如 `list_workspace_directory`、`write_workspace_file`；继续点击某一条日志，才展开该次工具调用的参数摘要、输出摘要、产物路径、错误和耗时。长参数或正文内容默认折叠，不在聊天气泡内直接展开。
 
 SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用同一条消息结构。实时流只是同步通道，不得为前端单独制造第二套 `role` / `agent_name` / `timestamp` 结构。
 
@@ -448,11 +491,11 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 | 分组 | 字段 | 规则 |
 | --- | --- | --- |
 | `continuation` | `owner_agent_name` | 下一轮用户消息优先接回的专家名称。 |
-| `continuation` | `skill_policy` | 只能是 `keep` 或 `release`。 |
-| `continuation` | `skill` | 仅 `skill_policy=keep` 时填写；`release` 时不写，由专家重新选择 Skill。 |
-| `continuation` | `next_action` | 统一承载下一轮接回专家时要执行的动作说明。 |
+| `continuation` | `skill_policy` | 只能是 `keep` 或 `release`；由 `skill_result.next_action.resume` 推导。 |
+| `continuation` | `skill` | `resume=same_skill` 时填写；`resume=same_agent` 时不写，由同一专家重新选择 Skill。 |
+| `continuation` | `next_action` | 统一承载下一轮给主持人判断的接续动作说明。 |
 | `host_scheduler` | `current_phase` | 主持人的跨轮阶段记忆。 |
-| `host_scheduler` | `next_speaker` | 主持人已经确定的下一位；为场内专家时优先于 `continuation`。 |
+| `host_scheduler` | `next_speaker` | 主持人已经确定的下一位；为场内专家时仍需先生成主持人交接消息。 |
 | `host_scheduler` | `next_action` | 主持人给下一位的动作说明。 |
 
 旧字段 `runtime_state`、`pending_owner_agent_name`、`pending_skill`、`pending_phase`、`pending_required_user_fields`、`pending_handoff_reason`、`skill_session_owner_name`、`skill_session_skill`、`speaker_task`、`instruction`、`next_prompt` 不属于当前契约。保存 `session.json` 时必须拒绝或剔除这些字段；历史数据迁移可以单独处理，但主运行时不得用它们做兜底。
@@ -519,6 +562,8 @@ Skill 选择规则：
 | 多个可加载 Skill | 调用专家 LLM 严格输出 `{"selected_skill":"..."}`。 |
 | 多 Skill 选择失败 | 中断，等待用户或主持人重派。 |
 
+多 Skill 选择属于机器可读 LLM 控制结构，必须通过统一结构化输出入口解析为 `ExpertSkillSelectionPayload` 后才能读取 `selected_skill`。运行时不得在专家 Skill 选择调用点手写 `ainvoke + raw.content + json.loads`，也不得从自然语言中猜测 Skill 名称。
+
 ### 5.2 工具组装
 
 `build_tools_for_group_chat(agent_profile, session_id, resolved_skill)` 统一组装工具：
@@ -548,8 +593,8 @@ run_skill_script_<skill>
 
 ```json
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded|blocked|failed",
-  "content": "脚本文本而非总结",
   "artifacts": [
     {
       "type": "file | directory | image | table | json | markdown | other",
@@ -558,21 +603,23 @@ run_skill_script_<skill>
     }
   ],
   "next_action": {
-    "agent_turn": "respond|continue",
-    "skill_session": "keep|release"
+    "handoff": "user|host|end",
+    "resume": "same_skill|same_agent|host|none",
+    "reason": "stage_gate|missing_input|user_confirmation|stage_completed|final_delivery|failure|protocol_error",
+    "instruction": "面向下一步消费者的动作说明"
   }
 }
 ```
 
-脚本 stdout 必须显式输出 `next_action.agent_turn` 和 `next_action.skill_session`。`agent_turn` 只控制当前专家本轮是否继续行动，`skill_session` 只控制下一条用户消息是否继续回到同一专家和同一 Skill；二者是两个维度，`continue+keep`、`continue+release`、`respond+keep`、`respond+release` 四种组合都合法。平台只校验字段枚举和结构，不把某个组合硬判为非法。
+脚本 stdout 必须显式输出 `schema_version`、`execution_status`、`artifacts` 和 `next_action`。`next_action.handoff` 控制当前专家回合结束后交给用户、主持人还是结束；`next_action.resume` 控制下一条用户消息是否保留同一专家或同一 Skill 的续跑意图。工具循环内部是否继续调用工具由运行时控制，不写入专家最终状态块。
 
-脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：`execution_status=failed`、`agent_turn=respond`、`skill_session=release`，并向用户展示脚本输出不符合平台协议。
+脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：`execution_status=failed`、`next_action.handoff=host`、`next_action.resume=none`、`next_action.reason=protocol_error`，并向用户展示脚本输出不符合平台协议。
 
 ### 5.4 MCP 与 HTTP
 
 MCP 工具走 `app.mcp.manager`。保存的 HTTP API 工具走 `create_http_api_tool()`，由资源中心保存的 URL、method、默认 query/header/body 决定请求目标；后端执行时必须做 SSRF、用户级环境变量引用和 URL 安全校验。
 
-MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具执行后如果还需要 LLM 判断本轮继续还是回复用户、下一轮是否锁定 Skill，专家最终回复末尾必须追加隐藏状态块，并由隐藏状态块生成消息级 `skill_result.next_action`。工具调用参数、stdout、stderr、结构化返回和耗时属于执行 trace 或运行日志，不进入前端消息 payload，也不作为跨轮路由事实源。
+MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具执行后必须进入专家最终回复阶段：运行时把工具事实交给 finalizer，finalizer 产出可见专家回复；绑定 Skill 或场景协作专家的最终回复必须追加隐藏状态块，并由隐藏状态块生成消息级 `skill_result.next_action`。工具调用参数、stdout、stderr、结构化返回和耗时属于执行 trace 或运行日志，不进入前端消息 payload，也不作为跨轮路由事实源。
 
 ## 6. 接口统一改造时的默认步骤
 

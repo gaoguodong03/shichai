@@ -106,25 +106,27 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 ```text
 [[SKILL_SESSION_STATE]]
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "blocked",
-  "content": "等待用户补充或确认",
   "artifacts": [],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "user",
+    "resume": "same_skill",
+    "reason": "user_confirmation",
+    "instruction": "当前阶段：<当前阶段>。请用户补充或确认：<具体问题>。用户回复后继续。"
   }
 }
 [[/SKILL_SESSION_STATE]]
 ```
 
-这里的 `release` 表示本专家已把确认问题交给用户，下一轮由主持人或入口路由重新判断。如果确认后必须回到同一专家继续处理，才使用 `skill_session=keep`。
+这里的 `handoff=user` 表示当前 stream 等用户，`resume=same_skill` 表示下一条用户消息到来时保留同一专家同一 Skill 的续跑意图。若用户回复后应由主持人重新判断专家或阶段，使用 `resume=host`；若流程已完成，使用 `handoff=end`、`resume=none`。
 
 流程型 Skill 必须避免：
 
 - 只写“需要用户确认”，但不写隐藏状态块和等待后的会话归属。
 - 只说“保存文件”，但没有明确应使用的工作区文件工具和需要填写的字段。
 - 默认把过程草稿、头脑风暴、读者测试、临时摘要写成文件。
-- 覆盖用户源文件；修改已有文件时应新建符合 `文件名-当前文件时间戳.扩展名` 的新文件。
+- 覆盖用户源文件；修改已有文件时应使用 `create_workspace_artifact` 新建版本化产物。
 - 在专家 Skill 中自行指定下一位专家或输出主持人 JSON。
 
 ### 3.2 工作区文件写入规范
@@ -136,10 +138,10 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 约束：
 
 - `path` 必须是当前会话工作区相对路径，不写 `backend/data/`、`workspaces/<会话ID>/` 或宿主机绝对路径。
-- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-当前文件时间戳.扩展名`，例如 `materials/技术管理手感-2026070422145700.md`。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区产物都使用 `create_workspace_artifact`，由平台生成安全文件名、时间戳和同名版本后缀。
 - `content` 必须是要保存的完整正文；不能只写摘要、占位符或“见上文”。
 - 只有 `write_workspace_file` 或 `edit_workspace_file` 返回成功后，专家才能在最终答复中说文件已保存。
-- 修改已有文件时，不覆盖源文件；读取源文件后应新建符合 `文件名-当前文件时间戳.扩展名` 的新文件，并在新文件开头记录 `source_path`。
+- 修改已有文件时，不覆盖源文件；读取源文件后应使用 `create_workspace_artifact` 新建版本化产物，并在新文件开头记录 `source_path`。
 - 网页采集、资料检索、素材整理类任务如果得到多条独立素材，应每条素材单独调用一次 `write_workspace_file`，不要把所有素材合并进一个文件。
 - 最终答复只汇总文件清单、来源和简短说明，不把全部素材正文重复堆在聊天气泡里。
 
@@ -165,14 +167,14 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 - Skill 正文应使用 manifest 中的参数名，例如 `url`、`output_path`，不要让模型直接传 `cli_args`。
 - 平台将模型传入的结构化参数转换为 CLI 参数，例如 `output_path` 转为 `--output-path <value>`。
 - 脚本必须把结构化结果写到 stdout，错误写到 stderr，并使用退出码表达成功或失败。
-- stdout JSON 必须使用标准字段：`execution_status`、`content`、`artifacts`、`next_action`。
+- stdout JSON 必须使用标准字段：`schema_version`、`execution_status`、`artifacts`、`next_action`。阶段名、等待点和下一步说明写入 `next_action.instruction`，不要新增阶段状态字段。
 
 成功且声明 Skill 会话结束的 stdout 示例：
 
 ```json
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded",
-  "content": "已生成结果文件。",
   "artifacts": [
     {
       "type": "file",
@@ -181,8 +183,10 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
     }
   ],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "end",
+    "resume": "none",
+    "reason": "final_delivery",
+    "instruction": "已生成结果文件。"
   }
 }
 ```
@@ -291,12 +295,14 @@ try:
     import pandas as pd
 except ImportError:
     print(json.dumps({
+        "schema_version": "expert_final_state.v2",
         "execution_status": "failed",
-        "content": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。",
         "artifacts": [],
         "next_action": {
-            "agent_turn": "respond",
-            "skill_session": "release"
+            "handoff": "host",
+            "resume": "none",
+            "reason": "failure",
+            "instruction": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。"
         }
     }, ensure_ascii=False))
     raise SystemExit(2)
@@ -310,11 +316,13 @@ except ImportError:
 
 | 字段 | 建议 | 说明 |
 | --- | --- | --- |
+| `schema_version` | 必填 | 固定为 `expert_final_state.v2`。 |
 | `execution_status` | 必填 | 枚举：`succeeded`、`blocked`、`failed`。 |
-| `content` | 必填 | 脚本产出的正文结果；平台不做 LLM 总结或改写。 |
 | `artifacts` | 必填 | 产物索引数组。无产物时写 `[]`。 |
-| `next_action.agent_turn` | 必填 | 枚举：`continue`、`respond`。控制当前专家回合是否继续行动。 |
-| `next_action.skill_session` | 必填 | 枚举：`keep`、`release`。控制下一条用户消息是否回到同一专家和 Skill。 |
+| `next_action.handoff` | 必填 | 枚举：`user`、`host`、`end`。控制专家回合结束后交给谁。 |
+| `next_action.resume` | 必填 | 枚举：`same_skill`、`same_agent`、`host`、`none`。控制下一条用户消息的续跑意图。 |
+| `next_action.reason` | 必填 | 枚举见 `docs/skills/skill-session-flow.md`。说明交接原因。 |
+| `next_action.instruction` | 必填 | 面向下一步消费者的自包含动作说明。 |
 
 `artifacts` 中每一项固定为：
 
@@ -332,8 +340,8 @@ except ImportError:
 
 ```json
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded",
-  "content": "转写完成，共 3 段，完整结果已保存。",
   "artifacts": [
     {
       "type": "json",
@@ -347,8 +355,10 @@ except ImportError:
     }
   ],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "end",
+    "resume": "none",
+    "reason": "final_delivery",
+    "instruction": "转写完成，共 3 段，完整结果已保存。"
   }
 }
 ```
@@ -358,7 +368,7 @@ except ImportError:
 - 用整数，不要写成“3段”“共三段”。
 - 名称稳定，避免同一个脚本有时叫 `count`，有时叫 `num`。
 - 如果产物文件里有明细数组，`segment_count` 应等于 `len(segments)`。
-- 失败时如需记录 `processed_count`、`failed_count`，也写入产物文件或执行 trace；stdout 只保留 `content`、`artifacts` 和 `next_action`。
+- 失败时如需记录 `processed_count`、`failed_count`，也写入产物文件或执行 trace；stdout 只保留 `schema_version`、`execution_status`、`artifacts`、`next_action`。
 
 #### 4.3.4 Python 脚本最小模板
 
@@ -383,37 +393,41 @@ def main() -> None:
     args = parser.parse_args()
 
     input_path = Path(args.input)
-    if not input_path.exists():
-        emit({
-            "execution_status": "blocked",
-            "content": f"找不到输入文件：{args.input}",
-            "artifacts": [],
-            "next_action": {
-                "agent_turn": "respond",
-                "skill_session": "keep"
-            }
-        }, code=2)
+	    if not input_path.exists():
+	        emit({
+	            "schema_version": "expert_final_state.v2",
+	            "execution_status": "blocked",
+	            "artifacts": [],
+	            "next_action": {
+	                "handoff": "user",
+	                "resume": "same_skill",
+	                "reason": "missing_input",
+	                "instruction": f"找不到输入文件：{args.input}，请提供正确的工作区相对路径。"
+	            }
+	        }, code=2)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result = {"source": args.input}
     output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    emit({
-        "execution_status": "succeeded",
-        "content": "处理完成。",
-        "artifacts": [
+	    emit({
+	        "schema_version": "expert_final_state.v2",
+	        "execution_status": "succeeded",
+	        "artifacts": [
             {
                 "type": "json",
                 "name": "处理结果",
                 "path": str(output_path)
             }
-        ],
-        "next_action": {
-            "agent_turn": "respond",
-            "skill_session": "release"
-        }
-    })
+	        ],
+	        "next_action": {
+	            "handoff": "host",
+	            "resume": "none",
+	            "reason": "stage_completed",
+	            "instruction": "处理完成，请主持人判断下一步。"
+	        }
+	    })
 
 
 if __name__ == "__main__":
@@ -423,29 +437,31 @@ if __name__ == "__main__":
         raise
     except Exception as exc:
         print(str(exc), file=sys.stderr)
-        emit({
-            "execution_status": "failed",
-            "content": str(exc),
-            "artifacts": [],
-            "next_action": {
-                "agent_turn": "respond",
-                "skill_session": "release"
-            }
-        }, code=1)
+	        emit({
+	            "schema_version": "expert_final_state.v2",
+	            "execution_status": "failed",
+	            "artifacts": [],
+	            "next_action": {
+	                "handoff": "host",
+	                "resume": "none",
+	                "reason": "failure",
+	                "instruction": str(exc)
+	            }
+	        }, code=1)
 ```
 
-## 5. Skill 会话锁
+## 5. Skill 续跑状态
 
-专家在群聊中使用某个 Skill 且需要跨轮继续时，系统会在 `orchestration_state.json.continuation` 中记录接续状态：
+专家在群聊中使用某个 Skill 且需要跨轮继续时，专家最终状态块或脚本 stdout 通过 `next_action.resume` 声明续跑意图。平台再把该意图沉淀到 `orchestration_state.json.continuation`：
 
-- `owner_agent_name`：下一轮优先接回的专家名称；
-- `skill_policy`：`keep` 表示继续同一 Skill，`release` 表示接回同一专家但重新选择 Skill；
-- `skill`：`skill_policy=keep` 时继续使用的 Skill 目录名。
+- `owner_agent_name`：下一轮主持人应优先参考的专家名称；
+- `skill_policy`：`keep` 表示保留同一 Skill 的续跑意图，`release` 表示不锁定当前 Skill；
+- `skill`：`resume=same_skill` 时继续使用的 Skill 目录名；
+- `next_action`：来自 `next_action.instruction` 的接续动作说明。
 
-`continuation` 存在、仍有效且 `skill_policy=keep` 时，下一条用户消息默认直接交给该专家继续同一 Skill，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
+`continuation` 存在、仍有效且 `skill_policy=keep` 时，下一条用户消息会带着同一专家和同一 Skill 的续跑意图交给四九判断。四九通常应继续交给该专家，但必须先生成主持人调度，不能静默直达专家。满足以下条件之一时应释放或忽略该续跑意图：
 
-- 脚本 stdout JSON 输出 `next_action.skill_session=release`；
-- 非脚本 Skill，或 MCP / HTTP / workspace 工具后的专家隐藏状态块输出 `next_action.skill_session=release`；
+- 脚本 stdout JSON 或专家隐藏状态块输出 `next_action.resume=host` 或 `next_action.resume=none`；
 - 用户明确说“结束 skill / 退出技能 / 交给主持人 / 请下一位专家”等；
 - 用户消息请求中的 `target_agent_name` 指向其他会话成员；
 - 当前专家或 Skill 已不在会话有效范围内。
@@ -456,34 +472,38 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 ### 6.1 标准流程控制
 
-脚本型 Skill 通过 stdout JSON 的 `next_action` 控制流程。MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后如果需要 LLM 判断下一步，专家最终回复末尾必须追加隐藏状态块。非脚本 Skill 也通过专家正文末尾的隐藏状态块表达同一组字段。
+脚本型 Skill 通过 stdout JSON 的 `next_action` 控制专家回合结束后的交接。MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后必须进入专家最终回复阶段，绑定 Skill 或场景协作专家的最终回复必须追加隐藏状态块。非脚本 Skill 也通过专家正文末尾的隐藏状态块表达同一组字段。
 
 规则：
 
-- `next_action.agent_turn=continue`：当前专家本轮继续行动，例如继续编辑文件或调用下一个工具；它不决定下一条用户消息归属。
-- `next_action.agent_turn=respond`：当前专家本轮回复用户；它不等于一定释放 Skill 会话。
-- `next_action.skill_session=keep`：下一条用户消息继续回到同一专家和同一 Skill；它不决定当前专家本轮是否继续行动。
-- `next_action.skill_session=release`：释放 Skill 会话锁，下一轮交回主持人或正常入口调度。
+- `next_action.handoff=user`：当前 stream 结束并等待用户。
+- `next_action.handoff=host`：当前专家发言结束后交回主持人调度。
+- `next_action.handoff=end`：流程完成，结束本轮。
+- `next_action.resume=same_skill`：下一条用户消息保留同一专家同一 Skill 的续跑意图。
+- `next_action.resume=same_agent`：下一条用户消息保留同一专家，但允许重新选择 Skill。
+- `next_action.resume=host` 或 `none`：下一条用户消息不锁定当前专家 Skill。
 
-`agent_turn` 和 `skill_session` 是两个维度，四种组合都合法：`continue+keep`、`continue+release`、`respond+keep`、`respond+release`。平台只校验枚举和结构，不把某个组合硬判为非法。具体语义见 `docs/skills/skill-session-flow.md`。
+工具循环内部是否继续调用工具由运行时决定，不再由最终隐藏状态块的字段表达。具体语义见 `docs/skills/skill-session-flow.md`。
 
 完整字段与允许值见 `docs/skills/skill-session-flow.md`。
 
-脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理：`execution_status=failed`、`agent_turn=respond`、`skill_session=release`，并向用户展示脚本输出不符合平台协议。
+脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理：`execution_status=failed`、`next_action.handoff=host`、`next_action.resume=none`、`next_action.reason=protocol_error`，并向用户展示脚本输出不符合平台协议。
 
-未绑定流程型 Skill、也没有工具后续判断的普通自然语言专家，单轮发言结束后可默认释放 Skill 会话。绑定 Skill、场景协作关键阶段成员，或 MCP / HTTP / workspace 工具执行后需要决定本轮继续和跨轮锁定时，专家最终回复必须追加隐藏状态块，让平台可以记录本轮 Skill 已完成、等待用户补充或需要继续锁定。
+未绑定流程型 Skill、也没有工具后续判断的普通自然语言专家，单轮发言结束后可默认交回主持人。绑定 Skill、场景协作关键阶段成员，或 MCP / HTTP / workspace 工具执行后需要决定阶段门禁、等待用户、交回主持人或最终结束时，专家最终回复必须追加隐藏状态块。
 
 隐藏状态块示例：
 
 ```text
 [[SKILL_SESSION_STATE]]
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded",
-  "content": "处理完成。",
   "artifacts": [],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "host",
+    "resume": "none",
+    "reason": "stage_completed",
+    "instruction": "处理完成，请主持人判断下一步。"
   }
 }
 [[/SKILL_SESSION_STATE]]
@@ -491,35 +511,36 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 实际专家输出时，状态块必须直接追加到正文末尾，不要放入 Markdown 代码块。平台会读取并移除该状态块，用户只看到专家正文。
 
-### 6.2 `release` 的判定
+### 6.2 `handoff` 的判定
 
-满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=release`：
+满足以下条件时选择对应 `next_action.handoff`：
 
-- 已交付用户请求的最终结果，且不需要同一 Skill 继续追问或处理；
-- 脚本成功执行，已在 `content` 中给出文本结果，并在 `artifacts` 中登记产物路径；
-- 当前 Skill 判断后续应由四九重新选择专家；
-- 已向用户提出确认问题，且下一轮应由主持人根据用户回复重新调度；
-- 任务无法继续且已给出明确失败原因和替代建议。
+| `handoff` | 选择条件 |
+| --- | --- |
+| `user` | 已提出确认问题、需要用户补充参数/文件/链接/选择、或跨阶段前必须等待用户确认。 |
+| `host` | 当前专家阶段完成，后续应由四九判断下一位专家、下一阶段或是否结束。 |
+| `end` | 最终结果已经交付，流程不需要继续。 |
 
-### 6.3 `keep` 的判定
+### 6.3 `resume` 的判定
 
-满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=keep`：
+满足以下条件时选择对应 `next_action.resume`：
 
-- 还缺少必填参数，需要用户补充；
-- 任务设计为多轮流程，当前只完成其中一步；
-- 已产出草稿，但需要用户确认方向后继续修改；
-- 脚本执行失败但可由用户补充信息或换参数后继续；
-- 正在等待用户选择、确认、上传文件或提供链接，且下一轮必须回到同一专家继续处理。
+| `resume` | 选择条件 |
+| --- | --- |
+| `same_skill` | 用户回复后必须回到同一专家同一 Skill，例如继续合著、继续修改、继续补齐参数。 |
+| `same_agent` | 用户回复后仍应由同一专家处理，但可重新选择 Skill。 |
+| `host` | 用户回复后应交回主持人重新判断专家或阶段。 |
+| `none` | 任务已完成、失败收束，或没有跨轮续跑需求。 |
 
-### 6.4 不应释放的情况
+### 6.4 跨阶段门禁
 
-以下情况不要输出 `release`，应输出 `next_action.skill_session=keep`：
+平台允许同一阶段内写入多个工作区产物。以下情况必须通过 `handoff=user` 或 `handoff=host` 暂停，不得在同一专家回合中静默跨阶段：
 
-- 向用户提出的问题只有同一专家继续处理才有意义；
-- 只完成了计划、提纲、参数确认中的一环，且下一轮必须回到同一专家；
-- 工具刚返回原始结果，但尚未整理给用户；
-- 用户明显希望“继续生成 / 继续修改 / 继续抓取”；
-- 需要保持同一专家上下文才能完成后续步骤。
+- 资料搜集完成后进入大纲或正文；
+- 大纲生成后进入正文起草；
+- 一个 section 草稿完成后进入下一个 section；
+- 初稿完成后进入审阅或发布；
+- 任何需要用户确认方向、范围、风格或文件内容的阶段切换。
 
 ## 7. 主持人与专家边界
 
@@ -551,8 +572,8 @@ python scripts/validate_skill_cli_contract.py
 人工验收至少覆盖：
 
 - Skill 能被专家按 `description` 正确选择；
-- 需要参数时通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=keep`，并继续锁定同一专家；
-- 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=release`，并回到四九调度；
+- 需要参数或用户确认时通过 stdout JSON 或隐藏状态块输出 `next_action.handoff=user`，并按需要设置 `resume=same_skill`；
+- 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.handoff=end`、`resume=none`；
 - 用户说“结束 skill / 交给主持人”时能退出锁定；
 - 脚本型 Skill 的 `scripts/manifest.json`、manifest 参数、stdout/stderr 与退出码符合约定；
 - 工作产物写入会话工作区，而不是写入 Skill 目录。
@@ -597,12 +618,14 @@ allowed-tools:
 
 [[SKILL_SESSION_STATE]]
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "blocked",
-  "content": "等待用户补充或确认",
   "artifacts": [],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "user",
+    "resume": "same_skill",
+    "reason": "user_confirmation",
+    "instruction": "当前阶段：<当前阶段>。请用户补充或确认：<具体问题>。用户回复后继续。"
   }
 }
 [[/SKILL_SESSION_STATE]]
@@ -613,8 +636,8 @@ allowed-tools:
 
 [[SKILL_SESSION_STATE]]
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded",
-  "content": "<完成说明>",
   "artifacts": [
     {
       "type": "file | directory | image | table | json | markdown | other",
@@ -623,8 +646,10 @@ allowed-tools:
     }
   ],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "end",
+    "resume": "none",
+    "reason": "final_delivery",
+    "instruction": "<完成说明>"
   }
 }
 [[/SKILL_SESSION_STATE]]
@@ -638,7 +663,8 @@ allowed-tools:
 ## 工作区文件规则
 
 - 过程产物默认只在聊天中确认；用户明确要求保存或流程进入最终交付阶段时，写入工作区文件。
-- 保存文件必须使用 `write_workspace_file`，并提供 `path` 与完整 `content`。
+- 新建工作区产物优先使用 `create_workspace_artifact`，并提供 `title` 与完整 `content`；平台负责生成唯一文件名和版本后缀。
+- 只有用户明确指定路径、固定文件名或要求覆盖时，才使用 `write_workspace_file`，并提供 `path` 与完整 `content`。
 - `content` 必须是完整交付内容。
 - 只有 `write_workspace_file` 返回成功后，才能说明文件已保存并使用完成状态块。
 - 修改已有文件时，读取源文件后新建带时间戳的新文件，并在新文件开头记录 `source_path`。
@@ -651,9 +677,11 @@ allowed-tools:
 
 ## 结束点判断
 
-- 已交付最终结果时，正文末尾追加完成状态块。
-- 已向用户提出确认问题，且下一轮应由主持人重新判断时，等待用户状态块使用 `skill_session:"release"`。
-- 下一轮必须回到同一专家继续处理时，等待用户状态块使用 `skill_session:"keep"`。
+- 已交付最终结果时，正文末尾追加完成状态块，使用 `handoff:"end"`、`resume:"none"`。
+- 已向用户提出确认问题时，等待用户状态块使用 `handoff:"user"`。
+- 下一轮应优先延续同一专家同一 Skill 时，使用 `resume:"same_skill"`。
+- 下一轮应由主持人重新判断时，使用 `resume:"host"`。
+- 跨阶段前必须通过状态块暂停，不能在同一专家回合里静默进入下一阶段。
 ```
 
 ### 9.2 脚本型 Skill 最小模板
@@ -720,8 +748,8 @@ allowed-tools:
 成功示例：
 
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded",
-  "content": "处理完成。",
   "artifacts": [
     {
       "type": "markdown",
@@ -730,32 +758,38 @@ allowed-tools:
     }
   ],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "host",
+    "resume": "none",
+    "reason": "stage_completed",
+    "instruction": "处理完成，请主持人判断下一步。"
   }
 }
 
 缺少输入示例：
 
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "blocked",
-  "content": "缺少输入文件路径。",
   "artifacts": [],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "keep"
+    "handoff": "user",
+    "resume": "same_skill",
+    "reason": "missing_input",
+    "instruction": "缺少输入文件路径，请补充后继续。"
   }
 }
 
 失败示例：
 
 {
+  "schema_version": "expert_final_state.v2",
   "execution_status": "failed",
-  "content": "<失败原因>",
   "artifacts": [],
   "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
+    "handoff": "host",
+    "resume": "none",
+    "reason": "failure",
+    "instruction": "<失败原因>"
   }
 }
 

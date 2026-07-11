@@ -6,6 +6,16 @@ from app.agent.structured_output_contracts import ArtifactRef
 
 
 EMPTY_EXPERT_CONTENT = "模型没有返回可展示的文字内容。"
+TOOL_SUMMARY_ONLY_CONTENT = "模型没有返回可展示的专家回复；本轮只有工具执行摘要。请重新执行本轮专家步骤。"
+_DETERMINISTIC_TOOL_SUMMARY_PREFIXES = (
+    "工具已执行完成。以下是本轮工具返回摘要：",
+    "工具已执行完成，但本轮没有捕获到可展示的工具返回内容。",
+)
+
+
+def _is_deterministic_tool_summary(content: str) -> bool:
+    text = str(content or "").strip()
+    return any(text.startswith(prefix) for prefix in _DETERMINISTIC_TOOL_SUMMARY_PREFIXES)
 
 
 def collect_artifacts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -32,6 +42,22 @@ def collect_artifacts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return artifacts
 
 
+def _minimal_artifact_delivery_content(artifacts: List[Dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for item in artifacts or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("path") or "").strip()
+        path = str(item.get("path") or "").strip()
+        if not path:
+            continue
+        label = name or path
+        lines.append(f"- {label}：{path}")
+    if not lines:
+        return ""
+    return "已生成工作区产物：\n" + "\n".join(lines)
+
+
 def build_expert_skill_result(*, content: str, tool_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Build an expert turn skill_result from model text and structured tool results."""
     from app.agent.group_chat_skill_session import skill_result_from_content
@@ -40,12 +66,34 @@ def build_expert_skill_result(*, content: str, tool_results: List[Dict[str, Any]
     has_failed = any(item.get("execution_status") == "failed" for item in tool_results if isinstance(item, dict))
     has_blocked = any(item.get("execution_status") == "blocked" for item in tool_results if isinstance(item, dict))
     status = "failed" if has_failed else "blocked" if has_blocked else "succeeded"
-    return skill_result_from_content(
+    artifacts = collect_artifacts(tool_results)
+    result = skill_result_from_content(
         status=status,
         content=visible_content,
-        artifacts=collect_artifacts(tool_results),
+        artifacts=artifacts,
         tool_results=tool_results,
     )
+    result_content = str(result.get("content") or "").strip()
+    if tool_results and _is_deterministic_tool_summary(visible_content) and result_content == visible_content:
+        artifact_delivery = _minimal_artifact_delivery_content(artifacts)
+        if status == "succeeded" and artifact_delivery:
+            result["content"] = artifact_delivery
+            result["next_action"] = {
+                "handoff": "host",
+                "resume": "none",
+                "reason": "stage_completed",
+                "instruction": artifact_delivery,
+            }
+            return result
+        result["execution_status"] = "failed"
+        result["content"] = TOOL_SUMMARY_ONLY_CONTENT
+        result["next_action"] = {
+            "handoff": "user",
+            "resume": "same_skill",
+            "reason": "protocol_error",
+            "instruction": "模型没有返回可展示的专家回复；请重新执行本轮专家步骤。",
+        }
+    return result
 
 
 def problem_tool_result_content(tool_results: List[Dict[str, Any]]) -> str:

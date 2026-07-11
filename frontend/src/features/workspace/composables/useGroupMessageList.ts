@@ -1,6 +1,7 @@
 import { nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { apiRequest } from '@/api/base'
+import { fetchMessageExecutionLogs, type MessageExecutionLogSummary } from '@/api/chat'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { useAuthenticatedMessageImages } from './useAuthenticatedMessageImages'
 import {
@@ -76,6 +77,10 @@ export function useGroupMessageList(args: {
   const sessionCheckpointsLoading = ref(false)
   const messageStateActionKey = ref('')
   const copiedMessageActionKey = ref('')
+  const messageExecutionLogs = ref<Record<string, MessageExecutionLogSummary[]>>({})
+  const messageExecutionLogsLoading = ref<Record<string, boolean>>({})
+  const expandedExecutionLogMessageId = ref('')
+  const expandedExecutionLogKey = ref('')
   let checkpointFetchSeq = 0
   let copiedMessageTimer: ReturnType<typeof window.setTimeout> | null = null
 
@@ -331,6 +336,65 @@ export function useGroupMessageList(args: {
     }
   }
 
+  function messageExecutionLogRows(msg: { message_id?: string }) {
+    const messageId = String(msg?.message_id || '').trim()
+    return messageId ? (messageExecutionLogs.value[messageId] || []) : []
+  }
+
+  function canShowMessageExecutionLogs(msg: MsgExt & { message_id?: string }) {
+    const type = messageSpeakerType(msg)
+    return (type === 'expert' || type === 'host') && Boolean(String(msg?.message_id || '').trim())
+  }
+
+  function isMessageExecutionLogsLoading(msg: { message_id?: string }) {
+    const messageId = String(msg?.message_id || '').trim()
+    return Boolean(messageId && messageExecutionLogsLoading.value[messageId])
+  }
+
+  function isMessageExecutionLogsOpen(msg: { message_id?: string }) {
+    return expandedExecutionLogMessageId.value === String(msg?.message_id || '').trim()
+  }
+
+  function executionLogKey(msg: { message_id?: string }, index: number) {
+    return `${String(msg?.message_id || '').trim()}-execution-log-${index}`
+  }
+
+  function toggleExecutionLogDetail(msg: { message_id?: string }, index: number) {
+    const key = executionLogKey(msg, index)
+    expandedExecutionLogKey.value = expandedExecutionLogKey.value === key ? '' : key
+  }
+
+  function isExecutionLogDetailOpen(msg: { message_id?: string }, index: number) {
+    return expandedExecutionLogKey.value === executionLogKey(msg, index)
+  }
+
+  async function toggleMessageExecutionLogs(msg: MsgExt & { message_id?: string }) {
+    const sessionId = String(groupDetail.value?.id || '').trim()
+    const messageId = String(msg?.message_id || '').trim()
+    if (!sessionId || !messageId) return
+    if (expandedExecutionLogMessageId.value === messageId) {
+      expandedExecutionLogMessageId.value = ''
+      expandedExecutionLogKey.value = ''
+      return
+    }
+    expandedExecutionLogMessageId.value = messageId
+    expandedExecutionLogKey.value = ''
+    if (messageExecutionLogs.value[messageId]) return
+    messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: true }
+    try {
+      const response = await fetchMessageExecutionLogs(sessionId, messageId)
+      messageExecutionLogs.value = {
+        ...messageExecutionLogs.value,
+        [messageId]: Array.isArray(response.data?.logs) ? response.data.logs : [],
+      }
+    } catch {
+      messageExecutionLogs.value = { ...messageExecutionLogs.value, [messageId]: [] }
+      await appAlert({ title: '日志加载失败', message: '工具日志加载失败', variant: 'danger' })
+    } finally {
+      messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: false }
+    }
+  }
+
   function scrollGroupToBottom() {
     nextTick(() => {
       const el = groupMessagesRef.value
@@ -479,6 +543,16 @@ export function useGroupMessageList(args: {
     copyAgentMessageToClipboard,
     isMessageCopied,
     deleteGroupMessage,
+    messageExecutionLogs,
+    messageExecutionLogRows,
+    canShowMessageExecutionLogs,
+    isMessageExecutionLogsLoading,
+    isMessageExecutionLogsOpen,
+    expandedExecutionLogKey,
+    executionLogKey,
+    toggleExecutionLogDetail,
+    isExecutionLogDetailOpen,
+    toggleMessageExecutionLogs,
     forkMessageState,
     rollbackMessageState,
     canMessageStateAction,

@@ -10,14 +10,16 @@ from app.agent.group_memory_store import (
 
 def test_upsert_facts_dedup_and_cap(tmp_path: Path):
     session_id = "group-test"
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     upsert_facts(session_id, ["事实A", "事实B"], max_facts=3, workspace_root=ws)
     facts = upsert_facts(session_id, ["事实B", "事实C", "事实D"], max_facts=3, workspace_root=ws)
 
     assert facts == ["事实B", "事实C", "事实D"]
-    facts_file = ws / "memory" / "facts.md"
+    assert not (ws / "memory").exists()
+    facts_file = session_root / "memory" / "facts.md"
     content = facts_file.read_text(encoding="utf-8")
     assert "- 事实A" not in content
     assert "- 事实D" in content
@@ -25,14 +27,15 @@ def test_upsert_facts_dedup_and_cap(tmp_path: Path):
 
 def test_build_dispatch_context_uses_only_facts(tmp_path: Path):
     session_id = "group-test"
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     upsert_facts(session_id, ["用户希望输出周报", "需包含图表"], workspace_root=ws)
-    old_logs = ws / "memory" / "logs"
+    old_logs = session_root / "memory" / "logs"
     old_logs.mkdir(parents=True, exist_ok=True)
     (old_logs / "old.md").write_text("这条旧日志不应进入下一轮提示词", encoding="utf-8")
-    old_messages = ws / "memory" / "messages"
+    old_messages = session_root / "memory" / "messages"
     old_messages.mkdir(parents=True, exist_ok=True)
     (old_messages / "old.md").write_text("旧完整发言也不应被引用", encoding="utf-8")
 
@@ -56,7 +59,8 @@ def test_build_dispatch_context_uses_only_facts(tmp_path: Path):
 
 def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
     session_id = "group-test"
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     entries = upsert_index_entries(
@@ -99,7 +103,8 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
             "files": ["charts/trend.png"],
         },
     ]
-    index = (ws / "memory" / "index.md").read_text(encoding="utf-8")
+    assert not (ws / "memory").exists()
+    index = (session_root / "memory" / "index.md").read_text(encoding="utf-8")
     assert "summary: 生成周报草稿" in index
     assert "- reports/weekly.md" in index
     assert "- charts/trend.png" in index
@@ -120,7 +125,8 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
 
 def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
     session_id = "group-test"
-    ws = tmp_path / "ws"
+    session_root = tmp_path / "session"
+    ws = session_root / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
 
     ctx = build_dispatch_context(

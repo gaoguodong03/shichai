@@ -15,6 +15,7 @@ from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.agent.group_chat_once import group_chat_once
 from app.agent.group_chat_runtime import group_chat_stream
 from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest
+from app.agent.session_runtime_logs import message_execution_log_summaries
 from app.agent.group_session_service import (
     GroupSessionUpdate,
     create_session_internal,
@@ -111,6 +112,22 @@ async def stop_session_chat(session_id: str):
 async def delete_session_message(session_id: str, message_id: str):
     """从会话历史中彻底删除一条消息（含 Agent 发言），避免污染下一轮上下文。"""
     return await delete_group_message(session_id, message_id)
+
+
+@router.get("/sessions/{session_id}/messages/{message_id}/execution-logs")
+async def get_session_message_execution_logs(session_id: str, message_id: str):
+    """按消息读取折叠后的工具执行日志摘要。"""
+    session_definitions = load_session_definitions()
+    if session_id not in session_definitions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    normalized_message_id = str(message_id or "").strip()
+    return {
+        "status": "ok",
+        "data": {
+            "message_id": normalized_message_id,
+            "logs": message_execution_log_summaries(session_id, message_id=normalized_message_id),
+        },
+    }
 
 
 @router.post("/sessions/{session_id}/chat/stream")

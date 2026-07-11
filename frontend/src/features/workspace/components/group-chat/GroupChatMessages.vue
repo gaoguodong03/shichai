@@ -53,65 +53,50 @@
                         正在输出{{ streamingPulse }}
                           </span>
                           <span v-if="messageSkill(msg)" class="group-chat-skill-tag">skill: {{ formatSkill(messageSkill(msg)) }}</span>
-                          <div
-                            v-if="getSandboxArtifactDisplayItems(msg).length"
-                            class="group-chat-tool-tag-wrap"
-                            :data-key="sandboxGroupKey(msg, i)"
+                          <button
+                            v-if="canShowMessageExecutionLogs(msg)"
+                            type="button"
+                            :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-action-terminal', isMessageExecutionLogsOpen(msg) && 'group-chat-tool-tag-expanded']"
+                            :aria-label="isMessageExecutionLogsOpen(msg) ? '隐藏工具日志' : '查看工具日志'"
+                            :title="isMessageExecutionLogsOpen(msg) ? '隐藏工具日志' : '查看工具日志'"
+                            @click="toggleMessageExecutionLogs(msg)"
                           >
-                            <button
-                              type="button"
-                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-sandbox-group-toggle', isSandboxGroupOpen(msg, i) && 'group-chat-tool-tag-expanded']"
-                              :aria-label="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxArtifactDisplayItems(msg).length})`"
-                              :title="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxArtifactDisplayItems(msg).length})`"
-                              @click="expandedToolKey = isSandboxGroupOpen(msg, i) ? null : sandboxGroupKey(msg, i)"
+                            <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <rect x="3" y="4" width="18" height="16" rx="3" />
+                              <path d="M8 9l3 3-3 3" />
+                              <path d="M13 15h3" />
+                            </svg>
+                            <span v-if="messageExecutionLogRows(msg).length" class="group-chat-sandbox-group-count" aria-hidden="true">{{ messageExecutionLogRows(msg).length }}</span>
+                            <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                          </button>
+                        </div>
+                        <div
+                          v-if="isMessageExecutionLogsOpen(msg) && (isMessageExecutionLogsLoading(msg) || messageExecutionLogRows(msg).length)"
+                          class="group-chat-execution-log-panel"
+                          :data-expanded-log-key="expandedExecutionLogKey"
+                        >
+                          <div v-if="isMessageExecutionLogsLoading(msg)" class="group-chat-execution-log-empty">日志加载中...</div>
+                          <div v-else class="group-chat-execution-log-list">
+                            <div
+                              v-for="(log, logIndex) in messageExecutionLogRows(msg)"
+                              :key="log.log_id || executionLogKey(msg, logIndex)"
+                              class="group-chat-execution-log-item"
                             >
-                              <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <rect x="3" y="4" width="18" height="16" rx="3" />
-                                <path d="M8 9l3 3-3 3" />
-                                <path d="M13 15h3" />
-                              </svg>
-                              <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ getSandboxArtifactDisplayItems(msg).length }}</span>
-                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
-                            <div v-if="isSandboxGroupOpen(msg, i)" class="group-chat-tool-popover group-chat-sandbox-group-popover">
                               <button
-                                v-for="(item, tri) in getSandboxArtifactDisplayItems(msg)"
-                                :key="`${sandboxGroupKey(msg, i)}-${tri}`"
                                 type="button"
-                                :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === sandboxToolKey(msg, i, tri) && 'group-chat-tool-tag-expanded']"
-                                @click.stop="expandedToolKey = expandedToolKey === sandboxToolKey(msg, i, tri) ? sandboxGroupKey(msg, i) : sandboxToolKey(msg, i, tri)"
+                                class="group-chat-execution-log-summary"
+                                @click="toggleExecutionLogDetail(msg, logIndex)"
                               >
-                                {{ artifactDisplayMeta(item).label }}
-                                <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                                <span class="group-chat-execution-log-tool">{{ log.tool_name || '工具' }}</span>
+                                <span class="group-chat-execution-log-status">{{ formatExecutionLogStatus(log.status) }}</span>
+                                <span class="group-chat-execution-log-source">{{ log.source || 'runtime' }}</span>
                               </button>
-                              <div
-                                v-for="(item, tri) in getSandboxArtifactDisplayItems(msg)"
-                                :key="`${sandboxToolKey(msg, i, tri)}-popover`"
-                                v-show="expandedToolKey === sandboxToolKey(msg, i, tri)"
-                                class="group-chat-sandbox-detail"
-                              >
-                                <span class="group-chat-tool-popover-title">产物引用</span>
-                                <pre class="group-chat-tool-popover-pre">{{ formatArtifactPopover(item) }}</pre>
+                              <div v-if="isExecutionLogDetailOpen(msg, logIndex)" class="group-chat-execution-log-detail">
+                                <div v-if="log.argument_summary"><span>参数</span><p>{{ log.argument_summary }}</p></div>
+                                <div v-if="log.output_summary"><span>输出</span><p>{{ log.output_summary }}</p></div>
+                                <div v-if="log.artifact_paths?.length"><span>产物</span><p>{{ log.artifact_paths.join('\n') }}</p></div>
+                                <div v-if="log.duration_ms != null"><span>耗时</span><p>{{ log.duration_ms }} ms</p></div>
                               </div>
-                            </div>
-                          </div>
-                          <div
-                            v-for="(item, tri) in getNonSandboxArtifactDisplayItems(msg)"
-                            :key="tri"
-                            class="group-chat-tool-tag-wrap"
-                            :data-key="`${msg.message_id || i}-${tri}`"
-                          >
-                            <button
-                              type="button"
-                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
-                              @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
-                            >
-                              {{ artifactDisplayMeta(item).label }}
-                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
-                            <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
-                              <span class="group-chat-tool-popover-title">产物引用</span>
-                              <pre class="group-chat-tool-popover-pre">{{ formatArtifactPopover(item) }}</pre>
                             </div>
                           </div>
                         </div>
@@ -247,10 +232,6 @@ const {
   activeStreamingSpeakerName,
   streamingPulse,
   formatSkill,
-  getArtifactDisplayItems,
-  expandedToolKey,
-  artifactDisplayMeta,
-  formatArtifactPopover,
   formatGroupMsgFullTime,
   renderMarkdown,
   agentBodyContent,
@@ -260,39 +241,25 @@ const {
   copyAgentMessageToClipboard,
   isMessageCopied,
   saveAgentMessageToFile,
+  messageExecutionLogRows,
+  canShowMessageExecutionLogs,
+  isMessageExecutionLogsLoading,
+  isMessageExecutionLogsOpen,
+  expandedExecutionLogKey,
+  executionLogKey,
+  toggleExecutionLogDetail,
+  isExecutionLogDetailOpen,
+  toggleMessageExecutionLogs,
 } = useGroupChatMessageContext()
-
-function messageToolKey(msg: GroupMessage, index: number) {
-  return msg.message_id || index
-}
-
-function isSandboxArtifactItem(item: string) {
-  return artifactDisplayMeta(item).label.toLowerCase().startsWith('sandbox')
-}
-
-function getSandboxArtifactDisplayItems(msg: GroupMessage) {
-  return getArtifactDisplayItems(msg).filter(isSandboxArtifactItem)
-}
-
-function getNonSandboxArtifactDisplayItems(msg: GroupMessage) {
-  return getArtifactDisplayItems(msg).filter((item: string) => !isSandboxArtifactItem(item))
-}
 
 function showMessageActions(msg: GroupMessage) {
   return Boolean(messageContent(msg).trim())
 }
 
-function sandboxGroupKey(msg: GroupMessage, index: number) {
-  return `${messageToolKey(msg, index)}-sandbox-group`
-}
-
-function sandboxToolKey(msg: GroupMessage, index: number, toolIndex: number) {
-  return `${messageToolKey(msg, index)}-sandbox-${toolIndex}`
-}
-
-function isSandboxGroupOpen(msg: GroupMessage, index: number) {
-  const key = sandboxGroupKey(msg, index)
-  const value = expandedToolKey.value
-  return value === key || Boolean(value?.startsWith(`${messageToolKey(msg, index)}-sandbox-`))
+function formatExecutionLogStatus(status?: string) {
+  if (status === 'succeeded') return '成功'
+  if (status === 'blocked') return '等待'
+  if (status === 'failed') return '失败'
+  return status || '已记录'
 }
 </script>

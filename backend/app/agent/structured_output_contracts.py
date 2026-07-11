@@ -126,23 +126,44 @@ class ArtifactRef(StrictModel):
 
 
 class SkillNextAction(StrictModel):
-    agent_turn: Literal["respond", "continue"]
-    skill_session: Literal["keep", "release"]
+    handoff: Literal["user", "host", "end"]
+    resume: Literal["same_skill", "same_agent", "host", "none"]
+    reason: Literal[
+        "stage_gate",
+        "missing_input",
+        "user_confirmation",
+        "stage_completed",
+        "final_delivery",
+        "failure",
+        "protocol_error",
+    ]
+    instruction: str = Field(min_length=1)
 
 
 class SkillScriptStdoutPayload(StrictModel):
+    schema_version: Literal["expert_final_state.v2"]
     execution_status: Literal["succeeded", "blocked", "failed"]
-    content: str = Field(min_length=1)
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     next_action: SkillNextAction
 
 
-class ToolExecutionLogPayload(StrictModel):
-    source: Literal["mcp", "script", "workspace", "api"]
-    message_id: str = Field(min_length=1)
-    agent_name: str | None = Field(default=None, min_length=1)
-    skill: str | None = Field(default=None, min_length=1)
+class ToolExecutionLogToolCall(StrictModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
     provider: str | None = Field(default=None, min_length=1)
     provider_tool: str | None = Field(default=None, min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolExecutionLogRecord(StrictModel):
+    log_id: str = Field(min_length=1)
+    message_id: str = Field(min_length=1)
+    created_at: str = Field(min_length=1)
+    source: Literal["mcp", "script", "workspace", "api", "host"]
+    agent_name: str | None = Field(default=None, min_length=1)
+    skill: str | None = Field(default=None, min_length=1)
+    status: Literal["succeeded", "blocked", "failed"]
+    tool_call: ToolExecutionLogToolCall
     output: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[ArtifactRef] = Field(default_factory=list)
+    duration_ms: int | None = None

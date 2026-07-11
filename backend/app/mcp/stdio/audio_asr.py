@@ -49,17 +49,22 @@ def _tool_result(
     execution_status: str,
     content: str,
     artifacts: list[dict[str, Any]] | None = None,
-    agent_turn: str = "respond",
-    skill_session: str = "release",
+    handoff: str = "host",
+    resume: str = "none",
+    reason: str = "stage_completed",
+    instruction: str = "",
 ) -> str:
+    final_instruction = instruction.strip() if instruction else content
     return _json(
         {
             "execution_status": execution_status,
             "content": content,
             "artifacts": artifacts or [],
             "next_action": {
-                "agent_turn": agent_turn,
-                "skill_session": skill_session,
+                "handoff": handoff,
+                "resume": resume,
+                "reason": reason,
+                "instruction": final_instruction,
             },
         }
     )

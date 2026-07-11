@@ -28,6 +28,16 @@ def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, An
     }
 
 
+def is_host_protocol_error_decision(decision: Dict[str, Any]) -> bool:
+    """Return whether a parsed host decision is the canonical protocol failure."""
+    return (
+        str((decision or {}).get("next_speaker") or "").strip() == "user"
+        and str((decision or {}).get("current_phase") or "").strip() == ""
+        and str((decision or {}).get("next_action") or "").strip() == HOST_PROTOCOL_ERROR_MESSAGE
+        and list((decision or {}).get("suggested_add_agent_names") or []) == []
+    )
+
+
 def _agent_name_map(agent_profiles: List[Dict[str, Any]]) -> Dict[str, str]:
     out: Dict[str, str] = {}
     for profile in agent_profiles or []:
@@ -37,7 +47,7 @@ def _agent_name_map(agent_profiles: List[Dict[str, Any]]) -> Dict[str, str]:
     return out
 
 
-def _strict_host_decision_from_payload(
+def host_scheduler_decision_from_payload(
     payload: HostSchedulerDecisionPayload,
     agent_profiles: List[Dict[str, Any]],
     *,
@@ -141,7 +151,7 @@ def parse_strict_host_scheduler_output(
     """Parse host scheduler JSON without legacy cleanup or natural-language fallback."""
     try:
         payload = parse_strict_pydantic_object(content, HostSchedulerDecisionPayload)
-        return _strict_host_decision_from_payload(
+        return host_scheduler_decision_from_payload(
             payload,
             agent_profiles,
             host_mode=host_mode,

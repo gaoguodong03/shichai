@@ -86,6 +86,88 @@ def test_build_expert_skill_result_uses_empty_model_content_placeholder():
     assert result["content"] == "模型没有返回可展示的文字内容。"
 
 
+def test_build_expert_skill_result_rejects_tool_summary_as_success():
+    from app.agent.group_chat_tool_result_content import build_expert_skill_result
+
+    result = build_expert_skill_result(
+        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n目录 . 下：（空）\n```",
+        tool_results=[
+            {
+                "execution_status": "succeeded",
+                "tool_call": {"name": "list_workspace_directory"},
+                "output": {"text": "目录 . 下：（空）"},
+            }
+        ],
+    )
+
+    assert result["execution_status"] == "failed"
+    assert result["content"] == "模型没有返回可展示的专家回复；本轮只有工具执行摘要。请重新执行本轮专家步骤。"
+    assert result["next_action"] == {
+        "handoff": "user",
+        "resume": "same_skill",
+        "reason": "protocol_error",
+        "instruction": "模型没有返回可展示的专家回复；请重新执行本轮专家步骤。",
+    }
+
+
+def test_build_expert_skill_result_turns_successful_artifacts_into_minimal_delivery():
+    from app.agent.group_chat_tool_result_content import build_expert_skill_result
+
+    result = build_expert_skill_result(
+        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n已写入当前 Chat 工作区文件：drafts/shenteng.md\n```",
+        tool_results=[
+            {
+                "execution_status": "succeeded",
+                "tool_call": {"name": "write_workspace_file"},
+                "output": {"text": "已写入当前 Chat 工作区文件：drafts/shenteng.md"},
+                "artifacts": [{"type": "file", "name": "沈腾演艺生涯", "path": "drafts/shenteng.md"}],
+            }
+        ],
+    )
+
+    assert result["execution_status"] == "succeeded"
+    assert result["content"] == "已生成工作区产物：\n- 沈腾演艺生涯：drafts/shenteng.md"
+    assert result["artifacts"] == [{"type": "file", "name": "沈腾演艺生涯", "path": "drafts/shenteng.md"}]
+    assert result["next_action"] == {
+        "handoff": "host",
+        "resume": "none",
+        "reason": "stage_completed",
+        "instruction": "已生成工作区产物：\n- 沈腾演艺生涯：drafts/shenteng.md",
+    }
+
+
+def test_build_expert_skill_result_prefers_script_payload_over_tool_summary():
+    from app.agent.group_chat_tool_result_content import build_expert_skill_result
+
+    payload = {
+        "schema_version": "expert_final_state.v2",
+        "execution_status": "succeeded",
+        "artifacts": [{"type": "file", "name": "文章", "path": "drafts/shenteng.md"}],
+        "next_action": {
+            "handoff": "host",
+            "resume": "none",
+            "reason": "stage_completed",
+            "instruction": "文章已完整起草并保存到工作区。",
+        },
+    }
+
+    result = build_expert_skill_result(
+        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n脚本执行成功\n```",
+        tool_results=[
+            {
+                "execution_status": "succeeded",
+                "tool_call": {"id": "call-1", "name": "run_skill_script_doc", "kind": "script"},
+                "output": {"stdout": json.dumps(payload, ensure_ascii=False)},
+            }
+        ],
+    )
+
+    assert result["execution_status"] == "succeeded"
+    assert result["content"] == "文章已完整起草并保存到工作区。"
+    assert result["artifacts"] == [{"type": "file", "name": "文章", "path": "drafts/shenteng.md"}]
+    assert result["next_action"] == payload["next_action"]
+
+
 @pytest.mark.asyncio
 async def test_chat_stream_omits_legacy_start_event(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
@@ -194,6 +276,162 @@ async def test_chat_stream_registers_run_with_stable_user_id(monkeypatch, tmp_pa
         reset_current_user_identity(token)
 
     assert captured["user_id"] == "user-stream-stable"
+
+
+@pytest.mark.asyncio
+async def test_host_handoff_message_precedes_expert_route(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-host-handoff": {
+                "title": "主持人交接",
+                "agent_names": ["文档合著专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-host-handoff", [])
+
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "写作",
+            "next_speaker": "文档合著专家",
+            "next_action": "请先写文章大纲。",
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_turn(**kwargs):
+        yield runtime.serialize_sse_event(
+            "route",
+            {"type": "route", "run_id": kwargs["run_id"], "agent_name": kwargs["agent_name"], "skill": "document-coauthor"},
+        )
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-host-handoff",
+            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-host-handoff"],
+            app_settings={},
+            agent_map={"文档合著专家": {"name": "文档合著专家", "description": "写文章"}},
+            agent_names=["文档合著专家"],
+            messages=[],
+            discussion_goal="帮我写文章",
+            user_text="帮我写文章",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    assert parsed[0][0] == "message"
+    assert parsed[0][1]["speaker"] == {"type": "host", "agent_name": "四九"}
+    assert parsed[0][1]["message"]["content"] == "下面由 文档合著专家 发言。"
+    assert parsed[1][0] == "route"
+    assert parsed[1][1]["agent_name"] == "文档合著专家"
+
+
+@pytest.mark.asyncio
+async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-expert-back-host": {
+                "title": "专家后回主持人",
+                "agent_names": ["文档合著专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-expert-back-host", [])
+    decisions = [
+        {
+            "current_phase": "写作",
+            "next_speaker": "文档合著专家",
+            "next_action": "请先写文章大纲。",
+            "suggested_add_agent_names": [],
+        },
+        {
+            "current_phase": "等待确认",
+            "next_speaker": "user",
+            "next_action": "大纲已完成，请确认是否继续写正文。",
+            "suggested_add_agent_names": [],
+        },
+    ]
+
+    async def _host_decision(*_args, **_kwargs):
+        return decisions.pop(0)
+
+    async def _expert_turn(**kwargs):
+        expert_msg = {
+            "message_id": "msg-expert-1",
+            "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": "document-coauthor"},
+            "message": {"content": "大纲已完成。"},
+            "created_at": "2026071100000100",
+            "skill_result": {
+                "execution_status": "succeeded",
+                "content": "大纲已完成。",
+                "artifacts": [],
+                "next_action": {
+                    "handoff": "host",
+                    "resume": "none",
+                    "reason": "stage_completed",
+                    "instruction": "大纲已完成。",
+                },
+            },
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-expert-back-host",
+            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-expert-back-host"],
+            app_settings={},
+            agent_map={"文档合著专家": {"name": "文档合著专家", "description": "写文章"}},
+            agent_names=["文档合著专家"],
+            messages=[],
+            discussion_goal="帮我写文章",
+            user_text="帮我写文章",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    message_contents = [
+        payload["message"]["content"]
+        for event_type, payload in parsed
+        if event_type == "message"
+    ]
+    assert message_contents == [
+        "下面由 文档合著专家 发言。",
+        "大纲已完成。",
+        "大纲已完成，请确认是否继续写正文。",
+    ]
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "awaiting_user"
+    assert decisions == []
 
 
 @pytest.mark.asyncio

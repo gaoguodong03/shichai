@@ -52,14 +52,14 @@ def _successful_tool_payload(tool_out: dict[str, Any]) -> dict[str, Any] | None:
 def _payload_requests_final(payload: dict[str, Any]) -> bool:
     try:
         parsed = SkillScriptStdoutPayload.model_validate(payload)
-        return parsed.next_action.agent_turn == "respond"
+        return parsed.next_action.handoff in {"user", "host", "end"}
     except Exception:
         pass
     stdout_payload = _json_loads_maybe(payload.get("stdout"))
     if isinstance(stdout_payload, dict):
         try:
             parsed = SkillScriptStdoutPayload.model_validate(stdout_payload)
-            return parsed.next_action.agent_turn == "respond"
+            return parsed.next_action.handoff in {"user", "host", "end"}
         except Exception:
             return False
     return False
@@ -73,33 +73,6 @@ def _has_run_skill_script_call(tool_out: dict[str, Any]) -> bool:
         if isinstance(call, dict) and str(call.get("tool") or call.get("name") or "").startswith("run_skill_script_"):
             return True
     return False
-
-
-def _run_skill_script_stdout_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
-    """Return the script stdout content directly when the strict script protocol asks to respond."""
-    if not _has_run_skill_script_call(tool_out):
-        return None
-    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
-    if not isinstance(raw_outputs, list):
-        return None
-    for raw in reversed(raw_outputs):
-        payload = _json_loads_maybe(raw)
-        candidates = [payload] if isinstance(payload, dict) else []
-        if isinstance(payload, dict):
-            stdout_payload = _json_loads_maybe(payload.get("stdout"))
-            if isinstance(stdout_payload, dict):
-                candidates.append(stdout_payload)
-        for candidate in candidates:
-            try:
-                parsed = SkillScriptStdoutPayload.model_validate(candidate)
-            except Exception:
-                continue
-            if parsed.next_action.agent_turn != "respond":
-                continue
-            content = str(parsed.content or "").strip()
-            if content:
-                return AIMessage(content=content)
-    return None
 
 
 def _compact_multiline_text(text: str, *, limit: int = 6000) -> str:
