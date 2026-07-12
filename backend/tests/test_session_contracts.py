@@ -49,8 +49,8 @@ def test_group_chat_request_rejects_extra_control_fields(extra_field):
     with pytest.raises(ValidationError):
         GroupChatRequest.model_validate(
             {
+                "message_id": "msg-user-1",
                 "message": "请处理",
-                "client_message_id": "client-1",
                 extra_field: "额外控制",
             }
         )
@@ -58,14 +58,14 @@ def test_group_chat_request_rejects_extra_control_fields(extra_field):
 
 def test_group_chat_request_requires_payload_source():
     with pytest.raises(ValidationError):
-        GroupChatRequest.model_validate({"message": "", "client_message_id": "client-1"})
+        GroupChatRequest.model_validate({"message_id": "msg-user-1", "message": ""})
 
 
 def test_group_chat_request_accepts_attachments_and_target_agent():
     parsed = GroupChatRequest.model_validate(
         {
+            "message_id": "msg-user-1",
             "message": "",
-            "client_message_id": "client-1",
             "attachments": [{"type": "workspace_file", "path": "input.md", "name": "input.md"}],
             "target_agent_name": "写作专家",
         }
@@ -73,6 +73,13 @@ def test_group_chat_request_accepts_attachments_and_target_agent():
 
     assert parsed.attachments[0].path == "input.md"
     assert parsed.target_agent_name == "写作专家"
+
+
+def test_group_chat_request_rejects_legacy_client_message_id():
+    with pytest.raises(ValidationError):
+        GroupChatRequest.model_validate(
+            {"message_id": "msg-user-1", "message": "请处理", "client_message_id": "client-1"}
+        )
 
 
 def test_session_update_rejects_extra_fields():

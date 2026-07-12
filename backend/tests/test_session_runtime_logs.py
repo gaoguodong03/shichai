@@ -34,7 +34,7 @@ def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeyp
                 "execution_status": "succeeded",
                 "message": "工具执行成功",
                 "output": {
-                    "text": "摘要",
+                    "content": "摘要",
                     "json_data": {"items": [1]},
                     "stdout": "raw stdout",
                     "stderr": "",
@@ -59,12 +59,12 @@ def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeyp
         "arguments": {"query": "合同"},
     }
     assert rows[0]["output"] == {
-        "text": "摘要",
-        "json": {"items": [1]},
+        "content": "摘要",
+        "json_data": {"items": [1]},
+        "artifacts": [],
         "stdout": "raw stdout",
         "stderr": "",
     }
-    assert rows[0]["artifacts"] == []
     assert "log_ids" not in rows[0]
     assert "kind" not in rows[0]["tool_call"]
     assert all(value is not None for value in rows[0].values())
@@ -93,7 +93,7 @@ def test_record_group_chat_tool_trace_writes_session_level_jsonl(tmp_path, monke
                 },
                 "execution_status": "succeeded",
                 "message": "工具执行成功",
-                "output": {"text": "摘要", "json_data": {}, "stdout": "", "stderr": ""},
+                "output": {"content": "摘要", "json_data": {}, "stdout": "", "stderr": ""},
             }
         ],
     )
@@ -115,9 +115,7 @@ def test_append_host_execution_log_records_scheduler_fact(tmp_path, monkeypatch)
         host_name="四九",
         skill="group-host",
         current_phase="写作",
-        next_speaker="文档合著专家",
-        next_action="请生成工作区文档。",
-        content="下面由 文档合著专家 发言。",
+        message={"content": "请生成工作区文档。", "target_agent_name": "文档合著专家"},
         status="succeeded",
     )
 
@@ -129,18 +127,17 @@ def test_append_host_execution_log_records_scheduler_fact(tmp_path, monkeypatch)
     assert rows[0]["skill"] == "group-host"
     assert rows[0]["tool_call"]["name"] == "host_scheduler"
     assert rows[0]["tool_call"]["provider"] == "host"
-    assert rows[0]["tool_call"]["provider_tool"] == "select_next_speaker"
+    assert rows[0]["tool_call"]["provider_tool"] == "schedule_message"
     assert rows[0]["tool_call"]["arguments"] == {
         "current_phase": "写作",
-        "next_speaker": "文档合著专家",
-        "next_action": "请生成工作区文档。",
+        "message": {"content": "请生成工作区文档。", "target_agent_name": "文档合著专家"},
     }
-    assert rows[0]["output"]["text"] == "下面由 文档合著专家 发言。"
+    assert rows[0]["output"]["content"] == "请生成工作区文档。"
 
     summary = message_execution_log_summaries("s1", message_id="host-1")[0]
     assert summary["source"] == "host"
     assert summary["tool_name"] == "host_scheduler"
-    assert summary["output_summary"] == "下面由 文档合著专家 发言。"
+    assert summary["output_summary"] == "请生成工作区文档。"
 
 
 def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):
@@ -165,18 +162,9 @@ def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, mo
                 "execution_status": "succeeded",
                 "message": "脚本完成",
                 "output": {
-                    "text": "raw",
-                    "json_data": {
-                        "schema_version": "expert_final_state.v2",
-                        "execution_status": "succeeded",
-                        "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
-                        "next_action": {
-                            "handoff": "host",
-                            "resume": "none",
-                            "reason": "stage_completed",
-                            "instruction": "已生成报告。",
-                        },
-                    },
+                    "content": "raw",
+                    "json_data": {},
+                    "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
                     "stdout": "",
                     "stderr": "",
                 },
@@ -188,7 +176,7 @@ def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, mo
 
     assert rows[0]["tool_call"]["provider"] == "report-writer"
     assert rows[0]["tool_call"]["provider_tool"] == "scripts/build.py"
-    assert rows[0]["artifacts"] == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
+    assert rows[0]["output"]["artifacts"] == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
 
 
 def test_append_tool_execution_logs_skips_unknown_sources(tmp_path, monkeypatch):
@@ -231,7 +219,7 @@ def test_append_tool_execution_logs_rejects_invalid_tool_status(tmp_path, monkey
                 },
                 "execution_status": "ok",
                 "message": "旧状态字段不应进入日志",
-                "output": {"text": "done", "json_data": {}, "stdout": "", "stderr": ""},
+                "output": {"content": "done", "json_data": {}, "stdout": "", "stderr": ""},
             }
         ],
     )
@@ -261,18 +249,9 @@ def test_append_tool_execution_logs_rejects_internal_artifact_paths(tmp_path, mo
                 "execution_status": "succeeded",
                 "message": "脚本完成",
                 "output": {
-                    "text": "raw",
-                    "json_data": {
-                        "schema_version": "expert_final_state.v2",
-                        "execution_status": "succeeded",
-                        "artifacts": [{"type": "file", "name": "内部记忆", "path": "memory/facts.md"}],
-                        "next_action": {
-                            "handoff": "host",
-                            "resume": "none",
-                            "reason": "stage_completed",
-                            "instruction": "错误产物路径。",
-                        },
-                    },
+                    "content": "raw",
+                    "json_data": {},
+                    "artifacts": [{"type": "file", "name": "内部记忆", "path": "memory/facts.md"}],
                     "stdout": "",
                     "stderr": "",
                 },

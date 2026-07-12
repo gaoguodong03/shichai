@@ -2,7 +2,7 @@
 
 This module carries only the current `skill_result.next_action` instruction
 surface. Cross-turn state is derived in `group_chat_skill_session.py` from
-strict script stdout JSON or the documented hidden state block.
+strict `expert_final_state.v2`.
 """
 from __future__ import annotations
 
@@ -12,25 +12,13 @@ from app.agent.platform_prompts import render_platform_prompt
 
 
 class SkillNextActionDict(TypedDict):
-    handoff: Literal["user", "host", "end"]
-    resume: Literal["same_skill", "same_agent", "host", "none"]
-    reason: Literal[
-        "stage_gate",
-        "missing_input",
-        "user_confirmation",
-        "stage_completed",
-        "final_delivery",
-        "failure",
-        "protocol_error",
-    ]
-    instruction: str
+    agent_turn: Literal["continue", "respond"]
+    skill_session: Literal["keep", "release"]
 
 
 DEFAULT_SKILL_NEXT_ACTION: SkillNextActionDict = {
-    "handoff": "host",
-    "resume": "none",
-    "reason": "stage_completed",
-    "instruction": "本轮专家回复已完成，请主持人判断下一步。",
+    "agent_turn": "respond",
+    "skill_session": "release",
 }
 
 

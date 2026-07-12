@@ -181,7 +181,7 @@ POST /api/sessions/{session_id}/chat/stream
 - `progress.phase` 必须直接等于当前 `runtime.json.phase`，不得通过 `meta.phase` 或前端自定义枚举二次映射。
 - `route` 不返回 `expert_route_debug`、`skill_route_debug`、`routing`、`route_source`；路由排查信息只进后端日志和测试断言。
 - `discussion_ended` 不是平台字段。`end` 只表示当前回合结束，不表示整个会话结束。
-- `tool_start`、`tool_result` 不作为顶层 SSE 业务事件；工具细节写入执行 trace、运行日志或 `skill_result.artifacts`。
+- `tool_start`、`tool_result` 不作为顶层 SSE 业务事件；工具细节写入执行 trace 或运行日志，用户可见产物写入 `message.artifacts`。
 - 新增事件必须同步前端解析、E2E mock、后端测试和文档。
 
 前端状态与 mock 边界：
@@ -279,15 +279,15 @@ POST /api/sessions/{session_id}/chat/stream
 - 用户通过请求字段 `target_agent_name` 指定专家时优先交给该专家。
 - 专家需要补充信息时进入等待用户状态。
 - 主持人是多专家体系控制平面；除用户显式指定专家外，用户输入和专家交付后的下一步都先回主持人判断。
-- 专家路由统一产出 `next_speaker` 与 `next_action`；`route_source` 仅用于后端内部日志和测试断言，不进入前端 API 或 SSE。
+- 用户和主持人都通过标准消息的 `message.target_agent_name` 指定专家；内部可派生临时执行变量，`route_source` 仅用于后端日志和测试断言。
 
 主要流程：
 
 1. 运行时读取当前会话成员和场景配置。
 2. 如果存在 `target_agent_name`，按用户显式选择进入该专家。
-3. 否则把主持人调度状态和 Skill 续跑状态交给主持人，由主持人生成结构化调度决策。
-4. 主持人只输出 `current_phase`、`next_speaker`、`next_action` 和可选 `suggested_add_agent_names`。
-5. 决策通过严格结构校验后，若 `next_speaker` 是专家，先写入主持人可见交接消息，再进入专家执行。
+3. 否则先恢复有效的主持人调度消息或 Skill continuation；没有可恢复路由时调用主持人。
+4. 主持人只输出 `current_phase`、标准 `message` 和可选 `suggested_add_agent_names`。
+5. 决策通过严格结构校验后，若 `message.target_agent_name` 是场内专家，先写入该主持人消息，再进入专家执行。
 6. 专家回复完成后控制权回到主持人，主持人决定继续另一个专家、同一专家、等待用户或结束。
 7. 主持人调度说明和专家回复都以可见消息进入历史。
 
@@ -381,8 +381,8 @@ POST /api/sessions/{session_id}/chat/stream
 4. 根据 `allowed-tools.mcp` 和 `allowed-tools.http_api` 组装外部工具；工作区工具是平台默认能力，当前 Skill 脚本工具由 `scripts/manifest.json` 决定。
 5. 平台统一生成 LLM 可见工具 schema：`name`、`description`、`input_schema`。模型只填写参数，不决定执行路径、URL、脚本入口或工作区根目录。
 6. 模型触发脚本工具时，平台按 `scripts/manifest.json` 的 `args` 校验参数，并转换为 CLI 参数后交给 OpenSandbox。
-7. 脚本型 Skill 的 stdout JSON 必须显式返回 `schema_version`、`execution_status`、`artifacts` 和 `next_action`；阶段名、等待点和下一步说明写入 `next_action.instruction`。
-8. 非脚本 Skill、MCP / HTTP / workspace 工具后必须进入专家最终回复阶段；绑定 Skill 或场景协作专家的最终回复必须追加隐藏状态块，生成消息级 `skill_result.next_action`。
+7. 脚本型 Skill 的 stdout JSON 必须完整返回 `expert_final_state.v2`：`schema_version`、`execution_status`、`message` 和 `next_action`。
+8. 非脚本 Skill、MCP / HTTP / workspace 工具后必须回到绑定当前工具集的 LLM；模型可继续调用工具，不再需要工具时进入 finalizer。只有 finalizer 的 `expert_final_state.v2.message` 可以成为专家消息。
 
 字段边界：
 
@@ -393,7 +393,7 @@ POST /api/sessions/{session_id}/chat/stream
 - 保存型 HTTP API 工具由资源配置决定 URL、method、默认 query/header/body；LLM 只能传 `query`、`headers`、`body` 覆盖或补充参数。通用 `call_api` 不再作为 LLM 可见工具注入。
 - Skill 脚本必须提供 `scripts/manifest.json`。manifest 只写 `entry`、`description`、`args`；平台根据 `args` 自动生成 `input_schema`，并把模型参数转换为 CLI 参数。manifest 不写 `input_schema`、`cli_args` 或 `invocation`。
 - `execution_status` 只允许 `succeeded`、`blocked`、`failed`，不使用 `needs_input` 或 `result_code`。
-- `next_action.handoff` 控制当前专家回合结束后等待用户、交回主持人或结束；`next_action.resume` 控制下一条用户消息是否保留同一专家或同一 Skill 的续跑意图。工具循环内部是否继续调用工具由运行时控制，不写入专家最终状态块。
+- `next_action.agent_turn` 控制当前专家继续行动或回复用户；`next_action.skill_session` 控制下一条用户消息是否保留同一专家和 Skill。两个维度互不替代。
 - 执行日志使用 `source=mcp|script|workspace|api|host`，不设置 `unknown`。`provider` 表示 MCP server、Skill `directory_name`、`workspace`、保存的 HTTP API 工具名或 `host`；`provider_tool` 表示 MCP 原始工具、脚本入口、工作区动作、API 动作名或主持人调度动作名。执行层应尽量记录 `provider` 和 `provider_tool`，便于 trace 与排障；确实无值时省略，不写 `null`，也不得用这两个字段驱动业务分支。
 - `error_log`、stdout、stderr、调用参数、耗时和中间结构化返回属于执行 trace 或运行日志，不进入 `history.json` 的消息核心字段。
 
@@ -412,7 +412,7 @@ POST /api/sessions/{session_id}/chat/stream
 - Skill 目录不存在：返回缺失引用诊断。
 - `SKILL.md` 缺失、frontmatter 错误或脚本型 Skill 缺少 `scripts/manifest.json`：页面和运行时提示配置不完整。
 - 脚本超时、退出码非零、stdout 非 JSON：回传工具错误。
-- 脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法：按协议失败处理，回复协议错误并设置 `handoff=host`、`resume=none`、`reason=protocol_error`。
+- 脚本 stdout 缺少完整 `expert_final_state.v2`、字段非法或与 finalizer 冲突：按协议失败，保留日志，不合成专家回复或兼容映射。
 - 依赖缺失：提示维护 requirements 或切换沙箱版本。
 - Skill 会话状态不明确：按严格协议处理，不用旧字段兜底。
 
@@ -439,7 +439,7 @@ POST /api/sessions/{session_id}/chat/stream
 4. 专家运行时根据 Skill `allowed-tools.mcp` 加载允许的 MCP Server。
 5. 工具调用通过 MCP manager 执行，调用事实写入执行 trace 或运行日志，并交给专家继续判断下一步。
 
-MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具执行后必须进入专家最终回复阶段；绑定 Skill 或场景协作专家的最终回复必须通过隐藏状态块生成最终的消息级 `skill_result.next_action`。工具记录不是跨轮路由事实源。
+MCP / HTTP / workspace 工具本身不返回 `next_action`。工具执行后回到 LLM，由模型判断继续调用工具或进入 finalizer；finalizer 必须输出完整 `expert_final_state.v2`。工具记录不是消息或跨轮路由事实源，MCP 原始正文、stdout 和 stderr 不进入聊天气泡。
 
 关键文件：
 
@@ -447,7 +447,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 - `backend/app/mcp/manager.py`
 - `backend/app/mcp/tool_arg_normalizers.py`
 - `backend/app/agent/tools_for_skill.py`
-- `backend/app/agent/simple_agent_mcp_tools.py`
+- `backend/app/agent/simple_agent_streaming.py`
 
 异常处理：
 
@@ -540,7 +540,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 - 文件不存在：返回 404。
 - 跨用户路径：拒绝或返回不存在。
 - 二进制预览不支持：提供下载或明确提示。
-- 工具声称写入但文件不存在：运行时应校验并纠正交付说法。
+- finalizer 声称写入但产物引用与工具事实不一致：按协议失败处理；运行时不得改写模型正文或伪造产物路径。
 
 验收测试：
 

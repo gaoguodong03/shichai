@@ -588,7 +588,7 @@
                       v-model="scenarioLeaderSystemPrompt"
                       rows="6"
                       class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                      placeholder="例如：你是群聊主持人，只负责决定下一位发言人与 next_action，不代写专家正文。"
+                      placeholder="例如：你是群聊主持人，只通过 message.target_agent_name 指定下一位专家，并在 message.content 中给出任务。"
                     />
                   </div>
                   <div>

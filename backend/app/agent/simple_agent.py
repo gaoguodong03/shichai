@@ -41,9 +41,9 @@ class SimpleAgent:
     timeout_s: float = 180.0
     max_steps: int = 12
     max_repeated_tool_rounds: int = 3
-    stop_after_tool_names: tuple[str, ...] = ()
-    synthesize_after_tools: bool = True
     synthesize_after_read_file_paths: tuple[str, ...] = ()
+    final_output_model: Any = None
+    final_output_tool_name: str = "submit_final_output"
 
     async def _execute_tool_response(
         self,
@@ -91,7 +91,7 @@ class SimpleAgent:
             messages.extend(missing_tool_msgs)
         return tool_out
 
-    async def _coerce_and_execute_synthesis_tool_calls(
+    async def _execute_post_tool_decision_tool_calls(
         self,
         synthesis_response: BaseMessage,
         *,
@@ -117,7 +117,7 @@ class SimpleAgent:
         if previous_tool_signature and synthesis_signature == previous_tool_signature:
             tool_attempt_debug.append(
                 {
-                    "source": "post_tool_synthesis_repeated_tool_calls_ignored",
+                    "source": "post_tool_decision_repeated_tool_calls_ignored",
                     "matched": True,
                     "signature_preview": synthesis_signature[:240],
                 }
@@ -126,14 +126,14 @@ class SimpleAgent:
         if _has_successful_workspace_write_output(tool_raw_outputs) and _has_workspace_mutating_tool_call(tool_calls):
             tool_attempt_debug.append(
                 {
-                    "source": "post_tool_synthesis_repeated_write_ignored",
+                    "source": "post_tool_decision_repeated_write_ignored",
                     "matched": True,
                     "signature_preview": synthesis_signature[:240],
                 }
             )
             return None, None
         debug = {
-            "source": "post_tool_synthesis_tool_calls",
+            "source": "post_tool_decision_tool_calls",
             "matched": True,
             "count": len(tool_calls),
             "content_preview": _extract_text_content(synthesis_response)[:240],
@@ -179,10 +179,10 @@ class SimpleAgent:
             return response
         except asyncio.TimeoutError:
             logger.error("SimpleAgent: LLM 调用超时（%ss）", self.timeout_s)
-            return AIMessage(content="抱歉，模型响应超时，请稍后重试。")
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("SimpleAgent: LLM 调用失败: %s", exc)
-            return AIMessage(content=f"抱歉，模型响应失败：{exc}")
+            raise
 
     async def astream(self, initial_state: dict[str, Any], stream_mode=None, config: dict | None = None):
         """统一事件协议：agent_step / tool_step / final_step。"""

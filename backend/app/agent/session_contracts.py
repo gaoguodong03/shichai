@@ -53,8 +53,8 @@ class SessionUpdateRequest(StrictApiModel):
 
 
 class GroupChatRequest(StrictApiModel):
+    message_id: str = Field(min_length=1)
     message: str = ""
-    client_message_id: str = Field(min_length=1)
     attachments: list[WorkspaceAttachment] = Field(default_factory=list)
     target_agent_name: str | None = Field(default=None, min_length=1)
 

@@ -44,16 +44,21 @@ def _v2_stdout_payload(
     handoff="host",
     resume="none",
     reason="stage_completed",
+    agent_turn="respond",
+    skill_session=None,
 ):
+    _ = (handoff, reason)
     return {
         "schema_version": "expert_final_state.v2",
         "execution_status": execution_status,
-        "artifacts": artifacts or [],
+        "message": {
+            "content": instruction,
+            "attachments": [],
+            "artifacts": artifacts or [],
+        },
         "next_action": {
-            "handoff": handoff,
-            "resume": resume,
-            "reason": reason,
-            "instruction": instruction,
+            "agent_turn": agent_turn,
+            "skill_session": skill_session or ("keep" if resume in {"same_skill", "same_agent"} else "release"),
         },
     }
 
@@ -177,8 +182,9 @@ async def test_skill_script_tool_message_exposes_only_standard_stdout_summary():
 
     assert "请继续写入报告。" in text
     assert "outputs/report.md" in text
-    assert "handoff" in text
-    assert "agent_turn" not in text
+    assert "agent_turn" in text
+    assert "skill_session" in text
+    assert "handoff" not in text
     assert '"stdout"' not in text
     assert '"stderr"' not in text
     assert "returncode" not in text

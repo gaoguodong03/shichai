@@ -10,7 +10,6 @@ import logging
 from typing import Any
 
 from app.agent.simple_agent_finalization import _json_loads_maybe
-from app.agent.simple_agent_tool_errors import _normalize_workspace_path_for_compare
 from app.agent.simple_agent_tool_ids import _tool_call_args
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 WORKSPACE_WRITE_SUCCESS_MARKERS = (
@@ -24,6 +23,13 @@ WORKSPACE_MUTATING_TOOL_NAMES = {
     "rename_workspace_file",
 }
 logger = logging.getLogger(__name__)
+
+
+def _normalize_workspace_path_for_compare(path: Any) -> str:
+    text = str(path or "").strip().replace("\\", "/").strip("/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text
 
 
 def iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[str, Any]]:
@@ -113,52 +119,6 @@ def all_workspace_write_calls_already_succeeded(tool_calls: list[Any], seen_keys
             return False
         saw_write = True
     return saw_write
-
-
-def post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> bool:
-    """Return whether synthesis should use the tool-bound model client."""
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if not isinstance(calls, list) or not calls:
-        return False
-    saw_call = False
-    for call in calls:
-        if not isinstance(call, dict):
-            return False
-        tool_name = str(call.get("tool") or call.get("name") or "").strip()
-        if not tool_name:
-            return False
-        saw_call = True
-        if not tool_name.startswith("run_skill_script"):
-            return True
-    return not saw_call
-
-
-def tool_should_stop_after_result(
-    tool_out: dict[str, Any],
-    stop_after_tool_names: tuple[str, ...],
-    tool_attempt_debug: list[dict[str, Any]],
-) -> bool:
-    """Return whether configured stop-after tool names were just executed."""
-    stop_names = {str(x or "").strip() for x in (stop_after_tool_names or ()) if str(x or "").strip()}
-    if not stop_names:
-        return False
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if not isinstance(calls, list):
-        return False
-    for call in calls:
-        if not isinstance(call, dict):
-            continue
-        tool_name = str(call.get("tool") or call.get("name") or "").strip()
-        if tool_name in stop_names:
-            tool_attempt_debug.append(
-                {
-                    "source": "stop_after_tool_result",
-                    "matched": True,
-                    "tool": tool_name,
-                }
-            )
-            return True
-    return False
 
 
 def read_file_should_synthesize_after_result(

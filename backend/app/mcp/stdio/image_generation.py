@@ -42,23 +42,14 @@ def _tool_result(
     execution_status: str,
     content: str,
     artifacts: list[dict[str, str]] | None = None,
-    handoff: str = "host",
-    resume: str = "none",
-    reason: str = "stage_completed",
     instruction: str = "",
 ) -> str:
-    final_instruction = instruction.strip() if instruction else content
+    _ = instruction
     return _json(
         {
             "execution_status": execution_status,
             "content": content,
             "artifacts": artifacts or [],
-            "next_action": {
-                "handoff": handoff,
-                "resume": resume,
-                "reason": reason,
-                "instruction": final_instruction,
-            },
         }
     )
 
@@ -190,7 +181,7 @@ def generate_image(
         output_subdir: 可选，写入工作区的相对目录，默认 generated_images。
 
     Returns:
-        JSON 字符串。外层字段为 execution_status、content、artifacts、next_action。
+        JSON 字符串。外层字段为 execution_status、message、content、artifacts。
     """
     prompt = (description or "").strip()
     if not prompt:
@@ -198,9 +189,6 @@ def generate_image(
             execution_status="blocked",
             content="缺少 description，请传入具体图片提示词。",
             artifacts=[],
-            handoff="user",
-            resume="same_agent",
-            reason="missing_input",
         )
 
     try:

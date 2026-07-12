@@ -210,27 +210,23 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     expect(scrollState.maxTop - scrollState.scrollTop).toBeLessThanOrEqual(4)
   })
 
-  test('专家消息通过 skill_result 展示公开产物引用', async ({ page }) => {
+  test('专家消息通过 message.artifacts 展示公开产物引用', async ({ page }) => {
     const state = createE2eState()
     state.sessions[0].messages = [
       {
         message_id: 'assistant-artifacts',
         speaker: { type: 'expert', agent_name: '问答专家' },
-        message: { content: '产物已经写入工作区。' },
-        created_at: '2026052310000000',
-        skill_result: {
-          execution_status: 'succeeded',
+        message: {
           content: '产物已经写入工作区。',
           artifacts: [
             { type: 'file', name: 'one.md', path: 'one.md' },
             { type: 'file', name: 'two.md', path: 'two.md' },
           ],
-          next_action: {
-            handoff: 'host',
-            resume: 'none',
-            reason: 'stage_completed',
-            instruction: '产物已经写入工作区。',
-          },
+        },
+        created_at: '2026052310000000',
+        skill_result: {
+          execution_status: 'succeeded',
+          next_action: { agent_turn: 'respond', skill_session: 'release' },
         },
       },
     ]

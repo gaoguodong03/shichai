@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.agent.structured_output_contracts import ToolExecutionLogRecord
+from app.agent.structured_output_contracts import ArtifactRef, ToolExecutionLogRecord
 from app.api.group_chat_state import ensure_sessions_dir, format_storage_timestamp
 
 
@@ -33,7 +33,10 @@ def _artifact_refs_from(value: Any) -> list[dict[str, str]]:
         name = str(item.get("name") or "").strip()
         path = str(item.get("path") or "").strip()
         if kind and name and path:
-            rows.append({"type": kind, "name": name, "path": path})
+            try:
+                rows.append(ArtifactRef.model_validate({"type": kind, "name": name, "path": path}).model_dump())
+            except ValidationError:
+                continue
     return rows
 
 
@@ -62,9 +65,15 @@ def _runtime_log_from_tool_result(
     if "id" not in clean_tool_call or "name" not in clean_tool_call:
         return None
 
-    artifacts = _artifact_refs_from(item.get("artifacts"))
+    raw_artifacts = output.get("artifacts")
+    artifacts = _artifact_refs_from(raw_artifacts)
+    if isinstance(raw_artifacts, list) and raw_artifacts and not artifacts:
+        return None
     if not artifacts and isinstance(output.get("json_data"), dict):
-        artifacts = _artifact_refs_from(output.get("json_data", {}).get("artifacts"))
+        raw_json_artifacts = output.get("json_data", {}).get("artifacts")
+        artifacts = _artifact_refs_from(raw_json_artifacts)
+        if isinstance(raw_json_artifacts, list) and raw_json_artifacts and not artifacts:
+            return None
     created_at = format_storage_timestamp()
     record = _clean_dict(
         {
@@ -77,12 +86,12 @@ def _runtime_log_from_tool_result(
             "status": str(item.get("execution_status") or "").strip() or None,
             "tool_call": clean_tool_call,
             "output": {
-                "text": str(output.get("text") or ""),
-                "json": output.get("json_data") if output.get("json_data") is not None else {},
+                "content": str(output.get("content") or ""),
+                "json_data": output.get("json_data") if output.get("json_data") is not None else {},
+                "artifacts": artifacts,
                 "stdout": str(output.get("stdout") or ""),
                 "stderr": str(output.get("stderr") or ""),
             },
-            "artifacts": artifacts,
         }
     )
     try:
@@ -123,17 +132,14 @@ def append_host_execution_log(
     host_name: str,
     skill: str,
     current_phase: str,
-    next_speaker: str,
-    next_action: str,
-    content: str,
+    message: dict[str, Any],
     status: str = "succeeded",
 ) -> None:
     """Append one host scheduler fact for the message-side execution log panel."""
     clean_arguments = _clean_dict(
         {
             "current_phase": str(current_phase or "").strip() or None,
-            "next_speaker": str(next_speaker or "").strip() or None,
-            "next_action": str(next_action or "").strip() or None,
+            "message": dict(message or {}),
         }
     )
     record = _clean_dict(
@@ -149,16 +155,19 @@ def append_host_execution_log(
                 "id": f"host-{uuid.uuid4().hex[:12]}",
                 "name": "host_scheduler",
                 "provider": "host",
-                "provider_tool": "select_next_speaker",
+                "provider_tool": "schedule_message",
                 "arguments": clean_arguments,
             },
             "output": {
-                "text": str(content or "").strip(),
-                "json": {},
+                "content": str((message or {}).get("content") or "").strip(),
+                "json_data": {
+                    "current_phase": str(current_phase or "").strip(),
+                    "message": dict(message or {}),
+                },
+                "artifacts": list((message or {}).get("artifacts") or []),
                 "stdout": "",
                 "stderr": "",
             },
-            "artifacts": [],
         }
     )
     try:
@@ -217,11 +226,11 @@ def _argument_summary(arguments: Any) -> str:
 def _output_summary(output: Any) -> str:
     if not isinstance(output, dict):
         return ""
-    for key in ("text", "stderr", "stdout"):
+    for key in ("content", "stderr", "stdout"):
         text = _short_text(output.get(key))
         if text:
             return text
-    json_value = output.get("json")
+    json_value = output.get("json_data")
     if isinstance(json_value, dict) and json_value:
         status = json_value.get("content") or json_value.get("message") or json_value.get("execution_status")
         if status:
@@ -237,7 +246,8 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
         if str(row.get("message_id") or "").strip() != wanted_message_id:
             continue
         tool_call = row.get("tool_call") if isinstance(row.get("tool_call"), dict) else {}
-        artifacts = row.get("artifacts") if isinstance(row.get("artifacts"), list) else []
+        output = row.get("output") if isinstance(row.get("output"), dict) else {}
+        artifacts = output.get("artifacts") if isinstance(output.get("artifacts"), list) else []
         artifact_paths = [
             str(item.get("path") or "").strip()
             for item in artifacts

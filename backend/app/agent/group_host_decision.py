@@ -1,9 +1,4 @@
-"""Pure host-decision parsing helpers for group chat.
-
-This file accepts only the host JSON contract from
-docs/contracts/runtime-interface-contract.md. It rejects every field outside
-the current next_action protocol.
-"""
+"""Strict host decision parsing and message-based route derivation."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -19,22 +14,21 @@ HOST_PROTOCOL_ERROR_MESSAGE = "主持人输出格式错误，请重试或联系�
 
 
 def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, Any]:
-    """Return the canonical protection decision for invalid host JSON."""
+    """Return a valid host message that pauses instead of guessing a route."""
+    _ = reason
     return {
-        "next_speaker": "user",
-        "current_phase": "",
-        "next_action": HOST_PROTOCOL_ERROR_MESSAGE,
+        "current_phase": "协议错误",
+        "message": {"content": HOST_PROTOCOL_ERROR_MESSAGE},
         "suggested_add_agent_names": [],
     }
 
 
 def is_host_protocol_error_decision(decision: Dict[str, Any]) -> bool:
-    """Return whether a parsed host decision is the canonical protocol failure."""
+    message = decision.get("message") if isinstance(decision.get("message"), dict) else {}
     return (
-        str((decision or {}).get("next_speaker") or "").strip() == "user"
-        and str((decision or {}).get("current_phase") or "").strip() == ""
-        and str((decision or {}).get("next_action") or "").strip() == HOST_PROTOCOL_ERROR_MESSAGE
-        and list((decision or {}).get("suggested_add_agent_names") or []) == []
+        str(message.get("content") or "").strip() == HOST_PROTOCOL_ERROR_MESSAGE
+        and not str(message.get("target_agent_name") or "").strip()
+        and list(decision.get("suggested_add_agent_names") or []) == []
     )
 
 
@@ -53,47 +47,34 @@ def host_scheduler_decision_from_payload(
     *,
     host_mode: str = "recruitment",
 ) -> Dict[str, Any]:
-    """Validate host routing against current session members and return canonical fields."""
+    """Validate the message target against current members and return canonical fields."""
     scene_mode = str(host_mode or "").strip().lower() == "scene"
-    raw_next = payload.next_speaker.strip()
-    next_key = raw_next.casefold()
-    names = _agent_name_map(agent_profiles)
+    message = payload.message.model_dump(exclude_none=True, exclude_defaults=True)
+    target = str(message.get("target_agent_name") or "").strip()
     suggested = list(payload.suggested_add_agent_names or [])
     if scene_mode and suggested:
-        raise StructuredOutputProtocolError("scene mode forbids suggested_add_agent_names", schema_name="HostSchedulerDecisionPayload")
-    if suggested and next_key != "user":
-        raise StructuredOutputProtocolError("suggested_add_agent_names requires next_speaker=user", schema_name="HostSchedulerDecisionPayload")
-    if next_key == "end":
-        return {
-            "next_speaker": "end",
-            "current_phase": payload.current_phase,
-            "next_action": payload.next_action,
-            "suggested_add_agent_names": suggested or None,
-        }
-    if next_key == "user":
-        return {
-            "next_speaker": "user",
-            "current_phase": payload.current_phase,
-            "next_action": payload.next_action,
-            "suggested_add_agent_names": suggested or None,
-        }
-    agent_name = names.get(next_key)
-    if not agent_name:
-        raise StructuredOutputProtocolError("next_speaker is not in allowed participants", schema_name="HostSchedulerDecisionPayload")
+        raise StructuredOutputProtocolError(
+            "scene mode forbids suggested_add_agent_names",
+            schema_name="HostSchedulerDecisionPayload",
+        )
+    if target:
+        canonical = _agent_name_map(agent_profiles).get(target.casefold())
+        if not canonical:
+            raise StructuredOutputProtocolError(
+                "message.target_agent_name is not in allowed participants",
+                schema_name="HostSchedulerDecisionPayload",
+            )
+        message["target_agent_name"] = canonical
     return {
-        "next_speaker": agent_name,
         "current_phase": payload.current_phase,
-        "next_action": payload.next_action,
+        "message": message,
         "suggested_add_agent_names": suggested or None,
     }
 
 
 def _user_requests_recruitment(text: str) -> bool:
-    """Return whether the user explicitly asks to invite more experts."""
     value = str(text or "").strip()
-    if not value:
-        return False
-    return any(token in value for token in ("邀请", "加人", "加入专家", "添加专家", "再加", "请加", "拉进来"))
+    return bool(value) and any(token in value for token in ("邀请", "加人", "加入专家", "添加专家", "再加", "请加", "拉进来"))
 
 
 def finalize_host_scheduler_decision(
@@ -103,8 +84,9 @@ def finalize_host_scheduler_decision(
     available_to_add: List[Dict[str, Any]],
     user_text: str,
 ) -> Dict[str, Any]:
-    """Apply recruitment post-processing before runtime exposes a host decision."""
+    """Filter recruitment suggestions without inventing host message content."""
     out = dict(decision or {})
+    message = dict(out.get("message") or {}) if isinstance(out.get("message"), dict) else {"content": ""}
     available = {
         str(item.get("name") or "").strip()
         for item in available_to_add or []
@@ -117,28 +99,25 @@ def finalize_host_scheduler_decision(
             suggested.append(name)
     if suggested and agent_names and not _user_requests_recruitment(user_text):
         suggested = []
-    if suggested or out.get("suggested_add_agent_names"):
-        out["next_speaker"] = "user"
+    if suggested:
+        message.pop("target_agent_name", None)
+    out["message"] = message
     out["suggested_add_agent_names"] = suggested
     return out
 
 
 def _apply_decision_to_ctx(decision: Dict[str, Any], *, default_next_action: str) -> Dict[str, Any]:
-    """Map a finalized host decision into runtime routing context fields."""
-    next_speaker = str((decision or {}).get("next_speaker") or "user").strip() or "user"
-    next_action = str((decision or {}).get("next_action") or "").strip() or str(default_next_action or "").strip()
-    current_phase = str((decision or {}).get("current_phase") or "").strip()
-    suggested_add = [str(item).strip() for item in ((decision or {}).get("suggested_add_agent_names") or []) if str(item).strip()]
-    host_scheduler = {
-        "current_phase": current_phase,
-        "next_speaker": next_speaker,
-        "next_action": next_action,
-    }
+    """Derive temporary execution variables from the canonical host message."""
+    message = dict(decision.get("message") or {}) if isinstance(decision.get("message"), dict) else {}
+    content = str(message.get("content") or "").strip() or str(default_next_action or "").strip()
+    target = str(message.get("target_agent_name") or "").strip()
+    current_phase = str(decision.get("current_phase") or "").strip()
+    suggested = [str(item).strip() for item in decision.get("suggested_add_agent_names") or [] if str(item).strip()]
     return {
-        "next_speaker": next_speaker,
-        "next_action": next_action,
-        "suggested_add_agent_names": suggested_add,
-        "host_scheduler": host_scheduler,
+        "next_speaker": target or ("end" if current_phase.casefold() == "end" else "user"),
+        "next_action": content,
+        "suggested_add_agent_names": suggested,
+        "host_scheduler": {"current_phase": current_phase, "message": message},
     }
 
 
@@ -148,14 +127,9 @@ def parse_strict_host_scheduler_output(
     *,
     host_mode: str = "recruitment",
 ) -> Dict[str, Any]:
-    """Parse host scheduler JSON without legacy cleanup or natural-language fallback."""
     try:
         payload = parse_strict_pydantic_object(content, HostSchedulerDecisionPayload)
-        return host_scheduler_decision_from_payload(
-            payload,
-            agent_profiles,
-            host_mode=host_mode,
-        )
+        return host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
     except StructuredOutputProtocolError as exc:
         return host_protocol_error_decision(str(exc))
 
@@ -166,37 +140,21 @@ def heuristic_recommend_agents(
     """Recommend Agent names with simple keyword matching."""
     goal = (discussion_goal or "").strip().lower()
     scored = []
-    for d in all_instances or []:
-        name_raw = (d.get("name") or "").strip()
+    for item in all_instances or []:
+        name_raw = str(item.get("name") or "").strip()
         if not name_raw:
             continue
-        name = name_raw.lower()
-        description = str(d.get("description") or "").lower()
-        hay = f"{name} {description}"
-        score = 0
-        for token in (goal.replace("，", " ").replace("。", " ").replace(",", " ").split() if goal else []):
-            if token and token in hay:
-                score += 3
-        if any(k in goal for k in ("天气", "气温", "下雨", "预报")) and any(k in hay for k in ("天气", "气象")):
+        hay = f"{name_raw.lower()} {str(item.get('description') or '').lower()}"
+        score = sum(3 for token in goal.replace("，", " ").replace("。", " ").replace(",", " ").split() if token in hay)
+        if any(k in goal for k in ("写", "文案", "文章", "标题")) and any(k in hay for k in ("写作", "文案", "编辑", "内容")):
             score += 5
-        if any(k in goal for k in ("写", "文案", "公众号", "文章", "标题")) and any(k in hay for k in ("写作", "文案", "编辑", "公众号", "内容")):
+        if any(k in goal for k in ("图", "封面", "配图", "海报")) and any(k in hay for k in ("设计", "封面", "配图", "图像")):
             score += 5
-        if any(k in goal for k in ("图", "封面", "配图", "logo", "海报")) and any(k in hay for k in ("设计", "封面", "配图", "海报", "图像", "logo")):
-            score += 5
-        if any(k in goal for k in ("数据", "报表", "分析", "表格", "excel")) and any(k in hay for k in ("数据", "分析", "报表", "excel")):
+        if any(k in goal for k in ("数据", "报表", "分析", "表格")) and any(k in hay for k in ("数据", "分析", "报表")):
             score += 5
         scored.append((score, name_raw))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    picked = [name for s, name in scored if s > 0]
-    if max_n is not None:
-        picked = picked[: max(0, int(max_n))]
+    scored.sort(key=lambda row: row[0], reverse=True)
+    picked = [name for score, name in scored if score > 0]
     if not picked:
-        for d in all_instances or []:
-            name = (d.get("name") or "").strip()
-            if name and name not in picked:
-                picked.append(name)
-            if max_n is not None and len(picked) >= max_n:
-                break
-    if max_n is not None:
-        return picked[:max(0, int(max_n))]
-    return picked
+        picked = [str(item.get("name") or "").strip() for item in all_instances or [] if str(item.get("name") or "").strip()]
+    return picked[: max(0, int(max_n))] if max_n is not None else picked

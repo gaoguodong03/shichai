@@ -60,12 +60,10 @@ class _FakeScriptGateway:
                     {
                         "schema_version": "expert_final_state.v2",
                         "execution_status": "succeeded",
-                        "artifacts": [],
+                        "message": {"content": "pendulum 版本检查通过。"},
                         "next_action": {
-                            "handoff": "host",
-                            "resume": "none",
-                            "reason": "stage_completed",
-                            "instruction": "pendulum==3.0.0",
+                            "agent_turn": "respond",
+                            "skill_session": "release",
                         },
                     },
                     ensure_ascii=False,
@@ -127,12 +125,10 @@ import json
 print(json.dumps({
     "schema_version": "expert_final_state.v2",
     "execution_status": "succeeded",
-    "artifacts": [],
+    "message": {"content": f"{args.package} 版本检查通过。"},
     "next_action": {
-        "handoff": "host",
-        "resume": "none",
-        "reason": "stage_completed",
-        "instruction": f"{args.package}==3.0.0",
+        "agent_turn": "respond",
+        "skill_session": "release",
     },
 }, ensure_ascii=False))
 """,
@@ -176,7 +172,12 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
                     }
                 ],
             ),
-            AIMessage(content="pendulum 版本检查通过。"),
+            AIMessage(content=json.dumps({
+                "schema_version": "expert_final_state.v2",
+                "execution_status": "succeeded",
+                "message": {"content": "pendulum 版本检查通过。"},
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            }, ensure_ascii=False)),
         ]
     )
 
@@ -202,8 +203,8 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
     chat_resp = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
+            "message_id": "script-flow-1",
             "message": "运行脚本检查 pendulum 这个 Python 包版本。",
-            "client_message_id": "script-flow-1",
             "target_agent_name": "沙箱依赖验证专家",
         },
         headers=headers,
@@ -252,7 +253,12 @@ def test_skill_script_workspace_write_creates_workspace_changed_checkpoint(_fron
                     }
                 ],
             ),
-            AIMessage(content="pendulum 版本检查通过。"),
+            AIMessage(content=json.dumps({
+                "schema_version": "expert_final_state.v2",
+                "execution_status": "succeeded",
+                "message": {"content": "pendulum 版本检查通过。"},
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            }, ensure_ascii=False)),
         ]
     )
 
@@ -278,8 +284,8 @@ def test_skill_script_workspace_write_creates_workspace_changed_checkpoint(_fron
     chat_resp = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
+            "message_id": "script-checkpoint-1",
             "message": "运行脚本检查 pendulum 这个 Python 包版本。",
-            "client_message_id": "script-checkpoint-1",
             "target_agent_name": "沙箱依赖验证专家",
         },
         headers=headers,

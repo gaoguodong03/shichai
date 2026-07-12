@@ -24,8 +24,9 @@ class ToolCallRecord(StrictTraceModel):
 
 
 class ToolOutput(StrictTraceModel):
-    text: str = ""
+    content: str = ""
     json_data: dict[str, Any] | list[Any] | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
     stdout: str = ""
     stderr: str = ""
 
@@ -42,7 +43,5 @@ class ToolErrorLog(StrictTraceModel):
 class ToolResultRecord(StrictTraceModel):
     tool_call: ToolCallRecord
     execution_status: Literal["succeeded", "blocked", "failed"]
-    message: str
     output: ToolOutput = Field(default_factory=ToolOutput)
-    artifacts: list[dict[str, Any]] = Field(default_factory=list)
     error_log: ToolErrorLog | None = None

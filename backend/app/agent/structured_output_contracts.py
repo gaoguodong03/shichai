@@ -80,33 +80,6 @@ def _dedupe_nonempty_strings(values: list[str]) -> list[str]:
     return out
 
 
-class HostSchedulerDecisionPayload(StrictModel):
-    current_phase: str = Field(min_length=1)
-    next_speaker: str = Field(min_length=1)
-    next_action: str = Field(min_length=1)
-    suggested_add_agent_names: list[str] = Field(default_factory=list)
-
-    @field_validator("current_phase", "next_speaker", "next_action", mode="before")
-    @classmethod
-    def _string_fields_must_be_strings(cls, value: Any) -> Any:
-        if not isinstance(value, str):
-            raise ValueError("must be a string")
-        return value
-
-    @field_validator("suggested_add_agent_names")
-    @classmethod
-    def _suggested_names_are_nonempty_strings(cls, value: list[str]) -> list[str]:
-        return _dedupe_nonempty_strings(value)
-
-    @model_validator(mode="after")
-    def _validate_invite_shape(self) -> "HostSchedulerDecisionPayload":
-        if self.next_speaker == "invite":
-            raise ValueError("invite is not a legal host next_speaker")
-        if self.suggested_add_agent_names and self.next_speaker != "user":
-            raise ValueError("suggested_add_agent_names requires next_speaker=user")
-        return self
-
-
 class ExpertSkillSelectionPayload(StrictModel):
     selected_skill: str = Field(min_length=1)
 
@@ -126,24 +99,74 @@ class ArtifactRef(StrictModel):
 
 
 class SkillNextAction(StrictModel):
-    handoff: Literal["user", "host", "end"]
-    resume: Literal["same_skill", "same_agent", "host", "none"]
-    reason: Literal[
-        "stage_gate",
-        "missing_input",
-        "user_confirmation",
-        "stage_completed",
-        "final_delivery",
-        "failure",
-        "protocol_error",
-    ]
-    instruction: str = Field(min_length=1)
+    agent_turn: Literal["continue", "respond"]
+    skill_session: Literal["keep", "release"]
+
+
+class WorkspaceAttachmentRef(StrictModel):
+    type: Literal["workspace_file"]
+    path: str = Field(min_length=1)
+    name: str | None = Field(default=None, min_length=1)
+
+    @field_validator("path")
+    @classmethod
+    def _validate_public_workspace_path(cls, value: str) -> str:
+        try:
+            return normalize_public_workspace_path(value)
+        except WorkspacePathError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class ExpertFinalMessageBody(StrictModel):
+    content: str = ""
+    attachments: list[WorkspaceAttachmentRef] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    target_agent_name: str | None = Field(default=None, min_length=1)
+
+
+class HostSchedulerDecisionPayload(StrictModel):
+    current_phase: str = Field(min_length=1)
+    message: ExpertFinalMessageBody
+    suggested_add_agent_names: list[str] = Field(default_factory=list)
+
+    @field_validator("current_phase", mode="before")
+    @classmethod
+    def _phase_must_be_string(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            raise ValueError("must be a string")
+        return value
+
+    @field_validator("suggested_add_agent_names")
+    @classmethod
+    def _suggested_names_are_nonempty_strings(cls, value: list[str]) -> list[str]:
+        return _dedupe_nonempty_strings(value)
+
+    @model_validator(mode="after")
+    def _validate_recruitment_shape(self) -> "HostSchedulerDecisionPayload":
+        if self.suggested_add_agent_names and self.message.target_agent_name:
+            raise ValueError("suggested_add_agent_names requires message.target_agent_name to be empty")
+        if not self.message.content.strip():
+            raise ValueError("message.content must be non-empty")
+        return self
+
+
+class ExpertFinalStatePayload(StrictModel):
+    schema_version: Literal["expert_final_state.v2"]
+    execution_status: Literal["succeeded", "blocked", "failed"]
+    message: ExpertFinalMessageBody
+    next_action: SkillNextAction
+
+    @model_validator(mode="after")
+    def _validate_message_for_action(self) -> "ExpertFinalStatePayload":
+        if self.next_action.agent_turn == "respond" and not self.message.content.strip():
+            raise ValueError("agent_turn=respond requires non-empty message.content")
+        return self
 
 
 class SkillScriptStdoutPayload(StrictModel):
     schema_version: Literal["expert_final_state.v2"]
     execution_status: Literal["succeeded", "blocked", "failed"]
-    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    message: ExpertFinalMessageBody
     next_action: SkillNextAction
 
 
@@ -165,5 +188,4 @@ class ToolExecutionLogRecord(StrictModel):
     status: Literal["succeeded", "blocked", "failed"]
     tool_call: ToolExecutionLogToolCall
     output: dict[str, Any] = Field(default_factory=dict)
-    artifacts: list[ArtifactRef] = Field(default_factory=list)
     duration_ms: int | None = None

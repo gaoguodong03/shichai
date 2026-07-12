@@ -1,8 +1,8 @@
 """Canonical history and SSE message contracts.
 
 Messages follow docs/contracts/runtime-interface-contract.md: message facts live
-under `speaker`, `message`, `created_at`, optional `client_message_id`, and
-optional `skill_result`. Tool execution detail belongs to traces/logs, not here.
+under `speaker`, `message`, `created_at`, and optional `skill_result`. Tool
+execution detail belongs to traces/logs, not here.
 """
 from __future__ import annotations
 
@@ -53,13 +53,12 @@ class WorkspaceAttachment(StrictContractModel):
 class MessageBody(StrictContractModel):
     content: str = ""
     attachments: list[WorkspaceAttachment] | None = None
+    artifacts: list[ArtifactRef] | None = None
     target_agent_name: str | None = Field(default=None, min_length=1)
 
 
 class SkillResult(StrictContractModel):
     execution_status: Literal["succeeded", "blocked", "failed"]
-    content: str = Field(min_length=1)
-    artifacts: list[ArtifactRef] = Field(default_factory=list)
     next_action: SkillNextAction
 
 
@@ -68,7 +67,6 @@ class ChatMessageRecord(StrictContractModel):
     speaker: MessageSpeaker
     message: MessageBody
     created_at: str = Field(min_length=1)
-    client_message_id: str | None = Field(default=None, min_length=1)
     skill_result: SkillResult | None = None
 
     @field_validator("created_at")
@@ -85,16 +83,12 @@ class ChatMessageRecord(StrictContractModel):
 
     @model_validator(mode="after")
     def _validate_message_shape(self) -> "ChatMessageRecord":
-        if self.client_message_id is not None and self.speaker.type != "user":
-            raise ValueError("client_message_id is only valid for user messages")
         if self.skill_result is not None and self.speaker.type == "user":
             raise ValueError("user messages must not include skill_result")
         if self.skill_result is not None and not self.speaker.skill:
             raise ValueError("skill_result requires speaker.skill")
-        if self.skill_result is not None and self.message.content != self.skill_result.content:
-            raise ValueError("message.content must match skill_result.content")
-        if (self.message.attachments or self.message.target_agent_name) and self.speaker.type != "user":
-            raise ValueError("attachments and target_agent_name are only valid for user messages")
+        if self.message.target_agent_name and self.speaker.type == "expert":
+            raise ValueError("expert messages must not include target_agent_name")
         return self
 
 

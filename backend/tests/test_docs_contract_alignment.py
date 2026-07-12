@@ -19,13 +19,16 @@ def test_formal_docs_tree_excludes_legacy_planning_directories():
         assert not any(path.is_file() for path in files), relative
 
 
-def test_host_skill_docs_use_current_next_action_contract():
+def test_skill_authoring_docs_use_current_message_and_final_state_contracts():
     """Keep Skill authoring docs aligned with the current host scheduler contract."""
     docs = sorted((PROJECT_ROOT / "docs" / "skills").glob("**/*.md"))
 
     for path in docs:
         text = path.read_text(encoding="utf-8")
-        assert "speaker_task" not in text, path
+        assert '"next_speaker":' not in text, path
+        assert '"handoff":' not in text, path
+        assert '"resume":' not in text, path
+        assert "[[SKILL_SESSION_STATE]]" not in text, path
 
 
 def test_backend_readme_uses_current_runtime_contract_fields():
@@ -68,37 +71,42 @@ def test_backend_runtime_does_not_keep_noop_scene_profile_upgrade_hook():
     assert "scene_profile" not in combined
 
 
-def test_simple_agent_tool_summary_helpers_are_not_named_as_fallbacks():
-    """Tool-result summary paths are product behavior, not legacy fallback branches."""
+def test_simple_agent_runtime_has_no_tool_result_to_message_fallbacks():
+    """Tool results must return to the LLM finalizer, never become chat messages in code."""
     runtime_files = [
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_streaming.py",
-        PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_errors.py",
         PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_finalization.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
 
     for forbidden in [
-        "_final_response_or_tool_fallback",
-        "_script_dependency_fallback_summary",
+        "_deterministic_tool_summary_message",
+        "_final_response_or_tool_summary",
+        "_terminal_tool_failure_message",
+        "_tool_error_direct_final_message",
+        "_script_dependency_direct_final_message",
+        "_playwright_runtime_failure_message",
+        "_summary_after_llm_failure_message",
+        "terminal_tool_failure_direct_final",
+        "tool_error_direct_final",
+        "script_dependency_direct_final",
+        "playwright_runtime_failure_direct_final",
+        "llm_failure_after_tool_outputs_summary",
+        "工具已执行完成。以下是本轮工具返回摘要",
+        "抱歉，模型响应超时，请稍后重试",
+        "抱歉，模型响应失败：",
     ]:
         assert forbidden not in combined
 
 
-def test_simple_agent_tool_summary_has_independent_module_boundary():
-    """Tool-result finalization belongs outside error handling and SimpleAgent loops."""
+def test_simple_agent_has_no_legacy_tool_summary_or_mcp_direct_final_modules():
+    """Deleted direct-final behavior must not survive in isolated helper modules."""
     summary_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_summary.py"
-    error_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_tool_errors.py"
-    streaming_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_streaming.py"
+    mcp_direct_module = PROJECT_ROOT / "backend" / "app" / "agent" / "simple_agent_mcp_tools.py"
 
-    assert summary_module.exists()
-    summary_text = summary_module.read_text(encoding="utf-8")
-    error_text = error_module.read_text(encoding="utf-8")
-    streaming_text = streaming_module.read_text(encoding="utf-8")
-
-    assert "def _final_response_or_tool_summary" in summary_text
-    assert "def _final_response_or_tool_summary" not in error_text
-    assert "from app.agent.simple_agent_tool_summary import _final_response_or_tool_summary" in streaming_text
+    assert not summary_module.exists()
+    assert not mcp_direct_module.exists()
 
 
 def test_simple_agent_does_not_advertise_content_tool_call_fallback():
@@ -446,8 +454,6 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
         "def iter_run_skill_raw_output_payloads",
         "def remember_successful_workspace_writes",
         "def all_workspace_write_calls_already_succeeded",
-        "def post_tool_synthesis_should_use_bound_client",
-        "def tool_should_stop_after_result",
         "def read_file_should_synthesize_after_result",
     ]:
         assert name in flow_text
@@ -457,8 +463,6 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
         "def run_skill_outputs_request_agent_turn_continue",
         "def _remember_successful_workspace_writes",
         "def _all_workspace_write_calls_already_succeeded",
-        "def _post_tool_synthesis_should_use_bound_client",
-        "def _tool_should_stop_after_result",
         "def _read_file_should_synthesize_after_result",
     ]:
         assert old_private_definition not in agent_text
@@ -914,14 +918,14 @@ def test_group_chat_runtime_delegates_tool_artifact_collection():
     tool_content_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_tool_result_content.py").read_text(encoding="utf-8")
     boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
 
-    assert "`group_chat_tool_result_content.py` | 工具结果转用户可见内容和公开 artifact 提取。" in boundary_text
+    assert "`group_chat_tool_result_content.py` | 工具结果公开 artifact 提取。" in boundary_text
     assert "def _collect_artifacts" not in runtime_text
     assert "ArtifactRef" not in runtime_text
     assert "def collect_artifacts" in tool_content_text
     assert "has_failed = any(" not in runtime_text
     assert "has_blocked = any(" not in runtime_text
     assert "skill_result_from_content(" not in runtime_text
-    assert "def build_expert_skill_result" in tool_content_text
+    assert "def build_expert_skill_result" not in tool_content_text
 
 
 def test_group_chat_runtime_delegates_tool_trace_logging():
@@ -961,7 +965,7 @@ def test_group_chat_runtime_delegates_expert_turn_execution():
     boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
 
     assert "`group_chat_expert_turn.py` | 专家单回合流式执行、进度事件、工具结果汇总、消息落盘和工具 trace 写入。" in boundary_text
-    assert "from app.agent.group_chat_expert_turn import run_one_expert_turn" in runtime_text
+    assert "from app.agent.group_chat_expert_turn import ExpertTurnOutcome, run_one_expert_turn" in runtime_text
     assert "async def _run_one_expert_turn" not in runtime_text
     assert "runtime.agent.astream" not in runtime_text
     assert "async def run_one_expert_turn" in expert_turn_text

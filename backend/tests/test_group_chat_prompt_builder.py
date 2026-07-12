@@ -7,8 +7,8 @@ def test_request_user_text_keeps_structured_target_out_of_user_body():
     from app.agent.message_contracts import WorkspaceAttachment
 
     request = GroupChatRequest(
+        message_id="msg-user-1",
         message="请汇总这份材料",
-        client_message_id="cm-test",
         attachments=[WorkspaceAttachment(type="workspace_file", path="docs/input.md", name="input.md")],
         target_agent_name="资料专家",
     )

@@ -122,7 +122,7 @@
 | `builtin_workspace_tools.py` | 内置工作区工具的 ToolSpec、schema 和具体执行逻辑。 |
 | `tool_gateway.py` | 工具调用网关、执行上下文和统一返回。 |
 | `group_chat_tool_trace.py` | 工具 trace、日志和调试记录。 |
-| `group_chat_tool_result_content.py` | 工具结果转用户可见内容和公开 artifact 提取。 |
+| `group_chat_tool_result_content.py` | 工具结果公开 artifact 提取。 |
 | `tools/run_skill_script.py` | Skill 脚本工具创建和沙箱执行入口。 |
 | `tools/http_api_tool.py`、`tools/call_api.py` | 保存型 HTTP API 工具。 |
 | `mcp/manager.py`、`mcp/tool_arg_normalizers.py` | MCP 连接管理和工具参数归一化。 |

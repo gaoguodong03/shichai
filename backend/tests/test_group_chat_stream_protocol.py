@@ -17,6 +17,32 @@ def _parse_sse_block(block: str) -> tuple[str, dict[str, Any]]:
     return event_type, json.loads(data)
 
 
+def _expert_final_state_json(
+    content: str,
+    *,
+    artifacts: list[dict[str, Any]] | None = None,
+    execution_status: str = "succeeded",
+    agent_turn: str = "respond",
+    skill_session: str = "release",
+) -> str:
+    return json.dumps(
+        {
+            "schema_version": "expert_final_state.v2",
+            "execution_status": execution_status,
+            "message": {
+                "content": content,
+                "attachments": [],
+                "artifacts": artifacts or [],
+            },
+            "next_action": {
+                "agent_turn": agent_turn,
+                "skill_session": skill_session,
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
 async def _collect_stream_events(response) -> list[tuple[str, dict[str, Any]]]:
     events: list[tuple[str, dict[str, Any]]] = []
     body_iter = response.body_iterator
@@ -39,133 +65,19 @@ def test_collect_artifacts_keeps_only_strict_public_artifact_refs():
     artifacts = collect_artifacts(
         [
             {
-                "artifacts": [
+                "output": {
+                    "artifacts": [
                     {"path": "reports/missing-type-and-name.md"},
                     {"type": "file", "path": "reports/missing-name.md"},
                     {"type": "legacy", "name": "旧类型", "path": "reports/legacy.md"},
                     {"type": "file", "name": "报告", "path": "reports/report.md", "data": {"inline": True}},
-                ]
+                    ]
+                }
             }
         ]
     )
 
     assert artifacts == [{"type": "file", "name": "报告", "path": "reports/report.md"}]
-
-
-def test_build_expert_skill_result_marks_failed_before_blocked_and_collects_artifacts():
-    from app.agent.group_chat_tool_result_content import build_expert_skill_result
-
-    result = build_expert_skill_result(
-        content="",
-        tool_results=[
-            {
-                "execution_status": "blocked",
-                "message": "需要补充链接",
-                "tool_call": {"name": "collect_inputs"},
-            },
-            {
-                "execution_status": "failed",
-                "message": "脚本失败",
-                "tool_call": {"name": "run_skill_script"},
-                "artifacts": [{"type": "file", "name": "日志", "path": "reports/failure.md"}],
-            },
-        ],
-    )
-
-    assert result["execution_status"] == "failed"
-    assert result["content"].startswith("当前步骤失败：run_skill_script")
-    assert result["artifacts"] == [{"type": "file", "name": "日志", "path": "reports/failure.md"}]
-
-
-def test_build_expert_skill_result_uses_empty_model_content_placeholder():
-    from app.agent.group_chat_tool_result_content import build_expert_skill_result
-
-    result = build_expert_skill_result(content="", tool_results=[])
-
-    assert result["execution_status"] == "succeeded"
-    assert result["content"] == "模型没有返回可展示的文字内容。"
-
-
-def test_build_expert_skill_result_rejects_tool_summary_as_success():
-    from app.agent.group_chat_tool_result_content import build_expert_skill_result
-
-    result = build_expert_skill_result(
-        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n目录 . 下：（空）\n```",
-        tool_results=[
-            {
-                "execution_status": "succeeded",
-                "tool_call": {"name": "list_workspace_directory"},
-                "output": {"text": "目录 . 下：（空）"},
-            }
-        ],
-    )
-
-    assert result["execution_status"] == "failed"
-    assert result["content"] == "模型没有返回可展示的专家回复；本轮只有工具执行摘要。请重新执行本轮专家步骤。"
-    assert result["next_action"] == {
-        "handoff": "user",
-        "resume": "same_skill",
-        "reason": "protocol_error",
-        "instruction": "模型没有返回可展示的专家回复；请重新执行本轮专家步骤。",
-    }
-
-
-def test_build_expert_skill_result_turns_successful_artifacts_into_minimal_delivery():
-    from app.agent.group_chat_tool_result_content import build_expert_skill_result
-
-    result = build_expert_skill_result(
-        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n已写入当前 Chat 工作区文件：drafts/shenteng.md\n```",
-        tool_results=[
-            {
-                "execution_status": "succeeded",
-                "tool_call": {"name": "write_workspace_file"},
-                "output": {"text": "已写入当前 Chat 工作区文件：drafts/shenteng.md"},
-                "artifacts": [{"type": "file", "name": "沈腾演艺生涯", "path": "drafts/shenteng.md"}],
-            }
-        ],
-    )
-
-    assert result["execution_status"] == "succeeded"
-    assert result["content"] == "已生成工作区产物：\n- 沈腾演艺生涯：drafts/shenteng.md"
-    assert result["artifacts"] == [{"type": "file", "name": "沈腾演艺生涯", "path": "drafts/shenteng.md"}]
-    assert result["next_action"] == {
-        "handoff": "host",
-        "resume": "none",
-        "reason": "stage_completed",
-        "instruction": "已生成工作区产物：\n- 沈腾演艺生涯：drafts/shenteng.md",
-    }
-
-
-def test_build_expert_skill_result_prefers_script_payload_over_tool_summary():
-    from app.agent.group_chat_tool_result_content import build_expert_skill_result
-
-    payload = {
-        "schema_version": "expert_final_state.v2",
-        "execution_status": "succeeded",
-        "artifacts": [{"type": "file", "name": "文章", "path": "drafts/shenteng.md"}],
-        "next_action": {
-            "handoff": "host",
-            "resume": "none",
-            "reason": "stage_completed",
-            "instruction": "文章已完整起草并保存到工作区。",
-        },
-    }
-
-    result = build_expert_skill_result(
-        content="工具已执行完成。以下是本轮工具返回摘要：\n\n```text\n脚本执行成功\n```",
-        tool_results=[
-            {
-                "execution_status": "succeeded",
-                "tool_call": {"id": "call-1", "name": "run_skill_script_doc", "kind": "script"},
-                "output": {"stdout": json.dumps(payload, ensure_ascii=False)},
-            }
-        ],
-    )
-
-    assert result["execution_status"] == "succeeded"
-    assert result["content"] == "文章已完整起草并保存到工作区。"
-    assert result["artifacts"] == [{"type": "file", "name": "文章", "path": "drafts/shenteng.md"}]
-    assert result["next_action"] == payload["next_action"]
 
 
 @pytest.mark.asyncio
@@ -185,8 +97,7 @@ async def test_chat_stream_omits_legacy_start_event(monkeypatch, tmp_path):
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待用户",
-            "next_speaker": "user",
-            "next_action": "请先补充任务目标。",
+            "message": {"content": "请先补充任务目标。"},
             "suggested_add_agent_names": [],
         }
 
@@ -207,7 +118,7 @@ async def test_chat_stream_omits_legacy_start_event(monkeypatch, tmp_path):
 
     response = await runtime.group_chat_stream(
         session_id,
-        GroupChatRequest(message="你好", client_message_id="client-1"),
+        GroupChatRequest(message="你好", message_id="msg-user-1"),
     )
 
     events = await _collect_stream_events(response)
@@ -233,8 +144,7 @@ async def test_chat_stream_registers_run_with_stable_user_id(monkeypatch, tmp_pa
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待用户",
-            "next_speaker": "user",
-            "next_action": "等待用户补充。",
+            "message": {"content": "等待用户补充。"},
             "suggested_add_agent_names": [],
         }
 
@@ -252,24 +162,23 @@ async def test_chat_stream_registers_run_with_stable_user_id(monkeypatch, tmp_pa
     monkeypatch.setattr(runtime, "register_group_run", _register_run)
 
     session_id = "s-chat-stream-user-id"
-    state.save_session_definitions(
-        {
-            session_id: {
-                "title": "稳定用户",
-                "agent_names": [],
-                "host": {"name": "四九"},
-                "created_at": "2026070900000000",
-                "updated_at": "2026070900000000",
-            }
-        }
-    )
-    state.save_group_history(session_id, [])
-
     token = set_current_user_identity(user_id="user-stream-stable", username="stream@example.com")
     try:
+        state.save_session_definitions(
+            {
+                session_id: {
+                    "title": "稳定用户",
+                    "agent_names": [],
+                    "host": {"name": "四九"},
+                    "created_at": "2026070900000000",
+                    "updated_at": "2026070900000000",
+                }
+            }
+        )
+        state.save_group_history(session_id, [])
         response = await runtime.group_chat_stream(
             session_id,
-            GroupChatRequest(message="你好", client_message_id="client-user-id"),
+            GroupChatRequest(message="你好", message_id="msg-user-id"),
         )
         await _collect_stream_events(response)
     finally:
@@ -300,12 +209,12 @@ async def test_host_handoff_message_precedes_expert_route(monkeypatch, tmp_path)
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "写作",
-            "next_speaker": "文档合著专家",
-            "next_action": "请先写文章大纲。",
+            "message": {"content": "请先写文章大纲。", "target_agent_name": "文档合著专家"},
             "suggested_add_agent_names": [],
         }
 
     async def _expert_turn(**kwargs):
+        kwargs["outcome"].succeed()
         yield runtime.serialize_sse_event(
             "route",
             {"type": "route", "run_id": kwargs["run_id"], "agent_name": kwargs["agent_name"], "skill": "document-coauthor"},
@@ -319,7 +228,7 @@ async def test_host_handoff_message_precedes_expert_route(monkeypatch, tmp_path)
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-host-handoff",
-            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            request=GroupChatRequest(message="帮我写文章", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions=state.load_session_definitions(),
             session_item=state.load_session_definitions()["s-host-handoff"],
@@ -335,7 +244,10 @@ async def test_host_handoff_message_precedes_expert_route(monkeypatch, tmp_path)
     parsed = [_parse_sse_block(item) for item in events]
     assert parsed[0][0] == "message"
     assert parsed[0][1]["speaker"] == {"type": "host", "agent_name": "四九"}
-    assert parsed[0][1]["message"]["content"] == "下面由 文档合著专家 发言。"
+    assert parsed[0][1]["message"] == {
+        "content": "请先写文章大纲。",
+        "target_agent_name": "文档合著专家",
+    }
     assert parsed[1][0] == "route"
     assert parsed[1][1]["agent_name"] == "文档合著专家"
 
@@ -361,14 +273,12 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
     decisions = [
         {
             "current_phase": "写作",
-            "next_speaker": "文档合著专家",
-            "next_action": "请先写文章大纲。",
+            "message": {"content": "请先写文章大纲。", "target_agent_name": "文档合著专家"},
             "suggested_add_agent_names": [],
         },
         {
             "current_phase": "等待确认",
-            "next_speaker": "user",
-            "next_action": "大纲已完成，请确认是否继续写正文。",
+            "message": {"content": "大纲已完成，请确认是否继续写正文。"},
             "suggested_add_agent_names": [],
         },
     ]
@@ -377,6 +287,7 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
         return decisions.pop(0)
 
     async def _expert_turn(**kwargs):
+        kwargs["outcome"].succeed()
         expert_msg = {
             "message_id": "msg-expert-1",
             "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": "document-coauthor"},
@@ -384,13 +295,9 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
             "created_at": "2026071100000100",
             "skill_result": {
                 "execution_status": "succeeded",
-                "content": "大纲已完成。",
-                "artifacts": [],
                 "next_action": {
-                    "handoff": "host",
-                    "resume": "none",
-                    "reason": "stage_completed",
-                    "instruction": "大纲已完成。",
+                    "agent_turn": "respond",
+                    "skill_session": "release",
                 },
             },
         }
@@ -405,7 +312,7 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-expert-back-host",
-            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            request=GroupChatRequest(message="帮我写文章", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions=state.load_session_definitions(),
             session_item=state.load_session_definitions()["s-expert-back-host"],
@@ -425,13 +332,148 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
         if event_type == "message"
     ]
     assert message_contents == [
-        "下面由 文档合著专家 发言。",
+        "请先写文章大纲。",
         "大纲已完成。",
         "大纲已完成，请确认是否继续写正文。",
     ]
     assert parsed[-1][0] == "end"
     assert parsed[-1][1]["phase"] == "awaiting_user"
     assert decisions == []
+
+
+@pytest.mark.asyncio
+async def test_expert_failure_stops_before_host_is_scheduled_again(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.agent.group_chat_expert_turn import ExpertTurnOutcome
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-expert-failed": {
+                "title": "专家失败终止",
+                "agent_names": ["信息检索专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-expert-failed", [])
+    host_calls = 0
+
+    async def _host_decision(*_args, **_kwargs):
+        nonlocal host_calls
+        host_calls += 1
+        return {
+            "current_phase": "检索",
+            "message": {"content": "请搜索资料。", "target_agent_name": "信息检索专家"},
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_turn(**kwargs):
+        outcome = kwargs["outcome"]
+        assert isinstance(outcome, ExpertTurnOutcome)
+        outcome.fail(code="EXPERT_FINAL_STATE_INVALID", message="专家没有产出合格的最终状态。")
+        yield runtime.serialize_sse_event(
+            "error",
+            {
+                "type": "error",
+                "run_id": kwargs["run_id"],
+                "code": outcome.error_code,
+                "message": outcome.error_message,
+            },
+        )
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-expert-failed",
+            request=GroupChatRequest(message="搜索沈腾", message_id="msg-user-failed"),
+            run_id="run-failed",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-expert-failed"],
+            app_settings={},
+            agent_map={"信息检索专家": {"name": "信息检索专家", "description": "搜索资料"}},
+            agent_names=["信息检索专家"],
+            messages=[],
+            discussion_goal="搜索沈腾",
+            user_text="搜索沈腾",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    assert host_calls == 1
+    assert [event for event, _payload in parsed].count("error") == 1
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_structured_finalizer_error_uses_stable_expert_error_code(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.agent.structured_output_contracts import StructuredOutputProtocolError
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-finalizer-invalid": {
+                "title": "最终态协议失败",
+                "agent_names": ["信息检索专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-finalizer-invalid", [])
+
+    async def _expert_turn(**_kwargs):
+        raise StructuredOutputProtocolError("finalizer schema invalid", schema_name="ExpertFinalStatePayload")
+        if False:
+            yield ""
+
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-finalizer-invalid",
+            request=GroupChatRequest(
+                message="直接回复",
+                message_id="msg-user-finalizer-invalid",
+                target_agent_name="信息检索专家",
+            ),
+            run_id="run-finalizer-invalid",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-finalizer-invalid"],
+            app_settings={},
+            agent_map={"信息检索专家": {"name": "信息检索专家", "description": "搜索资料"}},
+            agent_names=["信息检索专家"],
+            messages=[],
+            discussion_goal="直接回复",
+            user_text="直接回复",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    error_payloads = [payload for event, payload in parsed if event == "error"]
+    assert error_payloads == [
+        {
+            "type": "error",
+            "run_id": "run-finalizer-invalid",
+            "code": "EXPERT_FINAL_STATE_INVALID",
+            "message": "finalizer schema invalid",
+        }
+    ]
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "failed"
 
 
 @pytest.mark.asyncio
@@ -447,8 +489,7 @@ async def test_chat_stream_keeps_missing_agent_references_in_session(monkeypatch
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待用户",
-            "next_speaker": "user",
-            "next_action": "缺失专家引用应保留，等待用户手动修复。",
+            "message": {"content": "缺失专家引用应保留，等待用户手动修复。"},
             "suggested_add_agent_names": [],
         }
 
@@ -473,7 +514,7 @@ async def test_chat_stream_keeps_missing_agent_references_in_session(monkeypatch
 
     response = await runtime.group_chat_stream(
         session_id,
-        GroupChatRequest(message="继续", client_message_id="client-1"),
+        GroupChatRequest(message="继续", message_id="msg-user-1"),
     )
     await _collect_stream_events(response)
 
@@ -673,7 +714,7 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
 
     class FakeAgent:
         async def astream(self, *_args, **_kwargs):
-            yield {"type": "agent_step", "message": AIMessage(content="专家回答")}
+            yield {"type": "agent_step", "message": AIMessage(content=_expert_final_state_json("专家回答"))}
 
     async def _fake_build_runtime(**_kwargs):
         return SimpleNamespace(
@@ -728,6 +769,137 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     assert "finalizing" in update_phases
     message_payloads = [payload for event, payload in events if event == "message"]
     assert message_payloads[-1]["message"] == {"content": "专家回答"}
+    assert message_payloads[-1]["skill_result"] == {
+        "execution_status": "succeeded",
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_expert_turn_uses_expert_final_state_as_only_message_source(monkeypatch, tmp_path):
+    from app.agent import group_chat_expert_turn as expert_turn
+    from app.api import group_chat_state as state
+
+    class FakeAgent:
+        async def astream(self, *_args, **_kwargs):
+            yield {"type": "agent_step", "message": AIMessage(content="工具已执行完成。以下是本轮工具返回摘要：\n\nTitle: 沈腾")}
+            yield {"type": "agent_step", "message": AIMessage(content=_expert_final_state_json(
+                "我已经完成资料整理，并保存到工作区。",
+                artifacts=[{"type": "markdown", "name": "资料摘要", "path": "research/summary.md"}],
+            ))}
+
+    async def _fake_build_runtime(**_kwargs):
+        return SimpleNamespace(
+            blocked=False,
+            skill="skill-qa",
+            skill_route_diagnostics={},
+            agent=FakeAgent(),
+            tools=[],
+        )
+
+    async def _record_update(_session_id: str, _run_id: str, **_kwargs: Any):
+        return None
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr(expert_turn, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(expert_turn, "update_group_run", _record_update)
+    state.save_session_definitions(
+        {
+            "s-expert-final-content": {
+                "title": "专家展示正文",
+                "agent_names": ["问答专家"],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+
+    events = [
+        _parse_sse_block(item)
+        async for item in expert_turn.run_one_expert_turn(
+            group_session_id="s-expert-final-content",
+            run_id="run-final-content",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-expert-final-content"],
+            app_settings={},
+            agent_map={"问答专家": {"name": "问答专家", "skills": [{"directory_name": "skill-qa"}]}},
+            agent_name="问答专家",
+            messages=[],
+            discussion_goal="回答问题",
+            user_text="你好",
+            next_action="请回答",
+        )
+    ]
+
+    message_payloads = [payload for event, payload in events if event == "message"]
+    assert message_payloads[-1]["message"] == {
+        "content": "我已经完成资料整理，并保存到工作区。",
+        "artifacts": [{"type": "markdown", "name": "资料摘要", "path": "research/summary.md"}],
+    }
+    assert "工具已执行完成" not in message_payloads[-1]["message"]["content"]
+    assert message_payloads[-1]["skill_result"] == {
+        "execution_status": "succeeded",
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_expert_turn_rejects_missing_expert_final_state(monkeypatch, tmp_path):
+    from app.agent import group_chat_expert_turn as expert_turn
+    from app.api import group_chat_state as state
+
+    platform_tool_summary = "工具已执行完成。以下是本轮工具返回摘要：\n\n```text\nTitle: 沈腾\nURL: https://example.test\n```"
+
+    class FakeAgent:
+        async def astream(self, *_args, **_kwargs):
+            yield {"type": "agent_step", "message": AIMessage(content=platform_tool_summary)}
+
+    async def _fake_build_runtime(**_kwargs):
+        return SimpleNamespace(
+            blocked=False,
+            skill="skill-web-research",
+            skill_route_diagnostics={},
+            agent=FakeAgent(),
+            tools=[],
+        )
+
+    async def _record_update(_session_id: str, _run_id: str, **_kwargs: Any):
+        return None
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr(expert_turn, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(expert_turn, "update_group_run", _record_update)
+    state.save_session_definitions(
+        {
+            "s-expert-tool-summary": {
+                "title": "专家工具摘要过滤",
+                "agent_names": ["信息检索专家"],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+
+    events = [
+        _parse_sse_block(item)
+        async for item in expert_turn.run_one_expert_turn(
+            group_session_id="s-expert-tool-summary",
+            run_id="run-tool-summary",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-expert-tool-summary"],
+            app_settings={},
+            agent_map={"信息检索专家": {"name": "信息检索专家", "skills": [{"directory_name": "skill-web-research"}]}},
+            agent_name="信息检索专家",
+            messages=[],
+            discussion_goal="搜集资料",
+            user_text="我要写沈腾",
+            next_action="请搜集资料",
+        )
+    ]
+
+    assert [event for event, _payload in events if event == "message"] == []
+    error_payloads = [payload for event, payload in events if event == "error"]
+    assert error_payloads[-1]["code"] == "EXPERT_FINAL_STATE_INVALID"
 
 
 @pytest.mark.asyncio
@@ -745,7 +917,7 @@ async def test_keepalive_progress_keeps_current_runtime_phase_after_tool_call(mo
                 ),
             }
             yield {"type": "keepalive"}
-            yield {"type": "agent_step", "message": AIMessage(content="工具后回答")}
+            yield {"type": "agent_step", "message": AIMessage(content=_expert_final_state_json("工具后回答"))}
 
     async def _fake_build_runtime(**_kwargs):
         return SimpleNamespace(

@@ -10,10 +10,10 @@ type Message = {
   message: {
     content: string
     attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    artifacts?: ArtifactRef[]
     target_agent_name?: string | null
   }
   created_at: string
-  client_message_id?: string
   skill_result?: SkillResult
 }
 
@@ -24,16 +24,12 @@ type ArtifactRef = {
 }
 
 type SkillNextAction = {
-  handoff: 'user' | 'host' | 'end'
-  resume: 'same_skill' | 'same_agent' | 'host' | 'none'
-  reason: 'stage_gate' | 'missing_input' | 'user_confirmation' | 'stage_completed' | 'final_delivery' | 'failure' | 'protocol_error'
-  instruction: string
+  agent_turn: 'continue' | 'respond'
+  skill_session: 'keep' | 'release'
 }
 
 type SkillResult = {
   execution_status: 'succeeded' | 'blocked' | 'failed'
-  content: string
-  artifacts: ArtifactRef[]
   next_action: SkillNextAction
 }
 
@@ -409,14 +405,14 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (chatStreamMatch && method === 'POST') {
       const id = decodeURIComponent(chatStreamMatch[1])
       const body = readBody<{
+        message_id: string
         message?: string
-        client_message_id: string
         attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
         target_agent_name?: string | null
       }>(route)
-      if (rejectUnexpectedKeys(route, body, ['message', 'client_message_id', 'attachments', 'target_agent_name'])) return
-      const clientMessageId = String(body.client_message_id || '').trim()
-      if (!clientMessageId) return json(route, { detail: 'client_message_id is required' }, 422)
+      if (rejectUnexpectedKeys(route, body, ['message_id', 'message', 'attachments', 'target_agent_name'])) return
+      const messageId = String(body.message_id || '').trim()
+      if (!messageId) return json(route, { detail: 'message_id is required' }, 422)
       const session = state.sessions.find((s) => s.id === id)
       if (!session) return notFound(route)
       if (validateChatAttachments(route, state, id, body.attachments || [])) return
@@ -429,10 +425,9 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       if (body.attachments?.length) messageBody.attachments = body.attachments
       if (targetAgentName) messageBody.target_agent_name = targetAgentName
       session.messages.push({
-        message_id: `user-${session.messages.length + 1}`,
+        message_id: messageId,
         speaker: { type: 'user' },
         message: messageBody,
-        client_message_id: clientMessageId,
         created_at: now,
       })
       if (!activeAgentNames.length) {
@@ -478,9 +473,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         created_at: now,
         skill_result: {
           execution_status: 'succeeded',
-          content: answer,
-          artifacts: [],
-          next_action: { handoff: 'host', resume: 'none', reason: 'stage_completed', instruction: answer },
+          next_action: { agent_turn: 'respond', skill_session: 'release' },
         },
       })
       return eventStream(route, [
@@ -493,9 +486,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           created_at: now,
           skill_result: {
             execution_status: 'succeeded',
-            content: answer,
-            artifacts: [],
-            next_action: { handoff: 'host', resume: 'none', reason: 'stage_completed', instruction: answer },
+            next_action: { agent_turn: 'respond', skill_session: 'release' },
           },
         }],
         ['end', { type: 'end', run_id: 'run-e2e', phase: 'awaiting_user', waiting_for_user: true }],

@@ -167,7 +167,7 @@ def _record_user_message_and_refresh_title(
     session_definitions: Dict[str, Dict[str, Any]],
     messages: List[Dict[str, Any]],
     user_message: str,
-    client_message_id: str,
+    message_id: str,
     attachments: List[Dict[str, Any]] | None = None,
     target_agent_name: str | None = None,
 ) -> str:
@@ -177,9 +177,9 @@ def _record_user_message_and_refresh_title(
     session_item = session_definitions[group_session_id]
     turn_started_checkpoint_id = ""
     duplicate_user_message = bool(
-        client_message_id
+        message_id
         and any(
-            _message_speaker_type(msg) == "user" and str(msg.get("client_message_id") or "").strip() == client_message_id
+            _message_speaker_type(msg) == "user" and str(msg.get("message_id") or "").strip() == message_id
             for msg in messages
         )
     )
@@ -191,13 +191,11 @@ def _record_user_message_and_refresh_title(
         if target_agent_name:
             message_body["target_agent_name"] = target_agent_name
         user_msg: Dict[str, Any] = {
-            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+            "message_id": str(message_id or "").strip() or f"msg-{uuid.uuid4().hex[:8]}",
             "speaker": {"type": "user"},
             "message": message_body,
             "created_at": format_storage_timestamp(),
         }
-        if client_message_id:
-            user_msg["client_message_id"] = client_message_id
         messages.append(user_msg)
         checkpoint = _save_group_history(group_session_id, messages, checkpoint_trigger="turn_started")
         if isinstance(checkpoint, dict):

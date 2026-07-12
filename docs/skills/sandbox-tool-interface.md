@@ -176,9 +176,9 @@ manifest 示例：
 - 没有 `scripts/manifest.json` 时，平台不注入脚本工具；不要回退到默认 `cli_args` 或让模型指定脚本路径。
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
-- 脚本 stdout 应输出单个 JSON 对象，并使用标准字段 `schema_version`、`execution_status`、`artifacts`、`next_action`。`artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`。`next_action.handoff` 控制当前专家回合结束后等待用户、交回主持人或结束；`next_action.resume` 控制下一条用户消息是否保留同一专家或同一 Skill 的续跑意图。阶段名、等待点和下一步说明写入 `next_action.instruction`。
-- 脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：本轮回复协议错误，并设置 `handoff=host`、`resume=none`、`reason=protocol_error`。
-- MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后应进入专家最终回复阶段，由专家最终回复末尾的隐藏状态块表达阶段交接、等待用户或续跑意图。
+- 脚本 stdout 应输出完整 `expert_final_state.v2` JSON：`schema_version`、`execution_status`、`message`、`next_action`。用户可见产物写入 `message.artifacts`；`next_action` 只含 `agent_turn` 和 `skill_session`。
+- 脚本 stdout 缺字段、枚举非法、含旧字段或 JSON 结构不合法时，按协议失败处理；保留执行日志，不生成兼容回复。
+- MCP / HTTP / workspace 工具本身不返回 `next_action`；工具执行后回到 LLM，继续调用工具或由 finalizer 生成 `expert_final_state.v2`。
 - 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/skills/skill-standard.md` 的“给 Skill 作者的脚本函数调用建议”。
 
 何时使用：

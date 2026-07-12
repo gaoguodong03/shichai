@@ -493,14 +493,23 @@ checkpoints/
 {
   "continuation": {
     "owner_agent_name": "专家名称",
-    "skill_policy": "keep",
+    "skill_session": "keep",
     "skill": "skill-directory",
-    "next_action": "面向上下文组装的下一步动作说明"
+    "message": {
+      "content": "面向上下文组装的下一步动作说明",
+      "target_agent_name": "专家名称",
+      "attachments": [],
+      "artifacts": []
+    }
   },
   "host_scheduler": {
     "current_phase": "主持人当前阶段",
-    "next_speaker": "专家名称 | user | end",
-    "next_action": "主持人给下一位的动作说明"
+    "message": {
+      "content": "主持人给下一位的动作说明",
+      "target_agent_name": "专家名称",
+      "attachments": [],
+      "artifacts": []
+    }
   }
 }
 ```
@@ -510,14 +519,13 @@ checkpoints/
 | 字段 | 类型 | 运行时影响 |
 |------|------|------------|
 | `continuation.owner_agent_name` | string | 下一轮用户消息到来时，主持人应优先参考的专家名称。 |
-| `continuation.skill_policy` | `keep` / `release` | `keep` 表示保留同一 Skill 的续跑意图；`release` 表示释放锁定并交给主持人重新判断。 |
-| `continuation.skill` | string | 仅 `skill_policy=keep` 时填写。 |
-| `continuation.next_action` | string | 下一轮给主持人判断的接续动作说明。 |
+| `continuation.skill_session` | `keep` | 表示保留同一专家和同一 Skill 的续跑意图。 |
+| `continuation.skill` | string | 保持同一 Skill 时填写。 |
+| `continuation.message` | object | 下一轮给主持人或专家判断的接续消息。 |
 | `host_scheduler.current_phase` | string | 主持人的跨轮阶段记忆。 |
-| `host_scheduler.next_speaker` | string | 主持人已经确定的下一位，只能是场内专家名称、`user` 或 `end`；为场内专家时仍需先生成主持人交接消息。 |
-| `host_scheduler.next_action` | string | 主持人给下一位的动作说明。 |
+| `host_scheduler.message` | object | 主持人已经形成的标准消息；为场内专家时仍需先生成主持人交接消息。 |
 
-旧字段 `pending_owner_agent_name`、`pending_skill`、`pending_phase`、`pending_required_user_fields`、`pending_handoff_reason`、`skill_session_owner_name`、`skill_session_skill`、`speaker_task`、`instruction`、`next_prompt` 不属于当前运行态契约。主持人调度 JSON 中的 `reason`、`invite`、`task_done`、`announcement`、`suggested_order` 和 id 类字段也不属于当前契约。`host_scheduler.next_speaker` 与 `continuation.owner_agent_name` 冲突时，`host_scheduler` 优先，并应清理 `continuation`；即使 `host_scheduler.next_speaker` 是场内专家，也必须先生成主持人交接消息，不得静默直达专家。
+旧字段 `pending_owner_agent_name`、`pending_skill`、`pending_phase`、`pending_required_user_fields`、`pending_handoff_reason`、`skill_session_owner_name`、`skill_session_skill`、`speaker_task`、`instruction`、`next_prompt` 不属于当前运行态契约。主持人调度 JSON 中的 `next_speaker`、`next_action`、`reason`、`invite`、`task_done`、`announcement`、`suggested_order` 和 id 类字段也不属于 vNext 契约。`host_scheduler.message.target_agent_name` 与 `continuation.owner_agent_name` 冲突时，`host_scheduler` 优先，并应清理 `continuation`；即使 `host_scheduler.message.target_agent_name` 是场内专家，也必须先生成主持人交接消息，不得静默直达专家。
 
 专家路由决策的内部结果使用统一字段：
 
@@ -526,12 +534,12 @@ checkpoints/
   "next_speaker": "专家名称 | user | end | invite",
   "next_action": "下一步动作说明",
   "route_source": "empty_group | target_agent | host_scheduler_state | continuation | host_scheduler",
-  "skill_policy": "none | keep | release",
+  "skill_session": "none | keep",
   "skill": "skill-directory 或 null"
 }
 ```
 
-`route_source` 只用于后端内部日志和测试断言，不进入前端 API、SSE payload 或持久化业务数据。`next_action` 是唯一动作说明字段：进入专家时作为专家任务，交回用户、结束或邀请时转换为主持人消息或前端提示。
+`route_source` 只用于后端内部日志和测试断言，不进入前端 API、SSE payload 或持久化业务数据。`next_speaker` 和 `next_action` 只是从 `message.target_agent_name` 和 `message.content` 派生出来的内部执行变量，不是主持人输出契约主字段。
 
 ## 10. 消息字段
 
@@ -548,26 +556,25 @@ checkpoints/
     "skill": "skill-directory"
   },
   "message": {
-    "content": "专家最终展示消息"
-  },
-  "created_at": "2026062908104800",
-	  "skill_result": {
-	    "execution_status": "succeeded",
-	    "artifacts": [
+    "content": "专家最终展示消息",
+    "attachments": [],
+    "artifacts": [
       {
         "type": "directory",
         "name": "Skill 模板目录",
         "path": "skills/demo"
       }
-	    ],
-	    "next_action": {
-	      "handoff": "host",
-	      "resume": "none",
-	      "reason": "stage_completed",
-	      "instruction": "当前专家阶段已完成，请主持人判断下一步。"
-	    }
-	  }
-	}
+    ]
+  },
+  "created_at": "2026062908104800",
+  "skill_result": {
+    "execution_status": "succeeded",
+    "next_action": {
+      "agent_turn": "respond",
+      "skill_session": "release"
+    }
+  }
+}
 ```
 
 用户消息典型结构：
@@ -587,10 +594,10 @@ checkpoints/
         "path": "附件1.pdf"
       }
     ],
+    "artifacts": [],
     "target_agent_name": "写作专家"
   },
-  "created_at": "2026062908104800",
-  "client_message_id": "client-msg-xxxx"
+  "created_at": "2026062908104800"
 }
 ```
 
@@ -605,7 +612,10 @@ checkpoints/
     "skill": "host-skill-directory"
   },
   "message": {
-    "content": "主持人回复"
+    "content": "信息检索专家，请围绕沈腾演艺生涯搜集资料。",
+    "target_agent_name": "信息检索专家",
+    "attachments": [],
+    "artifacts": []
   },
   "created_at": "2026062908104800"
 }
@@ -615,36 +625,35 @@ checkpoints/
 
 | 字段 | 运行时影响 |
 |------|------------|
-| `message_id` | 删除消息、快照回滚和前端列表 key。 |
+| `message_id` | 消息唯一身份；用户消息由前端生成，主持人和专家消息由后端生成；用于删除消息、快照回滚、执行日志关联和前端列表 key。 |
 | `speaker.type` | 区分 `user`、`host`、`expert`。 |
 | `speaker.agent_name` | 标记主持人或专家发言人；`host`、`expert` 填写，`user` 不填写。 |
 | `speaker.skill` | 本轮主持人或专家实际使用的 Skill；`host`、`expert` 可填写，`user` 不填写。 |
 | `message.content` | 前端展示和后续上下文来源。 |
-| `message.attachments` | 用户消息附带的工作区文件引用，只允许当前会话 `workspace/` 相对路径。 |
+| `message.target_agent_name` | 统一路由入口；用户和主持人可以填写，必须是当前会话 `agent_names` 中的专家名称；专家原则上不填写。 |
+| `message.attachments` | 本消息携带给后续处理的输入文件；用户、主持人、专家都可以填写，只允许当前会话 `workspace/` 相对路径。 |
 | `message.attachments[].type` | 附件引用类型；当前只允许 `workspace_file`。 |
 | `message.attachments[].path` | 工作区相对路径，是后端读取和工具访问的依据。 |
 | `message.attachments[].name` | 展示名，不参与路径解析。 |
-| `message.target_agent_name` | 用户明确指定本轮专家；必须是当前会话 `agent_names` 中的专家名称。 |
+| `message.artifacts` | 本消息产出或暴露给用户的产物；用户、主持人、专家都可以填写。 |
 | `created_at` | 消息创建时间，格式为 `YYYYMMDDHHmmssSS`。 |
-| `client_message_id` | 用户消息幂等 id，用于避免同一前端发送重复落盘。 |
 | `skill_result.execution_status` | Skill 本步结果，取值为 `succeeded`、`blocked`、`failed`。 |
-| `skill_result.artifacts` | Skill 产物索引数组，每项固定为 `type`、`name`、`path`；真实内容通过 workspace 路径读取。 |
-| `skill_result.next_action.handoff` | 当前专家回合结束后交给谁，取值为 `user`、`host`、`end`。 |
-| `skill_result.next_action.resume` | 下一条用户消息的续跑意图，取值为 `same_skill`、`same_agent`、`host`、`none`。 |
-| `skill_result.next_action.reason` | 交接原因，例如 `stage_gate`、`missing_input`、`stage_completed`、`final_delivery`。 |
-| `skill_result.next_action.instruction` | 面向下一步消费者的自包含动作说明。 |
+| `skill_result.next_action.agent_turn` | 当前专家本轮继续行动还是回复用户，取值为 `continue`、`respond`。 |
+| `skill_result.next_action.skill_session` | 下一条用户消息是否保留同一专家和同一 Skill，取值为 `keep`、`release`。 |
 
-脚本型 Skill 消息中，`message.content` 是消息列表展示字段；Skill 执行结果、产物索引和流程控制事实源仍是 `skill_result`。隐藏状态块不保存第二份正文，避免 `message.content` 与结构化状态漂移。
+脚本型 Skill 消息中，`message.content` 是消息列表展示字段，`message.artifacts` 是用户可见产物索引，`skill_result` 只保存执行状态和流程控制事实。工具后 LLM 不能把工具原文、MCP body、stdout、stderr 或 deterministic tool summary 直接写成聊天气泡；专家最终可见回复必须来自 `expert_final_state.v2.message.content`。
 
-`skill_result.next_action.handoff` 和 `skill_result.next_action.resume` 是两个维度。`handoff` 控制当前专家回合结束后等待用户、交回主持人或结束；`resume` 控制下一条用户消息到来时是否保留同一专家或同一 Skill 的续跑意图。主持人仍是跨专家调度入口。
+`skill_result.next_action.agent_turn` 和 `skill_result.next_action.skill_session` 是两个维度。`agent_turn` 控制当前专家本轮是否继续行动，`skill_session` 控制下一条用户消息到来时是否保留同一专家和同一 Skill。主持人仍是跨专家调度入口。
 
-脚本型 Skill 的 `next_action` 来自脚本 stdout。非脚本 Skill、MCP / HTTP / workspace 工具执行后必须进入专家最终回复阶段；绑定 Skill 或场景协作专家的最终回复必须追加隐藏状态块，并由隐藏状态块生成消息级 `skill_result.next_action`。脚本 stdout 或隐藏状态块缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理为 `execution_status=failed`、`next_action.handoff=host`、`next_action.resume=none`、`next_action.reason=protocol_error`。
+脚本型 Skill 的 `next_action` 来自脚本 stdout。非脚本 Skill、MCP / HTTP / workspace 工具执行后回到 LLM 决策；LLM 可以继续调用工具，也可以进入 finalizer。finalizer 必须产出 `expert_final_state.v2`，平台再从其中映射出最终 `message` 和 `skill_result.next_action`。脚本 stdout 或 finalizer 缺少 `message` 或 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理，不合成专家回复。
 
-`execution_status=blocked` 表示 Skill 或工具已经执行到一个明确等待点，需要用户补充材料、文件、链接、确认或参数后才能继续；它不是失败，也不是兜底状态。`failed` 表示本步执行失败，`message.content` 和 `skill_result.content` 必须给出面向用户的失败原因。
+Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `tool_result`、再返回 `message` 的持久化数据结构。每次工具调用只产生 `tool_result`，并回到当前专家、当前 Skill 的 LLM 上下文；当 LLM 选择继续行动时，不生成最终消息和 `skill_result`。只有专家进入 finalizer 并产出合法 `expert_final_state.v2` 后，平台才同时生成两个并列结果：`expert_final_state.v2.message` 映射为 `ChatMessageRecord.message`，`execution_status / next_action` 映射为 `ChatMessageRecord.skill_result`。工具执行器、MCP、HTTP、workspace 和脚本适配层都不得越过该边界直接构造聊天消息。
+
+`execution_status=blocked` 表示 Skill 或工具已经执行到一个明确等待点，需要用户补充材料、文件、链接、确认或参数后才能继续；它不是失败，也不是兜底状态。`failed` 表示本步执行失败，`message.content` 必须给出面向用户的失败原因，排障细节写入执行日志。
 
 新协议不再把 `role: assistant`、顶层 `content`、顶层 `agent_name`、顶层 `skill`、`timestamp`、`turn_id`、`debug`、`required_user_fields`、`handoff_reason`、`result_code`、`source`、`tool_raw_results`、`tool_debug`、`tool_results` 作为消息核心字段。若需要排查工具执行细节，应写入执行 trace 或运行日志，不进入 `history.json` 的业务消息结构，也不进入提示词字段。
 
-用户消息请求不再通过 `message.content` 文本承载文件和路由控制。`【文件引用：...】`、`@专家`、自然语言点名只可作为历史文本展示，不是当前协议入口；新请求必须使用 `message.attachments` 和 `message.target_agent_name`。
+用户消息请求不再通过 `message.content` 文本承载文件和路由控制。`【文件引用：...】`、`@专家`、自然语言点名只可作为历史文本展示，不是当前协议入口；新请求必须使用 `message.attachments`、`message.artifacts` 和 `message.target_agent_name`。
 
 ### 10.1 同名字段命名空间规则
 
@@ -653,27 +662,40 @@ checkpoints/
 | 完整字段路径 | 生产方 | 消费方 | 语义边界 |
 | --- | --- | --- | --- |
 | `message.content` | 后端消息落盘 | 前端展示、后续上下文 | 用户或主持人 / 专家的可见正文；不承载工具参数、stdout、路由控制或调试信息。 |
+| `message.target_agent_name` | 用户请求 / 主持人输出 / 后端落盘 | 统一路由 | 用户或主持人指定下一位专家；不同于结束事件 `suggested_next_speaker`。 |
+| `message.attachments[].path` | 用户请求 / 主持人或专家输出 / 后端落盘 | 上下文组装、工作区读取 | 本消息携带给后续处理的输入文件 workspace 相对路径。 |
+| `message.artifacts[].path` | 用户请求 / 主持人或专家输出 / 后端落盘 | 前端产物按钮、右侧预览、后续上下文 | 本消息产出或暴露给用户的产物 workspace 相对路径。 |
 | `tool_call.arguments.content` | 工具调用参数 | 工具执行层、运行日志摘要 | 写文件等工具的输入正文；只能进入执行日志摘要，不进入聊天消息正文。 |
+| `tool_result.output.content` | 工具执行层 | LLM 后续决策、专家 finalizer、执行日志 | 工具输出文本或摘要；不得直接写入 `message.content`。 |
+| `tool_result.output.json_data` | 工具执行层 | LLM 后续决策、专家 finalizer、执行日志详情 | 工具结构化返回；不得进入消息核心字段。 |
+| `tool_result.output.artifacts` | 工具执行层 | 专家 finalizer、执行日志详情 | 工具级产物引用；只有 finalizer 显式写入 `message.artifacts` 后才成为聊天消息产物。 |
+| `tool_result.error_log` | 工具执行层 | 执行日志、排障 | 工具失败诊断；不得作为聊天正文或路由事实。 |
+| `expert_final_state.v2.message` | 脚本 stdout / 专家 finalizer | `ChatMessageRecord.message` | 专家消息落盘的唯一入口。 |
+| `expert_final_state.v2.execution_status` | 脚本 stdout / 专家 finalizer | `skill_result.execution_status` | 专家 / Skill 本步最终状态。 |
+| `expert_final_state.v2.next_action` | 脚本 stdout / 专家 finalizer | `skill_result.next_action`、`orchestration_state.json` | 当前专家回合和跨轮 Skill 会话控制。 |
 | `skill_result.execution_status` | Skill / 专家结果归一化 | Skill 会话状态判断 | 只表示 Skill 本步结果；不等于接口 `status`、SSE `phase` 或工具日志 `status`。 |
+| `skill_result.next_action.agent_turn` | 脚本 stdout / 后端 finalizer | 当前专家本轮是否继续 | 只控制当前专家本轮 `continue` 或 `respond`，不决定下一条用户消息归属。 |
+| `skill_result.next_action.skill_session` | 脚本 stdout / 后端 finalizer | 下一轮续跑意图 | 只控制下一条用户消息是否保留同一专家和同一 Skill。 |
 | `tool_execution.status` | 工具运行日志 | 日志面板、排障 | 只表示一次工具调用结果；不得驱动主持人路由或 Skill 会话状态。 |
 | `runtime.phase` / `progress.phase` / `end.phase` | 后端运行态 | 前端运行状态 | 只表示当前回复运行阶段；不得与接口 `status` 或 Skill `execution_status` 混用。 |
-| `message.attachments[].path` | 用户请求 / 后端落盘 | 上下文组装、工作区读取 | 用户附件的 workspace 相对路径；仅用户消息可有。 |
-| `skill_result.artifacts[].path` | Skill / 工具结果归一化 | 前端产物展示、后续专家定位 | 用户可见产物的 workspace 相对路径；不得指向 `memory/`、`checkpoints/` 或执行日志目录。 |
+| `tool_execution.output.content` | 工具运行日志 | 日志面板、排障 | 工具输出文本或摘要，不进入聊天消息正文。 |
+| `tool_execution.output.json_data` | 工具运行日志 | 日志面板、排障 | 工具结构化输出，不进入聊天消息正文。 |
+| `tool_execution.output.artifacts[].path` | 工具运行日志 | 日志面板、排障 | 单次工具调用产物路径；最终用户可见产物仍由 `message.artifacts` 暴露。 |
 | `tool_call.arguments.path` | 模型工具调用 | workspace 工具执行层 | 当前 live `workspace/` 内目标路径；不读取 checkpoint，也不指向 session 级 `memory/`。 |
 | `tool_execution.source` | 执行日志归一化 | 日志面板、排障 | 只允许 `mcp`、`script`、`workspace`、`api`、`host`；不进入消息核心字段，也不作为业务路由字段。 |
 | `tool_execution.provider` / `tool_execution.provider_tool` | 工具日志归一化 | 日志面板、排障 | 只描述工具来源容器和容器内工具；不得替代 Skill 选择、专家路由或工具授权。 |
 | `speaker.agent_name` / `speaker.skill` | 后端消息落盘 | 前端渲染、历史事实 | 消息发言人与本轮实际 Skill；不同于 `progress.agent_name`、`route.agent_name` 和工具日志标签。 |
-| `message.target_agent_name` | 用户请求 / 后端落盘 | 本轮显式路由 | 只表示用户本轮指定专家；不同于主持人 `next_speaker` 和结束事件 `suggested_next_speaker`。 |
-| `host_scheduler.next_action` | 主持人调度 | 专家 prompt、主持人交接消息 | 字符串指派说明；不同于 `skill_result.next_action` 的结构化 Skill 会话控制。 |
-| `skill_result.next_action` | 脚本 stdout 或隐藏状态块 / 后端 finalizer | 当前回合交接、下一轮续跑意图 | 对象 `{handoff, resume, reason, instruction}`；工具后不得把裸工具摘要当作专家结果。 |
+| `host_scheduler.message` | 主持人调度 | 主持人交接消息、统一路由 | 主持人跨轮阶段消息；不得退回旧 `next_speaker` / `next_action`。 |
 
 新增或修改字段时，必须先在本表或相邻契约中说明完整字段路径、生产方、消费方、是否持久化、是否可进入前端消息、是否影响主持人路由。若某字段只用于 trace、日志或排障，应明确写成日志字段，不得把它提升为消息事实或运行时分支条件。
+
+`tool_result.message` 不属于当前契约。普通工具说明写入 `tool_result.output.content`，错误详情写入 `tool_result.error_log`；两者都不能直接生成 `ChatMessageRecord.message`。
 
 执行日志不属于 `history.json`。MCP、Skill 脚本、HTTP API、工作区操作和主持人调度事实的调用参数、stdout、stderr、结构化返回和中间产物应写入会话级运行日志，并通过 `message_id` 单向关联到某条历史消息。`history.json` 不反向保存 `log_ids`，避免形成双向引用。
 
 会话级工具执行日志固定写入 `sessions/{session_id}/execution_logs/tool-execution.jsonl`。该目录不进入检查点，也不参与 `workspace_tree` 或 `memory_tree`。
 
-前端消息右侧的终端图标只读取这些执行日志。图标点击后按 `message_id` 拉取该消息关联日志，先展示折叠的执行日志列表；用户点击某一条日志后，再展示该条日志的参数摘要、输出摘要、产物路径、错误和耗时。长参数、长 stdout/stderr、正文型 `arguments.content` 默认折叠或摘要化，不写入聊天气泡正文；`skill_result.artifacts` 也不渲染成聊天气泡 meta 标签，产物路径通过执行日志详情展示。
+前端消息右侧的终端图标只读取这些执行日志。图标点击后按 `message_id` 拉取该消息关联日志，先展示折叠的执行日志列表；用户点击某一条日志后，再展示该条日志的参数摘要、输出摘要、产物路径、错误和耗时。长参数、长 stdout/stderr、正文型 `arguments.content` 默认折叠或摘要化，不写入聊天气泡正文。`message.artifacts` 可以在气泡正文前渲染为产物按钮，工具级 `output.artifacts` 只在日志详情中展示。
 
 会话运行日志典型结构：
 
@@ -693,12 +715,12 @@ checkpoints/
     "arguments": {}
   },
   "output": {
-    "text": "",
-    "json": {},
+    "content": "",
+    "json_data": {},
+    "artifacts": [],
     "stdout": "",
     "stderr": ""
-  },
-  "artifacts": []
+  }
 }
 ```
 
@@ -716,7 +738,7 @@ POST /api/sessions/{session_id}/chat/stream
      - 读取 agent_names 作为本会话专家列表
      - 读取 host 作为本会话主持人快照
   -> 读取 history.json
-     - 从最后有效专家消息的 skill_result.next_action.resume 推导 Skill 续跑意图
+     - 从最后有效专家消息的 skill_result.next_action.skill_session 推导 Skill 续跑意图
   -> 写入 runtime.json 运行镜像
   -> 读取 orchestration_state.json 短期编排状态
   -> 校验 attachments 和 target_agent_name
@@ -755,13 +777,13 @@ POST /api/sessions/{session_id}/chat/stream
 | `end` | 本轮结束状态。 |
 | `error` | 后端异常。 |
 
-`discussion_ended` 不属于平台字段。`end` 只表示当前回复回合结束，不表示整个会话结束。`tool_start`、`tool_result` 不作为顶层 SSE 事件；工具细节写入执行 trace、运行日志或 `skill_result.artifacts`。
+`discussion_ended` 不属于平台字段。`end` 只表示当前回复回合结束，不表示整个会话结束。`tool_start`、`tool_result` 不作为顶层 SSE 事件；工具细节写入执行 trace 或运行日志，最终用户可见产物写入 `message.artifacts`。
 
 前端状态与 mock 规则：
 
 | 范围 | 规则 |
 |------|------|
-| 消息事实 | 只使用 `history.json` 同构消息：`message_id`、`speaker`、`message`、`created_at`、`client_message_id`、`skill_result`。前端不得保存第二套顶层 `role` / `content` / `agent_name` 消息结构。 |
+| 消息事实 | 只使用 `history.json` 同构消息：`message_id`、`speaker`、`message`、`created_at`、`skill_result`。前端不得保存第二套顶层 `role` / `content` / `agent_name` 消息结构。 |
 | 运行状态 | 只来自 `runtime.json`、`progress` 和 `/events/stream runtime`。前端可以把 `phase` 映射成中文文案，但不能生成第二套业务枚举。 |
 | 本地暂态 | `_streaming`、`_streamingStatus`、滚动位置、本地网络错误提示只属于页面展示，不进入 API、mock、历史或运行态文件。 |
 | 招募与下一步 | 只读取 `suggested_add_agent_names`、`suggested_next_speaker`、`waiting_for_user` 等结构化字段，不从 `message.content` 正则猜测。 |
@@ -789,7 +811,7 @@ POST /api/sessions/{session_id}/chat/stream
 | 文件 | 作用 |
 |------|------|
 | `facts.md` | 从专家/主持人回合提炼关键事实，后续派发时可作为上下文。 |
-| `index.md` | 从 `skill_result.artifacts` 和工作区产物路径中提取索引，记录 `agent_name`、`skill`、`summary`、`files`。 |
+| `index.md` | 从 `message.artifacts` 和工作区产物路径中提取索引，记录 `agent_name`、`skill`、`summary`、`files`。 |
 
 边界：
 
@@ -866,4 +888,4 @@ flowchart TD
 | `agent_names` | 会话专家列表，错误会导致 `target_agent_name` 校验、主持人调度和专家执行错位。 |
 | `runtime.json` | 运行镜像，不是任务队列；不能作为编排真相源。 |
 | `orchestration_state.json` | 短期编排状态，错误会导致续跑、换专家或主持人阶段恢复错位。 |
-| `skill_result.next_action.resume` | 跨轮 Skill 路由事实源，回滚和删除消息会影响下一轮路由。 |
+| `skill_result.next_action.skill_session` | 跨轮 Skill 路由事实源，回滚和删除消息会影响下一轮路由。 |

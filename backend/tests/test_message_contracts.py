@@ -2,15 +2,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, SkillResult, WorkspaceAttachment
+from app.agent.structured_output_contracts import ExpertFinalStatePayload
 from app.agent.structured_output_contracts import ArtifactRef
 
 
-def v2_next_action(instruction="本轮专家回复已完成，请主持人判断下一步。"):
+def v2_next_action():
     return {
-        "handoff": "host",
-        "resume": "none",
-        "reason": "stage_completed",
-        "instruction": instruction,
+        "agent_turn": "respond",
+        "skill_session": "release",
     }
 
 
@@ -21,10 +20,10 @@ def test_user_message_record_uses_nested_message_object():
         message={
             "content": "请处理附件",
             "attachments": [{"type": "workspace_file", "path": "input.pdf", "name": "input.pdf"}],
+            "artifacts": [{"type": "file", "name": "我上传的资料", "path": "input.pdf"}],
             "target_agent_name": "写作专家",
         },
         created_at="2026062908104800",
-        client_message_id="client-1",
     )
 
     assert message.model_dump(exclude_none=True) == {
@@ -33,10 +32,10 @@ def test_user_message_record_uses_nested_message_object():
         "message": {
             "content": "请处理附件",
             "attachments": [{"type": "workspace_file", "path": "input.pdf", "name": "input.pdf"}],
+            "artifacts": [{"type": "file", "name": "我上传的资料", "path": "input.pdf"}],
             "target_agent_name": "写作专家",
         },
         "created_at": "2026062908104800",
-        "client_message_id": "client-1",
     }
 
 
@@ -48,9 +47,7 @@ def test_expert_message_record_uses_current_skill_result_shape():
         created_at="2026062908104900",
         skill_result={
             "execution_status": "succeeded",
-            "content": "大纲已完成",
-            "artifacts": [{"type": "markdown", "name": "大纲", "path": "outline.md"}],
-            "next_action": v2_next_action("大纲已完成"),
+            "next_action": v2_next_action(),
         },
     )
 
@@ -58,19 +55,18 @@ def test_expert_message_record_uses_current_skill_result_shape():
     assert dumped["message"]["content"] == "大纲已完成"
     assert "attachments" not in dumped["message"]
     assert "target_agent_name" not in dumped["message"]
-    assert dumped["skill_result"]["artifacts"][0]["path"] == "outline.md"
+    assert dumped["skill_result"] == {
+        "execution_status": "succeeded",
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
 
 
 def test_skill_result_rejects_workflow_state_field():
     payload = {
         "execution_status": "blocked",
-        "content": "请先补充这篇文章的想法。",
-        "artifacts": [],
         "next_action": {
-            "handoff": "user",
-            "resume": "same_skill",
-            "reason": "missing_input",
-            "instruction": "等待用户补充文章想法后，由文档合著专家继续上下文收集。",
+            "agent_turn": "respond",
+            "skill_session": "keep",
         },
         "workflow_state": {
             "stage": "context_collection",
@@ -82,22 +78,34 @@ def test_skill_result_rejects_workflow_state_field():
         SkillResult.model_validate(payload)
 
 
-def test_skill_message_content_must_match_skill_result_content():
+def test_skill_result_rejects_legacy_content_and_artifacts_fields():
     payload = {
-        "message_id": "msg-expert",
-        "speaker": {"type": "expert", "agent_name": "写作专家", "skill": "article-writer"},
-        "message": {"content": "平台改写后的总结"},
-        "created_at": "2026062908104900",
-        "skill_result": {
-            "execution_status": "succeeded",
-            "content": "脚本原始正文",
-            "artifacts": [],
-            "next_action": v2_next_action("脚本原始正文"),
-        },
+        "execution_status": "succeeded",
+        "content": "旧正文",
+        "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
+        "next_action": v2_next_action(),
     }
 
     with pytest.raises(ValidationError):
-        ChatMessageRecord.model_validate(payload)
+        SkillResult.model_validate(payload)
+
+
+def test_expert_final_state_maps_visible_message_and_control_separately():
+    payload = {
+        "schema_version": "expert_final_state.v2",
+        "execution_status": "succeeded",
+        "message": {
+            "content": "我已经整理好资料，并保存为工作区文档。",
+            "artifacts": [{"type": "markdown", "name": "资料摘要", "path": "research/summary.md"}],
+        },
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+
+    final_state = ExpertFinalStatePayload.model_validate(payload)
+
+    assert final_state.message.content == "我已经整理好资料，并保存为工作区文档。"
+    assert final_state.message.artifacts[0].path == "research/summary.md"
+    assert final_state.next_action.agent_turn == "respond"
 
 
 def test_skill_result_requires_speaker_skill_directory():
@@ -108,9 +116,7 @@ def test_skill_result_requires_speaker_skill_directory():
         "created_at": "2026062908104900",
         "skill_result": {
             "execution_status": "succeeded",
-            "content": "请继续",
-            "artifacts": [],
-            "next_action": v2_next_action("请继续"),
+            "next_action": v2_next_action(),
         },
     }
 
@@ -182,6 +188,7 @@ def test_chat_message_record_requires_storage_timestamp_format(created_at):
         ("timestamp", "2026062908104900"),
         ("agent_name", "专家A"),
         ("skill", "skill-a"),
+        ("client_message_id", "client-1"),
         ("tool_results", []),
         ("tool_raw_results", []),
         ("tool_debug", {}),
@@ -229,9 +236,7 @@ def test_message_speaker_rejects_invalid_identity_shapes(speaker):
 def test_skill_result_rejects_old_fields(old_key, value):
     payload = {
         "execution_status": "succeeded",
-        "content": "完成",
-        "artifacts": [],
-        "next_action": v2_next_action("完成"),
+        "next_action": v2_next_action(),
         old_key: value,
     }
 

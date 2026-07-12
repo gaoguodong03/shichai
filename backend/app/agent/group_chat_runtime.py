@@ -1,7 +1,7 @@
 """Strict group-chat streaming runtime.
 
 The runtime follows docs/contracts/runtime-interface-contract.md directly:
-requests are structured, host decisions use `next_action`, history messages use
+requests are structured, host decisions use a standard `message`, history messages use
 the nested message contract, and SSE only emits route/progress/message/end/error.
 """
 from __future__ import annotations
@@ -14,11 +14,10 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
-from app.agent.group_chat_expert_turn import run_one_expert_turn
+from app.agent.group_chat_expert_turn import ExpertTurnOutcome, run_one_expert_turn
 from app.agent.group_chat_host_messages import (
-    _build_host_next_speaker_message,
-    _build_host_pause_message,
     _build_host_recommendation_message,
+    _build_host_scheduler_message,
 )
 from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_only_respond_and_recommend, _request_skills_loader
 from app.agent.group_chat_request_inputs import request_user_text, validate_attachments
@@ -31,6 +30,7 @@ from app.agent.group_orchestration_fsm import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent
 from app.agent.session_runtime_logs import append_host_execution_log
+from app.agent.structured_output_contracts import StructuredOutputProtocolError
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
     build_session_payload,
@@ -82,8 +82,6 @@ def _record_host_message_execution_log(
     host_msg: Dict[str, Any],
     host_agent: Dict[str, Any],
     current_phase: str = "",
-    next_speaker: str = "",
-    next_action: str = "",
     status: str = "succeeded",
 ) -> None:
     """Link one persisted host bubble to its scheduler execution-log fact."""
@@ -95,9 +93,7 @@ def _record_host_message_execution_log(
         host_name=str(speaker.get("agent_name") or host_agent.get("name") or "四九").strip() or "四九",
         skill=str(speaker.get("skill") or host_agent.get("skill_directory") or "").strip(),
         current_phase=current_phase,
-        next_speaker=next_speaker,
-        next_action=next_action,
-        content=str(message.get("content") or "").strip(),
+        message=message,
         status=status,
     )
 
@@ -126,7 +122,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         session_definitions=session_definitions,
         messages=messages,
         user_message=str(request.message or "").strip(),
-        client_message_id=request.client_message_id,
+        message_id=request.message_id,
         attachments=[item.model_dump(exclude_none=True) for item in (request.attachments or [])],
         target_agent_name=request.target_agent_name,
     )
@@ -207,8 +203,7 @@ async def _run_contract_events(
         finalized = finalize_host_scheduler_decision(
             {
                 "current_phase": "招募",
-                "next_speaker": "user",
-                "next_action": content,
+                "message": {"content": content},
                 "suggested_add_agent_names": [str(item).strip() for item in (picked or []) if str(item).strip()],
             },
             agent_names=agent_names,
@@ -228,8 +223,6 @@ async def _run_contract_events(
             host_msg=host_msg,
             host_agent=host_agent,
             current_phase=str(finalized.get("current_phase") or "招募"),
-            next_speaker="user",
-            next_action=content,
             status="blocked",
         )
         messages.append(host_msg)
@@ -301,25 +294,22 @@ async def _run_contract_events(
         save_session_definitions(session_definitions)
 
     turns = 0
-    suppress_handoff = route_source == "target_agent"
+    suppress_host_message = route_source in {"target_agent", "continuation"}
     while True:
+        host_message_body = host_scheduler.get("message") if isinstance(host_scheduler.get("message"), dict) else {}
         if next_speaker in {"user", "end"}:
-            host_msg = _build_host_pause_message(
-                skill=str(host_agent.get("skill_directory") or ""),
-                next_speaker=next_speaker,
-                current_phase=str(host_scheduler.get("current_phase") or ""),
-                next_action=next_action,
-                host_agent_name=host_name,
-            )
-            if host_msg:
+            if not suppress_host_message and host_message_body:
+                host_msg = _build_host_scheduler_message(
+                    message=host_message_body,
+                    host_agent_name=host_name,
+                    skill=str(host_agent.get("skill_directory") or ""),
+                )
                 host_msg = frontend_history_message(host_msg)
                 _record_host_message_execution_log(
                     group_session_id,
                     host_msg=host_msg,
                     host_agent=host_agent,
                     current_phase=str(host_scheduler.get("current_phase") or ""),
-                    next_speaker=next_speaker,
-                    next_action=next_action,
                     status="succeeded" if next_speaker == "end" else "blocked",
                 )
                 messages.append(host_msg)
@@ -350,14 +340,11 @@ async def _run_contract_events(
             yield serialize_sse_event("end", end_event_payload(end))
             return
 
-        if not suppress_handoff:
-            host_msg = _build_host_next_speaker_message(
-                skill=str(host_agent.get("skill_directory") or ""),
-                next_speaker=next_speaker,
-                agent_map=agent_map,
-                current_phase=str(host_scheduler.get("current_phase") or ""),
-                next_action=next_action,
+        if not suppress_host_message:
+            host_msg = _build_host_scheduler_message(
+                message=host_message_body,
                 host_agent_name=host_name,
+                skill=str(host_agent.get("skill_directory") or ""),
             )
             host_msg = frontend_history_message(host_msg)
             _record_host_message_execution_log(
@@ -365,8 +352,6 @@ async def _run_contract_events(
                 host_msg=host_msg,
                 host_agent=host_agent,
                 current_phase=str(host_scheduler.get("current_phase") or ""),
-                next_speaker=next_speaker,
-                next_action=next_action,
                 status="succeeded",
             )
             messages.append(host_msg)
@@ -374,7 +359,7 @@ async def _run_contract_events(
             session_item["updated_at"] = format_storage_timestamp()
             save_session_definitions(session_definitions)
             yield serialize_sse_event("message", host_msg)
-        suppress_handoff = False
+        suppress_host_message = False
 
         turns += 1
         if expert_turn_budget_exceeded(turns):
@@ -387,22 +372,40 @@ async def _run_contract_events(
             )
             yield serialize_sse_event("end", end_event_payload(end))
             return
-        async for event in run_one_expert_turn(
-            group_session_id=group_session_id,
-            run_id=run_id,
-            session_definitions=session_definitions,
-            session_item=session_item,
-            app_settings=app_settings,
-            agent_map=agent_map,
-            agent_name=next_speaker,
-            messages=messages,
-            discussion_goal=discussion_goal,
-            user_text=user_text,
-            next_action=next_action,
-            skills_loader=_request_skills_loader(),
-            llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
-        ):
-            yield event
+        expert_outcome = ExpertTurnOutcome()
+        try:
+            async for event in run_one_expert_turn(
+                group_session_id=group_session_id,
+                run_id=run_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                app_settings=app_settings,
+                agent_map=agent_map,
+                agent_name=next_speaker,
+                messages=messages,
+                discussion_goal=discussion_goal,
+                user_text=user_text,
+                next_action=next_action,
+                outcome=expert_outcome,
+                skills_loader=_request_skills_loader(),
+                llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
+            ):
+                yield event
+        except StructuredOutputProtocolError as exc:
+            error = SseErrorEvent(
+                type="error",
+                run_id=run_id,
+                code="EXPERT_FINAL_STATE_INVALID",
+                message=str(exc),
+            )
+            yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
+        if expert_outcome.status != "succeeded":
+            end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
         latest_state = load_group_orchestration_state(group_session_id)
         host_scheduler = (
             dict(latest_state.get("host_scheduler") or {})

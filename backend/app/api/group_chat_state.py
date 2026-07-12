@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.group_chat_archive import build_archive_segments
-from app.agent.message_contracts import ChatMessageRecord
+from app.agent.message_contracts import ChatMessageRecord, MessageBody
 from app.agent.runtime_status import RuntimePhase
 from app.core.user_context import get_current_user_context
 
@@ -32,7 +32,6 @@ GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_TYPES = {"message", "runtime", "deleted", "error"}
 RUNTIME_PHASES = {phase.value for phase in RuntimePhase}
 STORAGE_TIMESTAMP_RE = re.compile(r"\d{16}")
-
 
 def group_session_has_active_run(group_session_id: str) -> bool:
     """Return whether a session has a live run that must not be state-mutated."""
@@ -71,32 +70,38 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     continuation = raw.get("continuation") if isinstance(raw.get("continuation"), dict) else None
     if continuation:
-        skill_policy = str(continuation.get("skill_policy") or "").strip()
         owner = str(continuation.get("owner_agent_name") or "").strip()
-        next_action = str(continuation.get("next_action") or "").strip()
+        skill_session = str(continuation.get("skill_session") or "").strip()
         skill = str(continuation.get("skill") or "").strip()
-        if owner and skill_policy in {"keep", "release"}:
-            row: Dict[str, Any] = {
-                "owner_agent_name": owner,
-                "skill_policy": skill_policy,
-                "next_action": next_action,
-            }
-            if skill_policy == "keep" and skill:
+        try:
+            message = MessageBody.model_validate(continuation.get("message") or {}).model_dump(
+                exclude_none=True,
+                exclude_defaults=True,
+            )
+        except ValidationError:
+            message = None
+        if owner and skill_session == "keep" and isinstance(message, dict):
+            row: Dict[str, Any] = {"owner_agent_name": owner, "skill_session": "keep", "message": message}
+            if skill:
                 row["skill"] = skill
             out["continuation"] = row
     host_scheduler = raw.get("host_scheduler") if isinstance(raw.get("host_scheduler"), dict) else None
     if host_scheduler:
-        next_speaker = str(host_scheduler.get("next_speaker") or "").strip()
-        row = {
-            "current_phase": str(host_scheduler.get("current_phase") or "").strip(),
-            "next_speaker": next_speaker,
-            "next_action": str(host_scheduler.get("next_action") or "").strip(),
-        }
-        if any(row.values()) and next_speaker != "invite":
+        current_phase = str(host_scheduler.get("current_phase") or "").strip()
+        try:
+            message = MessageBody.model_validate(host_scheduler.get("message") or {}).model_dump(
+                exclude_none=True,
+                exclude_defaults=True,
+            )
+        except ValidationError:
+            message = None
+        if current_phase and isinstance(message, dict) and str(message.get("content") or "").strip():
+            row = {"current_phase": current_phase, "message": message}
             out["host_scheduler"] = row
             continuation = out.get("continuation") if isinstance(out.get("continuation"), dict) else None
             owner = str((continuation or {}).get("owner_agent_name") or "").strip()
-            if owner and next_speaker and next_speaker != owner:
+            target = str(message.get("target_agent_name") or "").strip()
+            if owner and target and target != owner:
                 out.pop("continuation", None)
     return out
 

@@ -108,14 +108,14 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     text = str(raw_result or "")
     status = "succeeded"
     message = "工具执行成功"
-    output: dict[str, Any] = {"text": text}
+    output: dict[str, Any] = {"content": text}
     error_log = None
     artifacts = raw_payload.get("artifacts") if isinstance(raw_payload, dict) and isinstance(raw_payload.get("artifacts"), list) else []
     if isinstance(raw_payload, dict):
-        raw_message = str(raw_payload.get("message") or "").strip()
+        raw_message = str(raw_payload.get("message") or raw_payload.get("content") or "").strip()
         if raw_message:
             message = raw_message
-            output = {"text": raw_message, "json_data": raw_payload}
+            output = {"content": raw_message, "json_data": raw_payload}
     if str(tool_name or "").startswith("run_skill_script_") and isinstance(raw_payload, dict):
         stdout = str(raw_payload.get("stdout") or "")
         stderr = str(raw_payload.get("stderr") or "")
@@ -123,20 +123,19 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
         ok = raw_payload.get("ok")
         code = str(raw_payload.get("code") or "").strip()
         message = str(raw_payload.get("message") or "").strip() or message
-        output = {"text": text, "stdout": stdout, "stderr": stderr, "json_data": raw_payload}
+        output = {"content": text, "stdout": stdout, "stderr": stderr, "json_data": raw_payload}
         status = "failed" if ok is False or (isinstance(returncode, int) and returncode != 0) else "succeeded"
         if status == "failed":
             error_log = {"message": message or stderr or "脚本执行失败", "stdout": stdout, "stderr": stderr, "raw_output": text, "retryable": False}
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,
-        "message": message,
         "output": output,
     }
     if error_log is not None:
         payload["error_log"] = error_log
     if artifacts:
-        payload["artifacts"] = artifacts
+        payload["output"]["artifacts"] = artifacts
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
 
 
@@ -145,7 +144,7 @@ def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, a
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": "failed",
-        "message": message,
+        "output": {"content": message},
         "error_log": {"message": message, "detail": type(error).__name__, "raw_output": message, "retryable": False},
     }
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
@@ -161,8 +160,7 @@ def _missing_tool_result_record(*, tool_name: str, arguments: dict, tool_call_id
     payload: dict[str, Any] = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=None, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,
-        "message": message,
-        "output": {"text": message},
+        "output": {"content": message},
     }
     if status != "blocked":
         payload["error_log"] = {"message": message, "detail": f"available_tools={available_tools}", "retryable": False}

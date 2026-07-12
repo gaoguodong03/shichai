@@ -91,8 +91,8 @@ def _normalize_workspace_index_path(value: Any) -> str:
 
 def _extract_index_paths_from_message(msg: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
-    skill_result = msg.get("skill_result") if isinstance(msg, dict) else None
-    artifacts = skill_result.get("artifacts") if isinstance(skill_result, dict) else []
+    message = msg.get("message") if isinstance(msg, dict) and isinstance(msg.get("message"), dict) else {}
+    artifacts = message.get("artifacts") if isinstance(message.get("artifacts"), list) else []
     for artifact in artifacts if isinstance(artifacts, list) else []:
         if not isinstance(artifact, dict):
             continue

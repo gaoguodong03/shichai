@@ -122,7 +122,7 @@ def test_plain_text_tool_output_does_not_infer_status_from_legacy_error_prefix()
     )
 
     assert result["execution_status"] == "succeeded"
-    assert result["output"]["text"] == "错误：未提供 content 参数"
+    assert result["output"]["content"] == "错误：未提供 content 参数"
     assert "error_log" not in result
 
 
@@ -136,7 +136,8 @@ def test_tool_exception_becomes_failed_tool_result_with_error_log():
     )
 
     assert result["execution_status"] == "failed"
-    assert result["message"] == "cannot read"
+    assert "message" not in result
+    assert result["output"]["content"] == "cannot read"
     assert result["error_log"]["message"] == "cannot read"
 
 
@@ -149,5 +150,6 @@ def test_missing_workspace_read_tool_is_blocked_without_required_user_fields():
     )
 
     assert result["execution_status"] == "blocked"
-    assert result["message"] == "当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。"
+    assert "message" not in result
+    assert result["output"]["content"] == "当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。"
     assert "required_user_fields" not in result

@@ -8,31 +8,19 @@ extract strict Skill stdout payloads; routing state is derived from
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from pydantic import ValidationError
 
-from app.agent.group_chat_tool_result_content import problem_tool_result_content
-from app.agent.structured_output_contracts import SkillScriptStdoutPayload
+from app.agent.structured_output_contracts import (
+    ExpertFinalStatePayload,
+    SkillScriptStdoutPayload,
+    parse_strict_pydantic_object,
+)
 
-_DEFAULT_NEXT_ACTION = {
-    "handoff": "host",
-    "resume": "none",
-    "reason": "stage_completed",
-    "instruction": "本轮专家回复已完成，请主持人判断下一步。",
-}
-_GENERIC_EMPTY_CONTENT = {"", "模型没有返回可展示的文字内容。", "无可展示内容。"}
-_DETERMINISTIC_TOOL_SUMMARY_PREFIXES = (
-    "工具已执行完成。以下是本轮工具返回摘要：",
-    "工具已执行完成，但本轮没有捕获到可展示的工具返回内容。",
-)
-_HIDDEN_STATE_START = "[[SKILL_SESSION_STATE]]"
-_HIDDEN_STATE_END = "[[/SKILL_SESSION_STATE]]"
-_HIDDEN_STATE_TAIL_RE = re.compile(
-    r"\s*\[\[SKILL_SESSION_STATE\]\]\s*(?P<body>\{.*\})\s*\[\[/SKILL_SESSION_STATE\]\]\s*\Z",
-    re.S,
-)
+
+class ExpertFinalStateProtocolError(ValueError):
+    """Raised when an expert turn did not produce expert_final_state.v2."""
 
 
 def _json_object(value: Any) -> dict[str, Any] | None:
@@ -92,99 +80,51 @@ def _script_payload_from_tool_results(tool_results: list[dict[str, Any]] | None)
     return payload, ""
 
 
-def _hidden_state_payload_from_content(content: str) -> tuple[str, SkillScriptStdoutPayload | None, str]:
-    text = str(content or "")
-    if _HIDDEN_STATE_START not in text and _HIDDEN_STATE_END not in text:
-        return text, None, ""
-    match = _HIDDEN_STATE_TAIL_RE.search(text)
-    if not match:
-        return text, None, "专家隐藏状态块不符合平台协议：必须直接追加到正文末尾并包含合法 JSON 对象。"
-    visible = text[: match.start()].strip()
-    payload = _strict_skill_stdout_payload(match.group("body"))
-    if payload is None:
-        return visible, None, "专家隐藏状态块不符合平台协议：缺少 schema_version、next_action 或字段结构非法。"
-    return visible, payload, ""
-
-
 def _flow_payloads_conflict(first: SkillScriptStdoutPayload, second: SkillScriptStdoutPayload) -> bool:
     return first.model_dump() != second.model_dump()
 
 
-def _skill_result_display_content(
+def parse_expert_final_state_content(content: str) -> ExpertFinalStatePayload:
+    """Parse the only legal expert final message payload."""
+    try:
+        return parse_strict_pydantic_object(str(content or ""), ExpertFinalStatePayload)
+    except Exception as exc:
+        raise ExpertFinalStateProtocolError("专家没有产出合格的 expert_final_state.v2。") from exc
+
+
+def select_expert_final_state(
     *,
-    visible_content: str,
-    script_payload: SkillScriptStdoutPayload | None,
-    flow_payload: SkillScriptStdoutPayload | None,
-) -> str:
-    """Select visible expert text; v2 control payloads do not carry message content."""
-    text = visible_content.strip()
-    is_tool_summary = any(text.startswith(prefix) for prefix in _DETERMINISTIC_TOOL_SUMMARY_PREFIXES)
-    if visible_content and text not in _GENERIC_EMPTY_CONTENT and not (is_tool_summary and script_payload is not None):
-        return visible_content
-    if script_payload is not None:
-        return script_payload.next_action.instruction or "无可展示内容。"
-    if flow_payload is not None:
-        return flow_payload.next_action.instruction or "无可展示内容。"
-    return visible_content or "无可展示内容。"
-
-
-def _protocol_error_next_action(message: str) -> dict[str, str]:
-    return {
-        "handoff": "host",
-        "resume": "none",
-        "reason": "protocol_error",
-        "instruction": str(message or "Skill 流程控制信号不符合平台协议。").strip(),
-    }
-
-
-def skill_result_from_content(
-    *,
-    status: str,
-    content: str,
-    artifacts: list[dict[str, Any]] | None = None,
+    final_content: str,
     tool_results: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Build the canonical skill_result payload for an expert message."""
-    normalized = status if status in {"succeeded", "blocked", "failed"} else "failed"
-    visible_content, hidden_payload, hidden_error = _hidden_state_payload_from_content(content)
+) -> ExpertFinalStatePayload:
+    """Select the unique final state from finalizer output or script stdout."""
+    content_payload: ExpertFinalStatePayload | None = None
+    content_error: Exception | None = None
+    if str(final_content or "").strip():
+        try:
+            content_payload = parse_expert_final_state_content(final_content)
+        except ExpertFinalStateProtocolError as exc:
+            content_error = exc
     script_payload, script_error = _script_payload_from_tool_results(tool_results)
-    protocol_error = script_error or hidden_error
-    flow_payload = hidden_payload or script_payload
-    if not protocol_error and hidden_payload is not None and script_payload is not None and _flow_payloads_conflict(hidden_payload, script_payload):
-        protocol_error = "同一轮出现互相冲突的 Skill 流程控制信号。"
-        flow_payload = None
-    if flow_payload is not None:
-        normalized = flow_payload.execution_status
-    next_action = flow_payload.next_action.model_dump() if flow_payload is not None else dict(_DEFAULT_NEXT_ACTION)
-    problem_content = problem_tool_result_content(tool_results)
-    display_content = _skill_result_display_content(
-        visible_content=visible_content,
-        script_payload=script_payload,
-        flow_payload=flow_payload,
-    )
-    if protocol_error:
-        normalized = "failed"
-        display_content = protocol_error
-        next_action = _protocol_error_next_action(protocol_error)
-    elif problem_content and display_content.strip() in _GENERIC_EMPTY_CONTENT:
-        display_content = problem_content
-    if script_payload is not None:
-        result_artifacts = script_payload.artifacts
-    elif flow_payload is not None:
-        result_artifacts = flow_payload.artifacts
-    else:
-        result_artifacts = list(artifacts or [])
-    result = {
-        "execution_status": normalized,
-        "content": display_content,
-        "artifacts": [
-            artifact.model_dump() if hasattr(artifact, "model_dump") else dict(artifact)
-            for artifact in result_artifacts
-            if isinstance(artifact, dict) or hasattr(artifact, "model_dump")
-        ],
-        "next_action": next_action,
+    if script_error:
+        raise ExpertFinalStateProtocolError(script_error)
+    if content_payload is not None and script_payload is not None and _flow_payloads_conflict(content_payload, script_payload):
+        raise ExpertFinalStateProtocolError("同一轮出现多个互相冲突的 expert_final_state.v2。")
+    payload = content_payload or script_payload
+    if payload is None:
+        raise ExpertFinalStateProtocolError("专家没有产出合格的 expert_final_state.v2。") from content_error
+    return ExpertFinalStatePayload.model_validate(payload.model_dump())
+
+
+def message_from_expert_final_state(final_state: ExpertFinalStatePayload) -> dict[str, Any]:
+    return final_state.message.model_dump(exclude_none=True, exclude_defaults=True)
+
+
+def skill_result_from_expert_final_state(final_state: ExpertFinalStatePayload) -> dict[str, Any]:
+    return {
+        "execution_status": final_state.execution_status,
+        "next_action": final_state.next_action.model_dump(),
     }
-    return result
 
 
 def apply_skill_result_to_orchestration_state(
@@ -193,20 +133,20 @@ def apply_skill_result_to_orchestration_state(
     agent_name: str,
     skill: str,
     skill_result: dict[str, Any],
+    message: dict[str, Any] | None = None,
 ) -> bool:
     """Apply message-level Skill session policy to orchestration_state."""
     next_action = skill_result.get("next_action") if isinstance(skill_result.get("next_action"), dict) else {}
-    resume = str(next_action.get("resume") or "none").strip()
+    skill_session = str(next_action.get("skill_session") or "release").strip()
     previous_host_scheduler = orchestration_state.pop("host_scheduler", None)
-    if resume in {"same_skill", "same_agent"}:
-        instruction = str(next_action.get("instruction") or skill_result.get("content") or "").strip()
+    if skill_session == "keep":
         row = {
             "owner_agent_name": str(agent_name or "").strip(),
-            "skill_policy": "keep" if resume == "same_skill" else "release",
-            "next_action": instruction,
+            "skill_session": "keep",
+            "message": dict(message or {}),
         }
         skill_name = str(skill or "").strip()
-        if resume == "same_skill" and skill_name:
+        if skill_name:
             row["skill"] = skill_name
         previous = orchestration_state.get("continuation")
         orchestration_state["continuation"] = row

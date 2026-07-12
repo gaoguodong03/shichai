@@ -6,7 +6,7 @@ import type { GroupDetail } from './useGroupDetailLoader'
 import type { GroupMessage } from './useGroupMessageList'
 import {
   buildGroupDraftMessage,
-  createClientMessageId,
+  createMessageId,
 } from './groupMessageDraft'
 import { currentStorageTimestamp } from '../messageTimeFormat'
 
@@ -96,11 +96,11 @@ export function useGroupComposerActions(args: {
     args.groupSuggestedNextSpeaker.value = null
     const { runToken, abort } = args.beginGroupStream(id, 'routing')
     const body: {
+      message_id: string
       message?: string
-      client_message_id: string
       attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
       target_agent_name?: string
-    } = { client_message_id: createClientMessageId() }
+    } = { message_id: createMessageId() }
     const base = builtMessage()
     const targetAgentName = requestTargetAgentName(nextSpeaker)
     args.lastSentDraft.value = {
@@ -148,29 +148,28 @@ export function useGroupComposerActions(args: {
     const { runToken, abort } = args.beginGroupStream(detail.id, 'routing')
     try {
       const msg = base
-      const clientMessageId = createClientMessageId()
+      const messageId = createMessageId()
       const attachments = requestAttachments()
       const createdAt = currentStorageTimestamp()
       const messageBody: GroupMessage['message'] = { content: msg }
       if (attachments.length) messageBody.attachments = attachments
       if (targetAgentName) messageBody.target_agent_name = targetAgentName
       const userMsg: GroupMessage = {
-        message_id: `msg-${Date.now()}`,
+        message_id: messageId,
         speaker: { type: 'user' },
         message: messageBody,
         created_at: createdAt,
-        client_message_id: clientMessageId,
       } as GroupMessage
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
       args.scrollGroupToBottom()
       const body: {
+        message_id: string
         message?: string
-        client_message_id: string
         attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
         target_agent_name?: string
       } = {
+        message_id: messageId,
         message: msg,
-        client_message_id: clientMessageId,
       }
       if (attachments.length) body.attachments = attachments
       if (targetAgentName) body.target_agent_name = targetAgentName

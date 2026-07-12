@@ -12,22 +12,20 @@ from app.api import group_chat_state as state
 def test_strict_host_response_rejects_extra_fields():
     raw = '```json\n{"current_phase": "补充信息", "next_speaker": "专家甲", "next_action": "请补充要点", "extra_note": "继续"}\n```'
     out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], host_mode="scene")
-    assert out["next_speaker"] == "user"
-    assert out["next_action"] == HOST_PROTOCOL_ERROR_MESSAGE
+    assert out["message"] == {"content": HOST_PROTOCOL_ERROR_MESSAGE}
     assert "interrupt_reason" not in out
 
 
-def test_strict_host_response_accepts_next_action_only():
-    raw = '```json\n{"current_phase": "补充信息", "next_speaker": "user", "next_action": "请补充信息"}\n```'
+def test_strict_host_response_accepts_wait_message():
+    raw = '```json\n{"current_phase": "补充信息", "message": {"content": "请补充信息"}}\n```'
     out = parse_strict_host_scheduler_output(raw, [], host_mode="recruitment")
-    assert out["next_speaker"] == "user"
-    assert out["next_action"] == "请补充信息"
+    assert out["message"] == {"content": "请补充信息"}
 
 
 def test_group_chat_request_keeps_at_mention_as_plain_text():
     request = GroupChatRequest(
+        message_id="msg-user-1",
         message="@文书专员 请先写提纲",
-        client_message_id="client-1",
     )
     assert request.target_agent_name is None
     assert request.message == "@文书专员 请先写提纲"
@@ -35,8 +33,8 @@ def test_group_chat_request_keeps_at_mention_as_plain_text():
 
 def test_group_chat_request_accepts_structured_target_agent_name():
     request = GroupChatRequest(
+        message_id="msg-user-1",
         message="请先写提纲",
-        client_message_id="client-1",
         target_agent_name="文书专员",
     )
     assert request.target_agent_name == "文书专员"
@@ -80,9 +78,9 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
         {
             "continuation": {
                 "owner_agent_name": "文书专员",
-                "skill_policy": "keep",
+                "skill_session": "keep",
                 "skill": "writer-skill",
-                "next_action": "继续根据用户补充写正文。",
+                "message": {"content": "继续根据用户补充写正文。"},
             }
         },
     )
@@ -90,8 +88,7 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待确认",
-            "next_speaker": "user",
-            "next_action": "请确认是否继续。",
+            "message": {"content": "请确认是否继续。"},
             "suggested_add_agent_names": [],
         }
 
@@ -100,6 +97,7 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
     async def _fake_expert_turn(**kwargs):
         captured["agent_name"] = kwargs["agent_name"]
         captured["next_action"] = kwargs["next_action"]
+        kwargs["outcome"].succeed()
         if False:
             yield ""
 
@@ -111,7 +109,7 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-continuation",
-            request=GroupChatRequest(message="这里是补充材料", client_message_id="client-1"),
+            request=GroupChatRequest(message="这里是补充材料", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions={"s-continuation": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
             session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
@@ -139,9 +137,9 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         {
             "continuation": {
                 "owner_agent_name": "文书专员",
-                "skill_policy": "keep",
+                "skill_session": "keep",
                 "skill": "writer-skill",
-                "next_action": "继续旧 Skill",
+                "message": {"content": "继续旧 Skill"},
             },
         },
     )
@@ -151,8 +149,7 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待确认",
-            "next_speaker": "user",
-            "next_action": "请确认是否继续旧 Skill。",
+            "message": {"content": "请确认是否继续旧 Skill。"},
             "suggested_add_agent_names": [],
         }
 
@@ -161,6 +158,7 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         expert_calls += 1
         assert kwargs["agent_name"] == "文书专员"
         assert kwargs["next_action"] == "继续旧 Skill"
+        kwargs["outcome"].succeed()
         yield 'event: end\ndata: {"type":"end","run_id":"run-1","phase":"awaiting_user","waiting_for_user":true}\n\n'
 
     monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
@@ -171,7 +169,7 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-host-takeover-text",
-            request=GroupChatRequest(message="请主持人接管，重新安排", client_message_id="client-1"),
+            request=GroupChatRequest(message="请主持人接管，重新安排", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions={"s-host-takeover-text": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
             session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
@@ -197,8 +195,7 @@ async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, t
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "执行中",
-            "next_speaker": "user",
-            "next_action": "请补充材料。",
+            "message": {"content": "请补充材料。"},
             "suggested_add_agent_names": ["检索专家"],
         }
 
@@ -209,7 +206,7 @@ async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, t
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-recruit-suppressed",
-            request=GroupChatRequest(message="继续写正文", client_message_id="client-1"),
+            request=GroupChatRequest(message="继续写正文", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions={"s-recruit-suppressed": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
             session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
@@ -240,8 +237,7 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "招募",
-            "next_speaker": "user",
-            "next_action": "建议先邀请检索专家。",
+            "message": {"content": "建议先邀请检索专家。"},
             "suggested_add_agent_names": ["检索专家"],
         }
 
@@ -252,7 +248,7 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-recruit-zero-member",
-            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            request=GroupChatRequest(message="帮我写文章", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions={"s-recruit-zero-member": {"agent_names": [], "host": {"name": "四九"}}},
             session_item={"agent_names": [], "host": {"name": "四九"}},
@@ -299,7 +295,7 @@ async def test_zero_member_session_uses_host_only_recommendation_branch(monkeypa
         item
         async for item in runtime._run_contract_events(
             group_session_id="s-zero-host-only",
-            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            request=GroupChatRequest(message="帮我写文章", message_id="msg-user-1"),
             run_id="run-1",
             session_definitions={"s-zero-host-only": {"agent_names": [], "host": {"name": "自定义主持"}}},
             session_item={"agent_names": [], "host": {"name": "自定义主持"}},
@@ -335,7 +331,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
             return "网文专用主持 Skill 正文"
 
     class FakeResponse:
-        content = '```json\n{"current_phase": "阶段2", "next_speaker": "写作专家", "next_action": "请写大纲"}\n```'
+        content = '```json\n{"current_phase":"阶段2","message":{"content":"请写大纲","target_agent_name":"写作专家"}}\n```'
 
     class FakeClient:
         async def ainvoke(self, messages):
@@ -368,14 +364,14 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
         host_scheduler_state={"current_phase": "阶段1"},
     )
 
-    assert out["next_speaker"] == "写作专家"
-    assert out["next_action"] == "请写大纲"
+    assert out["message"] == {"content": "请写大纲", "target_agent_name": "写作专家"}
     system_prompt = calls["messages"][0].content
     user_prompt = calls["messages"][1].content
     assert "主持人系统提示" in system_prompt
     assert "网文专用主持 Skill 正文" in system_prompt
     assert "只允许输出上述字段" in user_prompt
-    assert '"next_action"' in user_prompt
+    assert '"target_agent_name"' in user_prompt
+    assert '"next_action"' not in user_prompt
     assert "scheduler_state" not in session_item
 
 
@@ -392,9 +388,9 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
             calls.append(messages)
             if len(calls) == 1:
                 return FakeResponse(
-                    '安排如下：\n```json\n{"current_phase":"阶段1","next_speaker":"写作专家","next_action":"请写大纲"}\n```'
+                    '安排如下：\n```json\n{"current_phase":"阶段1","message":{"content":"请写大纲","target_agent_name":"写作专家"}}\n```'
                 )
-            return FakeResponse('{"current_phase":"阶段1","next_speaker":"写作专家","next_action":"请写大纲"}')
+            return FakeResponse('{"current_phase":"阶段1","message":{"content":"请写大纲","target_agent_name":"写作专家"}}')
 
     class FakeLlm:
         def get_client(self):
@@ -417,8 +413,7 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
     )
 
     assert len(calls) == 2
-    assert out["next_speaker"] == "写作专家"
-    assert out["next_action"] == "请写大纲"
+    assert out["message"] == {"content": "请写大纲", "target_agent_name": "写作专家"}
     retry_prompt = calls[1][1].content
     assert "主持人调度输出未通过平台 JSON 协议校验" in retry_prompt
     assert '"suggested_add_agent_names"' in retry_prompt

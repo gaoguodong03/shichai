@@ -5,8 +5,7 @@ import logging
 import os
 import time
 from typing import TypedDict, Annotated, Sequence, List
-from app.agent.messages import BaseMessage, AIMessage, SystemMessage, ToolMessage
-from app.agent.llm_client import bind_tools_compat
+from app.agent.messages import BaseMessage, ToolMessage
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent import SimpleAgent
 from app.agent.skill_execution_prompt_rules import skill_execution_extra_instructions
@@ -22,7 +21,7 @@ from app.agent.skill_tool_result_records import (
     _tool_result_record_from_exception,
     _tool_result_record_from_raw,
 )
-from app.agent.structured_output_contracts import SkillScriptStdoutPayload
+from app.agent.structured_output_contracts import ExpertFinalStatePayload, SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -135,9 +134,6 @@ def create_skill_execution_agent(
     skill_full_content: str,
     extra_system_prompt: str = "",
     expert_self_awareness: str = "",
-    t_request_start: float = None,
-    stop_after_tool_names: tuple[str, ...] = (),
-    synthesize_after_tools: bool = True,
     synthesize_after_read_file_paths: tuple[str, ...] = (),
 ):
     """
@@ -174,53 +170,6 @@ def create_skill_execution_agent(
     system_prompt += "\n\n" + render_platform_prompt("skill.execution.response_policy.v1", {})
     system_prompt += skill_execution_extra_instructions(tools)
 
-    async def call_model(state: AgentState, config=None):
-        messages = list(state["messages"])
-        if not messages or not isinstance(messages[0], SystemMessage):
-            messages = [SystemMessage(content=system_prompt)] + messages
-
-        client = llm.get_client()
-        if tools:
-            client = bind_tools_compat(client, tools)
-        msg_summary = []
-        for i, m in enumerate(messages):
-            role = getattr(m, "type", type(m).__name__.replace("Message", "").lower())
-            content = getattr(m, "content", str(m)) or ""
-            s = str(content)
-            if role == "system":
-                msg_summary.append(f"  [{i+1}] {role}: 共 {len(s)} 字符，前150字: {s[:150]}…" if len(s) > 150 else f"  [{i+1}] {role}: {s}")
-            else:
-                preview = (s[:150] + "…") if len(s) > 150 else s
-                msg_summary.append(f"  [{i+1}] {role}: {preview}")
-        logger.debug("输入大模型的提示词（技能执行）:\n" + "\n".join(msg_summary))
-        t0 = time.perf_counter()
-        elapsed = (t0 - t_request_start) if t_request_start else 0
-        logger.debug(f"call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
-        try:
-            # 优先 astream：token 级流式，供 stream_mode="messages" 推送；传入 config 以支持 tracer（Python < 3.11 需显式传递）
-            invoke_kw = {"config": config} if config is not None else {}
-
-            async def _consume_stream():
-                resp = None
-                async for chunk in client.astream(messages, **invoke_kw):
-                    resp = chunk if resp is None else resp + chunk
-                return resp if resp is not None else AIMessage(content="")
-
-            try:
-                response = await asyncio.wait_for(
-                    _consume_stream(), timeout=float(_LLM_AGENT_TIMEOUT)
-                )
-            except Exception as stream_err:
-                logger.warning(f"call_model: astream 失败，回退到 ainvoke: {stream_err}")
-                response = await asyncio.wait_for(
-                    client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
-                )
-            logger.debug(f"call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
-        except asyncio.TimeoutError:
-            logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
-            response = AIMessage(content="抱歉，模型响应超时，请稍后重试。")
-        return {"messages": messages + [response]}
-
     async def _tool_runner(state: AgentState, tools_list: list[ToolSpec]):
         return await _call_tool_impl(state, tools_list)
 
@@ -232,9 +181,9 @@ def create_skill_execution_agent(
         timeout_s=float(_LLM_AGENT_TIMEOUT),
         max_steps=_SKILL_AGENT_MAX_STEPS,
         max_repeated_tool_rounds=_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS,
-        stop_after_tool_names=stop_after_tool_names,
-        synthesize_after_tools=synthesize_after_tools,
         synthesize_after_read_file_paths=synthesize_after_read_file_paths,
+        final_output_model=ExpertFinalStatePayload,
+        final_output_tool_name="submit_expert_final_state",
     )
 
 

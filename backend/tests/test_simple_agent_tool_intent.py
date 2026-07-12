@@ -4,12 +4,10 @@ import pytest
 from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent_finalization import (
-    _deterministic_tool_summary_message,
-    _final_synthesis_instruction,
-    _post_tool_synthesis_instruction,
+    _post_tool_decision_instruction,
 )
-from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent import SimpleAgent
+from app.agent.structured_output_contracts import ExpertFinalStatePayload
 from app.agent.tool_spec import ToolSpec
 
 
@@ -43,16 +41,21 @@ def _v2_skill_stdout(
     handoff="host",
     resume="none",
     reason="stage_completed",
+    agent_turn="respond",
+    skill_session=None,
 ):
+    _ = (handoff, reason)
     return {
         "schema_version": "expert_final_state.v2",
         "execution_status": execution_status,
-        "artifacts": artifacts or [],
+        "message": {
+            "content": instruction,
+            "attachments": [],
+            "artifacts": artifacts or [],
+        },
         "next_action": {
-            "handoff": handoff,
-            "resume": resume,
-            "reason": reason,
-            "instruction": instruction,
+            "agent_turn": agent_turn,
+            "skill_session": skill_session or ("keep" if resume in {"same_skill", "same_agent"} else "release"),
         },
     }
 
@@ -131,27 +134,85 @@ class _RepeatedToolSynthesisLLM:
         return self._client
 
 
-def test_deterministic_tool_summary_wraps_markdown_like_raw_output_in_code_block():
-    raw = (
-        "---\n"
-        "name: toutiao-summary\n"
-        "description: 当用户需要[TODO: 任务类型]时使用，输入为[TODO: 文件/参数/链接]，产出[TODO: 结果形式]。\n"
-        "allowed-tools:\n"
-        "  mcp: []\n"
-        "  python: ''\n"
-        "---\n\n"
-        "# Toutiao Summary\n"
-    )
-
-    message = _deterministic_tool_summary_message([raw])
-    text = str(message.content)
-
-    assert "以下是本轮工具返回摘要：" in text
-    assert "```text\n---\nname: toutiao-summary" in text
-    assert text.rstrip().endswith("```")
+class _BudgetFinalizerState:
+    def __init__(self, *, tool_calls: list[AIMessage], final_message: AIMessage):
+        self.tool_calls = list(tool_calls)
+        self.final_message = final_message
+        self.bound_calls = 0
+        self.unbound_calls = 0
+        self.json_mode_calls = 0
+        self.submission_calls = 0
 
 
-def test_post_tool_synthesis_instruction_does_not_embed_raw_tool_outputs():
+class _BudgetFinalizerClient:
+    def __init__(
+        self,
+        state: _BudgetFinalizerState,
+        *,
+        bound: bool = False,
+        json_mode: bool = False,
+        submission_mode: bool = False,
+    ):
+        self._state = state
+        self._bound = bound
+        self._json_mode = json_mode
+        self._submission_mode = submission_mode
+
+    def bind_tools(self, tools, *args, **kwargs):
+        names = {
+            str((item.get("function") or {}).get("name") or "")
+            for item in tools
+            if isinstance(item, dict)
+        }
+        return _BudgetFinalizerClient(
+            self._state,
+            bound=True,
+            json_mode=self._json_mode,
+            submission_mode="submit_expert_final_state" in names,
+        )
+
+    def bind(self, **kwargs):
+        response_format = kwargs.get("response_format")
+        json_mode = isinstance(response_format, dict) and response_format.get("type") == "json_object"
+        return _BudgetFinalizerClient(
+            self._state,
+            bound=self._bound,
+            json_mode=json_mode,
+            submission_mode=self._submission_mode,
+        )
+
+    async def ainvoke(self, messages):
+        if self._submission_mode:
+            self._state.submission_calls += 1
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "tc-submit-final",
+                        "name": "submit_expert_final_state",
+                        "args": json.loads(str(self._state.final_message.content)),
+                    }
+                ],
+            )
+        if not self._bound:
+            self._state.unbound_calls += 1
+            if self._json_mode:
+                self._state.json_mode_calls += 1
+            return self._state.final_message
+        response = self._state.tool_calls[min(self._state.bound_calls, len(self._state.tool_calls) - 1)]
+        self._state.bound_calls += 1
+        return response
+
+
+class _BudgetFinalizerLLM:
+    def __init__(self, state: _BudgetFinalizerState):
+        self._client = _BudgetFinalizerClient(state)
+
+    def get_client(self):
+        return self._client
+
+
+def test_post_tool_decision_instruction_does_not_embed_raw_tool_outputs():
     raw_outputs = [
         json.dumps(
             {
@@ -163,105 +224,108 @@ def test_post_tool_synthesis_instruction_does_not_embed_raw_tool_outputs():
         )
     ]
 
-    message = _post_tool_synthesis_instruction(raw_outputs)
+    message = _post_tool_decision_instruction(raw_outputs)
     text = str(message.content)
 
-    assert "工具已经执行完成" in text
+    assert "工具执行结果已经加入当前上下文" in text
+    assert "如果仍需工具" in text
+    assert "如果不再需要工具" in text
     assert "internal stdout" not in text
     assert "internal stderr" not in text
     assert "structured return" not in text
     assert "工具返回摘要" not in text
 
 
-def test_final_synthesis_instruction_does_not_embed_stdout_or_stderr():
-    tool_out = {
-        "tool_raw_outputs": [
-            json.dumps(
-                {
-                    "ok": True,
-                    "message": "script ok",
-                    "stdout": "private stdout should stay in runtime logs",
-                    "stderr": "private stderr should stay in runtime logs",
-                },
-                ensure_ascii=False,
-            )
-        ]
-    }
-
-    message = _final_synthesis_instruction("system", tool_out)
-    text = str(message.content)
-
-    assert "工具已经执行成功" in text
-    assert "script ok" in text
-    assert "private stdout" not in text
-    assert "private stderr" not in text
-    assert "\nstdout:" not in text
-    assert "\nstderr:" not in text
-
-
-def test_deterministic_tool_summary_returns_semantic_summary_as_markdown():
-    raw = json.dumps(
+def test_post_tool_decision_instruction_includes_structured_tool_facts_without_raw_output():
+    raw_outputs = ["Title: 沈腾\nURL: https://example.com/raw\nHighlights:\n原始 MCP 正文不应进入 finalizer 指令"]
+    tool_results = [
         {
-            "ok": True,
-            "summary": (
-                "# 第二章 技术范式转移：从手写代码到 Agent 编排\n\n"
-                "## 2.1 生产效率的指数级提升\n\n"
-                "Thoughtworks 的案例说明，工具返回的本轮摘要应该作为 Markdown 正文展示。"
-            ),
-        },
-        ensure_ascii=False,
-    )
-
-    message = _deterministic_tool_summary_message([raw])
-    text = str(message.content)
-
-    assert text.startswith("# 第二章 技术范式转移")
-    assert "## 2.1 生产效率的指数级提升" in text
-    assert "```text" not in text
-    assert "工具已执行完成" not in text
-
-
-def test_deterministic_tool_summary_does_not_expose_missing_llm_summary_state():
-    raw = (
-        "Title: ISEF: International Rules for Pre-College Science Research - Society for Science\n"
-        "URL: https://www.societyforscience.org/isef/international-rules/\n"
-        "Published: 2019-08-26T03:28:43.000Z\n"
-        "Highlights:\n"
-        "The International Rules are the official rules of the Regeneron ISEF.\n"
-    )
-
-    message = _deterministic_tool_summary_message([raw])
-    text = str(message.content)
-
-    assert "工具已执行完成" in text
-    assert "ISEF: International Rules" in text
-    assert "模型没有生成最终文字总结" not in text
-
-
-def test_mcp_direct_final_does_not_treat_artifact_ref_as_message_content():
-    raw = json.dumps(
-        {
+            "tool_call": {"name": "web_search_exa", "kind": "mcp", "provider": "Exa 搜索"},
             "execution_status": "succeeded",
-            "content": "",
-            "artifacts": [{"type": "markdown", "name": "报告", "path": "reports/report.md"}],
-            "next_action": {
-                "handoff": "host",
-                "resume": "none",
-                "reason": "stage_completed",
-                "instruction": "报告已生成。",
+            "output": {"content": raw_outputs[0]},
+        },
+        {
+            "tool_call": {"name": "create_workspace_artifact", "kind": "workspace"},
+            "execution_status": "succeeded",
+            "output": {
+                "artifacts": [
+                    {
+                        "type": "file",
+                        "name": "候选清单",
+                        "path": "web-crawler/候选清单-2026071201010100.md",
+                    }
+                ]
             },
         },
-        ensure_ascii=False,
-    )
+    ]
 
-    message = _mcp_tool_result_direct_final_message(
-        {
-            "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": {}}],
-            "tool_raw_outputs": [raw],
+    message = _post_tool_decision_instruction(raw_outputs, tool_results=tool_results)
+    text = str(message.content)
+
+    assert "结构化工具事实" in text
+    assert "web_search_exa" in text
+    assert "create_workspace_artifact" in text
+    assert "web-crawler/候选清单-2026071201010100.md" in text
+    assert "Title: 沈腾" not in text
+    assert "Highlights:" not in text
+    assert "原始 MCP 正文" not in text
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_finalizes_with_unbound_llm_after_tool_budget_is_exhausted():
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "沈腾"}}],
+    )
+    read_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-read", "name": "read_workspace_file", "args": {"path": "research.md"}}],
+    )
+    final_state = AIMessage(content=json.dumps(_v2_skill_stdout(instruction="资料已整理完成。"), ensure_ascii=False))
+    state = _BudgetFinalizerState(tool_calls=[search_call, read_call], final_message=final_state)
+    calls: list[str] = []
+
+    async def _tool_runner(tool_state, tools):
+        tool_call = tool_state["messages"][-1].tool_calls[0]
+        calls.append(tool_call["name"])
+        return {
+            "messages": [ToolMessage(content="工具执行成功", tool_call_id=tool_call["id"])],
+            "tool_calls": [{"tool": tool_call["name"], "arguments": tool_call["args"]}],
+            "tool_results": [
+                {
+                    "tool_call": {"name": tool_call["name"], "kind": "workspace"},
+                    "execution_status": "succeeded",
+                    "output": {"content": "工具执行成功"},
+                }
+            ],
+            "tool_raw_outputs": ["工具执行成功"],
         }
+
+    agent = SimpleAgent(
+        llm=_BudgetFinalizerLLM(state),
+        tools=[
+            ToolSpec(name="mcp_web_search", description="search"),
+            ToolSpec(name="read_workspace_file", description="read"),
+        ],
+        system_prompt="输出 expert_final_state.v2。",
+        tool_runner=_tool_runner,
+        max_steps=1,
+        final_output_model=ExpertFinalStatePayload,
+        final_output_tool_name="submit_expert_final_state",
     )
 
-    assert message is None
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜集资料")]})
+
+    assert calls == ["mcp_web_search", "read_workspace_file"]
+    assert state.bound_calls == 2
+    assert state.unbound_calls == 0
+    assert state.json_mode_calls == 0
+    assert state.submission_calls == 1
+    assert json.loads(str(out["messages"][-1].content)) == json.loads(str(final_state.content))
+    assert any(
+        item.get("source") == "tool_budget_exhausted_finalizer"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
 
 
 @pytest.mark.asyncio
@@ -568,7 +632,7 @@ async def test_simple_agent_uses_bound_tools_when_synthesizing_after_search_resu
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_uses_unbound_final_reply_after_repeated_synthesis_tool_call():
+async def test_simple_agent_rejects_repeated_synthesis_tool_call_without_direct_final():
     list_call = AIMessage(
         content="",
         tool_calls=[{"id": "tc-list", "name": "list_workspace_directory", "args": {}}],
@@ -595,7 +659,6 @@ async def test_simple_agent_uses_unbound_final_reply_after_repeated_synthesis_to
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="写一篇沈腾演艺生涯文章")]})
@@ -603,15 +666,14 @@ async def test_simple_agent_uses_unbound_final_reply_after_repeated_synthesis_to
     assert calls == ["list_workspace_directory"]
     assert state.bound_calls == 2
     assert state.unbound_calls == 1
-    final_text = str(out["messages"][-1].content)
-    assert "工作区当前为空" in final_text
-    assert "工具已执行完成。以下是本轮工具返回摘要" not in final_text
+    assert str(out["messages"][-1].content) == "工作区当前为空；我将直接基于用户要求起草文章。"
+    assert all("工具已执行完成。以下是本轮工具返回摘要" not in str(getattr(message, "content", "")) for message in out["messages"])
     assert any(
-        item.get("source") == "post_tool_synthesis_repeated_tool_calls_ignored"
+        item.get("source") == "post_tool_decision_repeated_tool_calls_ignored"
         for item in (out.get("tool_attempt_debug") or [])
     )
     assert any(
-        item.get("source") == "post_tool_synthesis_unbound_after_repeated_tool_call"
+        item.get("source") == "tool_budget_exhausted_finalizer"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -655,7 +717,7 @@ async def test_simple_agent_stream_ignores_plain_write_workspace_file_text_call_
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
+async def test_simple_agent_does_not_rewrite_final_llm_workspace_path():
     write_call = AIMessage(
         content="",
         tool_calls=[
@@ -702,8 +764,8 @@ async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
     out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
 
     final_text = str(out["messages"][-1].content)
-    assert "web-crawler/候选清单-2026062816284700.md" in final_text
-    assert "web-crawler/候选清单-20250401133000.md" not in final_text
+    assert final_text == "候选清单已保存：`web-crawler/候选清单-20250401133000.md`"
+    assert "web-crawler/候选清单-2026062816284700.md" not in final_text
 
 
 @pytest.mark.asyncio
@@ -767,7 +829,7 @@ async def test_simple_agent_ignores_second_write_workspace_file_call_after_succe
 
     assert call_count == 1
     assert any(
-        item.get("source") == "post_tool_synthesis_repeated_tool_calls_ignored"
+        item.get("source") == "post_tool_decision_repeated_tool_calls_ignored"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -793,7 +855,7 @@ async def test_simple_agent_records_no_tool_detected_debug():
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_stops_after_terminal_sandbox_environment_failure():
+async def test_simple_agent_sends_terminal_sandbox_failure_to_final_llm():
     response = AIMessage(
         content="",
         tool_calls=[
@@ -804,7 +866,7 @@ async def test_simple_agent_stops_after_terminal_sandbox_environment_failure():
             }
         ],
     )
-    fallback_response = AIMessage(content="不应该再次调用模型综合这个工具错误")
+    final_response = AIMessage(content="OpenSandbox 当前不可用，本轮未能执行脚本。")
     calls = {"n": 0}
 
     async def _tool_runner(state, tools):
@@ -818,7 +880,7 @@ async def test_simple_agent_stops_after_terminal_sandbox_environment_failure():
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([response, fallback_response]),
+        llm=_FakeLLM([response, final_response]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -829,17 +891,12 @@ async def test_simple_agent_stops_after_terminal_sandbox_environment_failure():
 
     assert calls["n"] == 1
     final_text = str(out["messages"][-1].content)
-    assert "工具运行环境不可用" in final_text
-    assert "OpenSandbox" in final_text
-    assert "不应该再次调用" not in final_text
-    assert any(
-        item.get("source") == "terminal_tool_failure_direct_final"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert final_text == "OpenSandbox 当前不可用，本轮未能执行脚本。"
+    assert not any("direct_final" in str(item.get("source") or "") for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_can_stop_after_configured_write_tool_without_final_llm():
+async def test_simple_agent_always_asks_llm_for_final_response_after_write_tool():
     write_call = AIMessage(
         content="",
         tool_calls=[
@@ -850,7 +907,7 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
             }
         ],
     )
-    should_not_call = AIMessage(content="不应该为了工具后总结再次调用模型")
+    final_response = AIMessage(content="文档已经写入 notes/task.txt。")
     tool_round = {"n": 0}
 
     async def _tool_runner(state, tools):
@@ -867,24 +924,18 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([write_call, should_not_call]),
+        llm=_FakeLLM([write_call, final_response]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=6,
-        stop_after_tool_names=("write_workspace_file",),
-        synthesize_after_tools=False,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
 
     assert tool_round["n"] == 1
-    assert all("不应该" not in str(getattr(msg, "content", "")) for msg in out["messages"])
-    assert any(
-        item.get("source") == "stop_after_tool_result"
-        and item.get("tool") == "write_workspace_file"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert str(out["messages"][-1].content) == "文档已经写入 notes/task.txt。"
+    assert not any(item.get("source") == "stop_after_tool_result" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
@@ -960,7 +1011,6 @@ async def test_simple_agent_continues_after_script_next_action_to_write_workspac
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 demo skill")]})
@@ -1057,17 +1107,12 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
         system_prompt="完成单次测试任务后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-summary skill")]})
 
-    assert calls == ["run_skill_script_skill-builder"]
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     assert str(out["messages"][-1].content) == "已新建并完善 skills/toutiao-summary/SKILL.md"
-    assert any(
-        item.get("source") in {"synthesize_final_after_tool_success", "post_tool_synthesis"}
-        for item in (out.get("tool_attempt_debug") or [])
-    )
 
 
 @pytest.mark.asyncio
@@ -1144,7 +1189,6 @@ async def test_simple_agent_continues_after_script_next_action_payload_without_t
         system_prompt="完成单次测试任务后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
@@ -1229,7 +1273,6 @@ async def test_simple_agent_finalizer_can_continue_with_workspace_write_after_sc
         system_prompt="新建 Skill。",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
@@ -1311,7 +1354,6 @@ async def test_simple_agent_stream_ignores_duplicate_structured_write_after_succ
         system_prompt="搜索资料。",
         tool_runner=_tool_runner,
         max_steps=5,
-        synthesize_after_tools=True,
     )
 
     final_debug: list[dict] = []
@@ -1394,7 +1436,6 @@ async def test_simple_agent_stream_continues_after_script_next_action_to_write_w
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=4,
-        synthesize_after_tools=True,
     )
 
     final_debug: list[dict] = []
@@ -1748,7 +1789,7 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
 
     assert str(out["messages"][-1].content) == f"音频转写完成：\n{transcript}"
     assert any(
-        item.get("source") in {"post_tool_synthesis", "post_tool_synthesis_unbound", "synthesize_final_after_tool_success"}
+        item.get("source") == "post_tool_decision_final_state"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -1790,7 +1831,7 @@ async def test_simple_agent_does_not_force_audio_asr_tool_from_message_file_ref(
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
+async def test_simple_agent_does_not_replace_final_llm_failure_with_tool_output():
     read_call = AIMessage(
         content="",
         tool_calls=[
@@ -1831,16 +1872,16 @@ async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
     out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
 
     final_text = str(out["messages"][-1].content)
-    assert "本轮岗位数：55 个" in final_text
-    assert "模型响应失败" not in final_text
-    assert any(
+    assert final_text == "抱歉，模型响应失败：Connection error."
+    assert "本轮岗位数：55 个" not in final_text
+    assert not any(
         item.get("source") == "llm_failure_after_tool_outputs_summary"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_uses_unbound_client_after_tool_result():
+async def test_simple_agent_keeps_tool_bound_client_after_tool_result():
     first = AIMessage(
         content="",
         tool_calls=[
@@ -1865,17 +1906,8 @@ async def test_simple_agent_uses_unbound_client_after_tool_result():
             self.root.calls.append({"bound": self.bound, "message_count": len(messages)})
             if len(self.root.calls) == 1:
                 return first
-            if self.bound:
-                return AIMessage(
-                    content="",
-                    tool_calls=[
-                        {
-                            "id": "tc-repeat",
-                            "name": "run_skill_script_sandbox-dep-check",
-                            "args": {"package": "pytest"},
-                        }
-                    ],
-                )
+            if not self.bound:
+                raise AssertionError("工具结果不得切换到未绑定工具的补丁客户端")
             return AIMessage(content="工具结果已总结")
 
     class _LLM:
@@ -1921,11 +1953,11 @@ async def test_simple_agent_uses_unbound_client_after_tool_result():
     assert str(out["messages"][-1].content) == "工具结果已总结"
     assert tool_round["n"] == 1
     assert llm.calls[0]["bound"] is True
-    assert llm.calls[1]["bound"] is False
+    assert llm.calls[1]["bound"] is True
 
 
 @pytest.mark.asyncio
-async def test_script_dependency_failure_fallback_when_final_llm_fails():
+async def test_script_dependency_failure_does_not_replace_final_llm_failure():
     script_call = AIMessage(
         content="",
         tool_calls=[
@@ -1983,12 +2015,12 @@ async def test_script_dependency_failure_fallback_when_final_llm_fails():
     out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
 
     final_text = str(out["messages"][-1].content)
-    assert "没装这个依赖：pytest" in final_text
-    assert "模型响应失败" not in final_text
+    assert final_text == "抱歉，模型响应失败：Connection error."
+    assert "没装这个依赖：pytest" not in final_text
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_reports_tool_error_without_more_llm_calls():
+async def test_simple_agent_sends_tool_error_back_to_llm_for_final_response():
     read_call = AIMessage(
         content="",
         tool_calls=[
@@ -1999,16 +2031,7 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
             }
         ],
     )
-    should_not_call = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "id": "tc-list",
-                "name": "run_skill_script_shixiseng_dedicated_crawler",
-                "args": {"query": "不应重复调用"},
-            }
-        ],
-    )
+    final_response = AIMessage(content="未找到 analysis_report.txt，请确认文件路径后重试。")
     tool_round = {"n": 0}
 
     async def _tool_runner(state, tools):
@@ -2032,7 +2055,7 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([read_call, should_not_call]),
+        llm=_FakeLLM([read_call, final_response]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -2043,13 +2066,8 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
 
     final_text = str(out["messages"][-1].content)
     assert tool_round["n"] == 1
-    assert "当前步骤失败" in final_text
-    assert "analysis_report.txt" in final_text
-    assert "tc-list" not in str(getattr(out["messages"][-1], "tool_calls", ""))
-    assert any(
-        item.get("source") == "tool_error_direct_final"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert final_text == "未找到 analysis_report.txt，请确认文件路径后重试。"
+    assert not any(item.get("source") == "tool_error_direct_final" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
@@ -2106,14 +2124,11 @@ async def test_simple_agent_recovers_from_invented_group_read_file_missing_path(
     assert tool_round["n"] == 1
     assert final_text == "我会直接基于最近讨论中的材料包继续发言。"
     assert "当前步骤失败" not in final_text
-    assert any(
-        item.get("source") == "recoverable_context_read_workspace_file_missing"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert not any("direct_final" in str(item.get("source") or "") for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
-async def test_run_skill_script_dependency_missing_direct_final_without_second_llm():
+async def test_run_skill_script_dependency_error_is_summarized_by_final_llm():
     script_call = AIMessage(
         content="",
         tool_calls=[
@@ -2124,7 +2139,7 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
             }
         ],
     )
-    should_not_call = AIMessage(content="不应该等待模型总结")
+    final_response = AIMessage(content="当前沙箱缺少 pytest 依赖，脚本未能执行。")
     tool_round = {"n": 0}
     raw = json.dumps(
         {
@@ -2160,7 +2175,7 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([script_call, should_not_call]),
+        llm=_FakeLLM([script_call, final_response]),
         tools=[],
         system_prompt="验证结束后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
@@ -2171,20 +2186,16 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
 
     final_text = str(out["messages"][-1].content)
     assert tool_round["n"] == 1
-    assert "没装这个依赖：pytest" in final_text
-    assert "不应该等待模型总结" not in final_text
+    assert final_text == "当前沙箱缺少 pytest 依赖，脚本未能执行。"
     assert not any(
         item.get("source") == "tool_error_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )
-    assert any(
-        item.get("source") == "script_dependency_direct_final"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert not any(item.get("source") == "script_dependency_direct_final" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
-async def test_run_skill_script_playwright_browser_missing_direct_final_without_success_hallucination():
+async def test_run_skill_script_playwright_error_is_summarized_by_final_llm():
     script_call = AIMessage(
         content="",
         tool_calls=[
@@ -2195,7 +2206,7 @@ async def test_run_skill_script_playwright_browser_missing_direct_final_without_
             }
         ],
     )
-    hallucinated_success = AIMessage(content="爬取成功，共写入 55 条岗位。")
+    final_response = AIMessage(content="Playwright 缺少 Chromium 可执行文件，本轮爬取失败。")
     tool_round = {"n": 0}
     stderr = (
         "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium-1161/chrome-linux/chrome\n"
@@ -2228,7 +2239,7 @@ async def test_run_skill_script_playwright_browser_missing_direct_final_without_
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([script_call, hallucinated_success]),
+        llm=_FakeLLM([script_call, final_response]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -2239,10 +2250,5 @@ async def test_run_skill_script_playwright_browser_missing_direct_final_without_
 
     final_text = str(out["messages"][-1].content)
     assert tool_round["n"] == 1
-    assert "Playwright 运行环境不可用" in final_text
-    assert "本轮爬取没有成功" in final_text
-    assert "爬取成功，共写入 55 条岗位" not in final_text
-    assert any(
-        item.get("source") == "playwright_runtime_failure_direct_final"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert final_text == "Playwright 缺少 Chromium 可执行文件，本轮爬取失败。"
+    assert not any(item.get("source") == "playwright_runtime_failure_direct_final" for item in (out.get("tool_attempt_debug") or []))

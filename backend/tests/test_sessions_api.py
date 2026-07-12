@@ -155,8 +155,13 @@ def test_get_message_execution_logs_returns_folded_summaries(client: TestClient)
                         "arguments": {"path": "drafts/outline.md", "content": long_content},
                     },
                     "execution_status": "succeeded",
-                    "output": {"text": "已写入 drafts/outline.md", "json_data": {}, "stdout": long_content, "stderr": ""},
-                    "artifacts": [{"type": "file", "name": "大纲", "path": "drafts/outline.md"}],
+                    "output": {
+                        "content": "已写入 drafts/outline.md",
+                        "json_data": {},
+                        "artifacts": [{"type": "file", "name": "大纲", "path": "drafts/outline.md"}],
+                        "stdout": long_content,
+                        "stderr": "",
+                    },
                 }
             ],
         )
@@ -279,7 +284,7 @@ def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monk
 
     response = client.post(
         "/api/sessions/s-error/chat",
-        json={"message": "hi", "client_message_id": "cm-error"},
+        json={"message": "hi", "message_id": "msg-error"},
     )
 
     assert response.status_code == 200

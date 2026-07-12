@@ -1,9 +1,9 @@
 import { apiFetch, apiUrl, type ApiResult } from './base'
 
 export interface ChatStreamRequestPayload {
+  message_id: string
   message?: string
   session_id: string
-  client_message_id: string
   attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
   target_agent_name?: string | null
 }
@@ -58,13 +58,13 @@ interface MessageExecutionLogsResponseData {
 
 function chatRequestBody(payload: ChatStreamRequestPayload) {
   const body: {
+    message_id: string
     message: string
-    client_message_id: string
     attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
     target_agent_name?: string
   } = {
+    message_id: payload.message_id,
     message: payload.message ?? '',
-    client_message_id: payload.client_message_id,
   }
   const targetAgentName = String(payload.target_agent_name || '').trim()
   if (payload.attachments?.length) body.attachments = payload.attachments

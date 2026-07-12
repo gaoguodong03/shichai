@@ -1,8 +1,8 @@
-export function createClientMessageId(): string {
+export function createMessageId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `cm-${crypto.randomUUID()}`
+    return `msg-${crypto.randomUUID()}`
   }
-  return `cm-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 export function buildGroupDraftMessage(goalInput: string): string {

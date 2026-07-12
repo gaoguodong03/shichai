@@ -401,7 +401,16 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     client = frontend_flow_client
     headers = _headers("frontend-chat@example.test")
     answer = "2+2 等于 4。"
-    monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: _FakeLLM([AIMessage(content=answer)]))
+    final_state = json.dumps(
+        {
+            "schema_version": "expert_final_state.v2",
+            "execution_status": "succeeded",
+            "message": {"content": answer},
+            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        },
+        ensure_ascii=False,
+    )
+    monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: _FakeLLM([AIMessage(content=final_state)]))
     monkeypatch.setattr(expert_resolution, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
 
     skill = client.post(
@@ -435,8 +444,8 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     chat = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
+            "message_id": "frontend-chat-1",
             "message": "你好，2+2 等于几？",
-            "client_message_id": "frontend-chat-1",
             "target_agent_name": "问答专家",
         },
         headers=headers,

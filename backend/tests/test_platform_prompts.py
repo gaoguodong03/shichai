@@ -40,7 +40,10 @@ def test_host_prompt_requires_current_contract_fields():
         },
     )
 
-    assert '"next_action"' in rendered
+    assert '"message"' in rendered
+    assert '"target_agent_name"' in rendered
+    assert '"next_speaker"' not in rendered
+    assert '"next_action"' not in rendered
     assert "只允许输出上述字段" in rendered
 
 
@@ -99,8 +102,7 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "skill.execution.multi_step_preface.v1",
         "skill.execution.script_done_instruction.v1",
         "skill.execution.tool_message_content.v1",
-        "agent.final_synthesis.after_tool_success.v1",
-        "agent.final_synthesis.after_tool_outputs.v1",
+        "agent.after_tool_result.decision.v1",
         "agent.continuation.after_output_limit.v1",
         "expert.self_awareness.v1",
         "expert.turn.default_task.v1",
@@ -220,14 +222,6 @@ def test_runtime_does_not_pass_removed_tool_stream_prompt_variables():
 
     assert "stdout_block" not in runtime_text
     assert "stderr_block" not in runtime_text
-
-
-def test_final_synthesis_default_tool_status_uses_platform_prompt_registry():
-    """Default tool status text is part of the LLM-visible final synthesis prompt."""
-    runtime_text = (ROOT / "backend/app/agent/simple_agent_finalization.py").read_text(encoding="utf-8")
-
-    assert '"工具执行成功。"' not in runtime_text
-    assert "agent.final_synthesis.default_tool_status.v1" in PLATFORM_PROMPTS
 
 
 def test_expert_turn_missing_sections_use_platform_prompt_registry():

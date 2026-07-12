@@ -286,7 +286,7 @@ def test_e2e_message_fixtures_use_storage_timestamp_format():
     assert not re.search(r'"created_at"\s*:\s*"\d{4}-\d{2}-\d{2}T', combined)
 
 
-def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallback():
+def test_e2e_chat_stream_mock_requires_frontend_message_id_without_fallback():
     mock_api = read("frontend/e2e/fixtures/mockApi.ts")
     chat_handler = re.search(
         r"if \(chatStreamMatch && method === 'POST'\) \{([\s\S]*?)\n    \}",
@@ -295,19 +295,20 @@ def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallba
     assert chat_handler is not None
     request_type = re.search(r"const body = readBody<\{([\s\S]*?)\}>\(route\)", chat_handler.group(1))
     assert request_type is not None
-    assert "client_message_id: string" in request_type.group(1)
-    assert "client_message_id?: string" not in request_type.group(1)
-    assert "const clientMessageId = String(body.client_message_id || '').trim()" in chat_handler.group(1)
-    assert "if (!clientMessageId) return json(route, { detail: 'client_message_id is required' }, 422)" in chat_handler.group(1)
+    assert "message_id: string" in request_type.group(1)
+    assert "message_id?: string" not in request_type.group(1)
+    assert "client_message_id" not in request_type.group(1)
+    assert "const messageId = String(body.message_id || '').trim()" in chat_handler.group(1)
+    assert "if (!messageId) return json(route, { detail: 'message_id is required' }, 422)" in chat_handler.group(1)
 
     persisted_user_message = re.search(
         r"session\.messages\.push\(\{[\s\S]*?speaker: \{ type: 'user' \},[\s\S]*?created_at: now,[\s\S]*?\n\s*\}\)",
         chat_handler.group(1),
     )
     assert persisted_user_message is not None
-    assert "client_message_id: clientMessageId," in persisted_user_message.group(0)
-    assert "body.client_message_id ||" not in persisted_user_message.group(0)
-    assert "client-${Date.now()}" not in persisted_user_message.group(0)
+    assert "message_id: messageId," in persisted_user_message.group(0)
+    assert "body.message_id ||" not in persisted_user_message.group(0)
+    assert "user-${session.messages.length + 1}" not in persisted_user_message.group(0)
     assert "attachments: body.attachments || []" not in persisted_user_message.group(0)
     assert "target_agent_name: body.target_agent_name || null" not in persisted_user_message.group(0)
     assert "if (body.attachments?.length) messageBody.attachments = body.attachments" in chat_handler.group(1)
@@ -363,7 +364,7 @@ def test_frontend_local_session_messages_include_created_at():
     assert "getUTCFullYear" in time_format
     assert "getFullYear()" not in time_format
     optimistic_user = re.search(
-        r"const userMsg: GroupMessage = \{[\s\S]*?client_message_id: clientMessageId,[\s\S]*?\n\s*\}",
+        r"const userMsg: GroupMessage = \{[\s\S]*?message_id: messageId,[\s\S]*?\n\s*\}",
         composer,
     )
     assert optimistic_user is not None
@@ -552,10 +553,11 @@ def test_e2e_mock_rejects_legacy_runtime_request_fields():
     assert "Attachment does not exist" in mock_api
     assert "rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'host'])" in mock_api
     assert "rejectUnexpectedKeys(route, body, ['title', 'agent_names', 'add_agent_names', 'remove_agent_names', 'host'])" in mock_api
-    assert "rejectUnexpectedKeys(route, body, ['message', 'client_message_id', 'attachments', 'target_agent_name'])" in mock_api
+    assert "rejectUnexpectedKeys(route, body, ['message_id', 'message', 'attachments', 'target_agent_name'])" in mock_api
     assert "if (validateChatAttachments(route, state, id, body.attachments || [])) return" in mock_api
-    assert "const clientMessageId = String(body.client_message_id || '').trim()" in mock_api
-    assert "client_message_id: clientMessageId" in mock_api
+    assert "const messageId = String(body.message_id || '').trim()" in mock_api
+    assert "message_id: messageId" in mock_api
+    assert "client_message_id" not in mock_api
     assert "const targetAgentName = String(body.target_agent_name || '').trim()" in mock_api
     assert "const activeAgentNames = (session.agent_names || []).filter((name) => state.agents.some((agent) => agent.name === name))" in mock_api
     assert "if (targetAgentName && !activeAgentNames.includes(targetAgentName))" in mock_api

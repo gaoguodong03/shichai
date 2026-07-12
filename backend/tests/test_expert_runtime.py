@@ -55,9 +55,9 @@ def test_resolve_expert_skill_uses_locked_skill_first():
     orchestration_state = {
         "continuation": {
             "owner_agent_name": "专家A",
-            "skill_policy": "keep",
+            "skill_session": "keep",
             "skill": "sk2",
-            "next_action": "继续处理",
+            "message": {"content": "继续处理"},
         }
     }
 

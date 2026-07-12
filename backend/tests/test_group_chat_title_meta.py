@@ -44,7 +44,7 @@ def test_title_refresh_does_not_infer_missing_auto_title_flag(monkeypatch):
         session_definitions=session_definitions,
         messages=messages,
         user_message="请整理材料",
-        client_message_id="client-1",
+        message_id="msg-user-1",
     )
 
     assert session_definitions["s1"]["title"] == "多Agent协作 · 旧模板标题"
@@ -73,7 +73,7 @@ def test_record_user_message_omits_empty_optional_message_fields(monkeypatch):
         session_definitions=session_definitions,
         messages=messages,
         user_message="请整理材料",
-        client_message_id="client-1",
+        message_id="msg-user-1",
     )
 
     assert messages[0]["message"] == {"content": "请整理材料"}

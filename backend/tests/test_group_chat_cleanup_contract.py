@@ -31,7 +31,6 @@ def test_backend_extraction_modules_exist_without_legacy_smells():
         "app/agent/group_chat_host_runtime.py",
         "app/agent/group_chat_host_messages.py",
         "app/agent/simple_agent_finalization.py",
-        "app/agent/simple_agent_tool_errors.py",
         "app/agent/simple_agent_streaming.py",
         "app/agent/simple_agent_invocation.py",
         "app/agent/skill_execution_prompt_rules.py",

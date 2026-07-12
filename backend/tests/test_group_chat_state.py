@@ -291,14 +291,13 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
         {
             "host_scheduler": {
                 "current_phase": "阶段2",
-                "next_speaker": "写作专家",
-                "next_action": "请写大纲",
+                "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
             },
             "continuation": {
                 "owner_agent_name": "写作专家",
-                "skill_policy": "keep",
+                "skill_session": "keep",
                 "skill": "article-writer",
-                "next_action": "继续补全正文",
+                "message": {"content": "继续补全正文"},
             },
             "speaker_task": "旧字段",
         },
@@ -308,14 +307,13 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
     assert loaded == {
         "continuation": {
             "owner_agent_name": "写作专家",
-            "skill_policy": "keep",
+            "skill_session": "keep",
             "skill": "article-writer",
-            "next_action": "继续补全正文",
+            "message": {"content": "继续补全正文"},
         },
         "host_scheduler": {
             "current_phase": "阶段2",
-            "next_speaker": "写作专家",
-            "next_action": "请写大纲",
+            "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
         },
     }
     assert (tmp_path / "s1" / "orchestration_state.json").exists()
@@ -331,14 +329,13 @@ def test_orchestration_state_clears_continuation_when_host_scheduler_conflicts(t
         {
             "host_scheduler": {
                 "current_phase": "阶段2",
-                "next_speaker": "写作专家",
-                "next_action": "请写大纲",
+                "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
             },
             "continuation": {
                 "owner_agent_name": "资料专家",
-                "skill_policy": "keep",
+                "skill_session": "keep",
                 "skill": "research",
-                "next_action": "继续补资料",
+                "message": {"content": "继续补资料"},
             },
         },
     )
@@ -346,8 +343,7 @@ def test_orchestration_state_clears_continuation_when_host_scheduler_conflicts(t
     assert state.load_group_orchestration_state("s1") == {
         "host_scheduler": {
             "current_phase": "阶段2",
-            "next_speaker": "写作专家",
-            "next_action": "请写大纲",
+            "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
         },
     }
 
@@ -391,7 +387,6 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
                 "speaker": {"type": "user"},
                 "message": _body("你好"),
                 "created_at": "2026062908104800",
-                "client_message_id": "c1",
             },
             {
                 "message_id": "a1",
@@ -408,7 +403,6 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
         "speaker": {"type": "user"},
         "message": {"content": "你好"},
         "created_at": "2026062908104800",
-        "client_message_id": "c1",
     }
     assert raw[1]["speaker"] == {"type": "expert", "agent_name": "专家A", "skill": "skill-a"}
     assert raw[1]["created_at"] == "2026062908104900"
@@ -454,13 +448,9 @@ def test_group_history_loads_canonical_messages_without_runtime_compat(tmp_path,
                     "created_at": "2026062908104900",
                     "skill_result": {
                         "execution_status": "succeeded",
-                        "content": "回答",
-                        "artifacts": [],
                         "next_action": {
-                            "handoff": "user",
-                            "resume": "same_skill",
-                            "reason": "missing_input",
-                            "instruction": "回答",
+                            "agent_turn": "respond",
+                            "skill_session": "keep",
                         },
                     },
                 }

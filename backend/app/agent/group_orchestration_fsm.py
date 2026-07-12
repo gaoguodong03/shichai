@@ -16,7 +16,7 @@ class GroupRouteDecision(TypedDict):
     next_speaker: str
     next_action: str
     route_source: Literal["empty_group", "target_agent", "host_scheduler_state", "continuation", "host_scheduler"]
-    skill_policy: Literal["none", "keep", "release"]
+    skill_session: Literal["none", "keep"]
     skill: str | None
 
 
@@ -25,15 +25,15 @@ def _route_decision(
     next_speaker: str,
     next_action: str,
     route_source: Literal["target_agent", "host_scheduler_state", "continuation"],
-    skill_policy: Literal["none", "keep", "release"] = "none",
+    skill_session: Literal["none", "keep"] = "none",
     skill: str | None = None,
 ) -> GroupRouteDecision:
     return {
         "next_speaker": next_speaker,
         "next_action": next_action,
         "route_source": route_source,
-        "skill_policy": skill_policy,
-        "skill": skill if skill_policy == "keep" else None,
+        "skill_session": skill_session,
+        "skill": skill if skill_session == "keep" else None,
     }
 
 
@@ -58,13 +58,14 @@ def resolve_group_entry_route(
         return (
             _route_decision(
                 next_speaker=request.target_agent_name,
-                next_action=default_next_action,
+                next_action=str(request.message or "").strip() or default_next_action,
                 route_source="target_agent",
             ),
             changed,
         )
 
-    scheduler_next = str((host_scheduler or {}).get("next_speaker") or "").strip()
+    scheduler_message = host_scheduler.get("message") if isinstance(host_scheduler.get("message"), dict) else {}
+    scheduler_next = str((scheduler_message or {}).get("target_agent_name") or "").strip()
     if scheduler_next in agent_names:
         continuation_owner = str((continuation or {}).get("owner_agent_name") or "").strip()
         if continuation_owner and continuation_owner != scheduler_next:
@@ -73,7 +74,7 @@ def resolve_group_entry_route(
         return (
             _route_decision(
                 next_speaker=scheduler_next,
-                next_action=str((host_scheduler or {}).get("next_action") or "").strip() or default_next_action,
+                next_action=str((scheduler_message or {}).get("content") or "").strip() or default_next_action,
                 route_source="host_scheduler_state",
             ),
             changed,
@@ -81,18 +82,18 @@ def resolve_group_entry_route(
 
     continuation = orchestration_state.get("continuation") if isinstance(orchestration_state.get("continuation"), dict) else {}
     owner = str((continuation or {}).get("owner_agent_name") or "").strip()
-    skill_policy = str((continuation or {}).get("skill_policy") or "").strip()
+    skill_session = str((continuation or {}).get("skill_session") or "").strip()
     if owner:
-        if owner not in agent_names or skill_policy not in {"keep", "release"}:
+        if owner not in agent_names or skill_session != "keep":
             orchestration_state.pop("continuation", None)
             changed = True
         else:
             return (
                 _route_decision(
                     next_speaker=owner,
-                    next_action=str(continuation.get("next_action") or "").strip() or default_next_action,
+                    next_action=str((continuation.get("message") or {}).get("content") or "").strip() or default_next_action,
                     route_source="continuation",
-                    skill_policy="keep" if skill_policy == "keep" else "release",
+                    skill_session="keep",
                     skill=str(continuation.get("skill") or "").strip() or None,
                 ),
                 changed,

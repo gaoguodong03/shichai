@@ -136,7 +136,7 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assert not (session_root / "memory" / "logs").exists()
 
 
-def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp_path):
+def test_persist_group_memory_turn_updates_index_from_message_artifacts(tmp_path):
     gc = _get_memory_prompt_module()
     session_root = tmp_path / "session"
     ws = session_root / "workspace"
@@ -145,17 +145,16 @@ def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp
     assistant_msg = {
         "message_id": "expert-1",
         "speaker": {"type": "expert", "agent_name": "写作专家", "skill": "weekly-report"},
-        "message": {"content": "已完成周报初稿，并保存到工作区。"},
+        "message": {
+            "content": "已完成周报初稿，并保存到工作区。",
+            "artifacts": [{"type": "markdown", "name": "周报", "path": "reports/weekly.md"}],
+        },
         "created_at": "2026-05-13T12:31:50+00:00",
         "skill_result": {
             "execution_status": "succeeded",
-            "content": "已完成周报初稿，并保存到工作区。",
-            "artifacts": [{"type": "markdown", "name": "周报", "path": "reports/weekly.md"}],
             "next_action": {
-                "handoff": "host",
-                "resume": "none",
-                "reason": "stage_completed",
-                "instruction": "已完成周报初稿，并保存到工作区。",
+                "agent_turn": "respond",
+                "skill_session": "release",
             },
         },
     }

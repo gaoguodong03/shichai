@@ -108,8 +108,7 @@ async def _host_decide_by_agent(
     if credential_notice:
         return {
             "current_phase": "awaiting_user",
-            "next_speaker": "user",
-            "next_action": credential_notice,
+            "message": {"content": credential_notice},
             "suggested_add_agent_names": None,
         }
 
@@ -162,16 +161,14 @@ async def _host_decide_by_agent(
         decision = host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
     except StructuredOutputProtocolError as exc:
         decision = host_protocol_error_decision(str(exc))
-    state = {
-        "current_phase": str(decision.get("current_phase") or "").strip(),
-        "next_speaker": str(decision.get("next_speaker") or "").strip(),
-        "next_action": str(decision.get("next_action") or "").strip(),
-    }
+    state = {"current_phase": str(decision.get("current_phase") or "").strip()}
+    message = decision.get("message") if isinstance(decision.get("message"), dict) else {}
+    target_agent_name = str(message.get("target_agent_name") or "").strip()
     logger.info(
-        "host_scheduler_decision session=%s host=%s next_speaker=%s current_phase=%s",
+        "host_scheduler_decision session=%s host=%s target_agent_name=%s current_phase=%s",
         group_session_id,
         host_name,
-        state["next_speaker"],
+        target_agent_name,
         state["current_phase"],
     )
     return decision

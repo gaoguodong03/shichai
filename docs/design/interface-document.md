@@ -266,8 +266,8 @@ Accept: text/event-stream
 
 ```json
 {
+  "message_id": "msg-user-xxxx",
   "message": "请帮我处理这个任务",
-  "client_message_id": "client-msg-xxxx",
   "attachments": [
     {
       "type": "workspace_file",
@@ -283,7 +283,7 @@ Accept: text/event-stream
 
 - 这是当前会话主入口。
 - 普通会话、场景会话和多专家协作都使用该接口。
-- `client_message_id` 必填，用于幂等和消息关联。
+- `message_id` 必填，由前端生成，用于幂等、消息关联、日志关联和回滚定位。
 - `message` 可以为空，但 `message`、`attachments`、`target_agent_name` 至少一个有效。
 - `attachments` 只引用当前会话工作区内已存在的文件；原始文件上传先走工作区文件接口。
 - `target_agent_name` 可选；存在时必须是当前会话成员，本轮直接交给该专家。
@@ -376,7 +376,7 @@ GET /api/sessions/{session_id}/messages/{message_id}/execution-logs
 - 专家和主持人消息右侧显示终端图标，点击后按 `message_id` 拉取关联执行日志。
 - 点击图标后先打开折叠日志列表，按工具调用分组展示 `tool_name`、状态、时间和摘要。
 - 点击某条日志后再展开详情，包括参数摘要、输出摘要、产物路径、错误信息和耗时。
-- 长参数、长 stdout/stderr 和正文型 `arguments.content` 默认折叠或摘要化；聊天消息正文只展示 `message.content`；`skill_result.artifacts` 不渲染为聊天气泡 meta 标签，产物路径只在执行日志详情中展示。
+- 长参数、长 stdout/stderr 和正文型 `arguments.content` 默认折叠或摘要化；聊天正文展示 `message.content`，用户可见产物由 `message.artifacts` 渲染，工具级产物只在执行日志详情中展示。
 
 ### 5.11 会话事件流
 
@@ -498,7 +498,7 @@ data: {"key":"value"}
 |------|------|----------|
 | `route` | 路由到专家或 Skill | `run_id`、`agent_name`、`skill` |
 | `progress` | 当前运行阶段 | `run_id`、`phase`、`agent_name`、`skill`、`text` |
-| `message` | 完整消息 | `message_id`、`speaker`、`message`、`created_at`、`client_message_id`、`skill_result` |
+| `message` | 完整消息 | `message_id`、`speaker`、`message`、`created_at`、`skill_result` |
 | `end` | 本轮结束 | `run_id`、`phase`、`waiting_for_user`、`suggested_next_speaker`、`suggested_add_agent_names` |
 | `error` | 错误 | `run_id`、`code`、`message` |
 
@@ -510,7 +510,7 @@ data: {"key":"value"}
 - `progress.phase` 必须等于当前 `runtime.json.phase`；平台不使用 `meta.phase`。
 - `end.waiting_for_user=true` 表示界面应等待用户继续输入或确认。
 - 平台不提供 `discussion_ended` 字段；`end` 表示当前回合结束，不表示整个会话关闭。
-- `tool_start`、`tool_result` 不作为顶层 SSE 事件；工具明细进入执行 trace、运行日志或 `skill_result.artifacts`，前端通过消息右侧终端图标按 `message_id` 拉取执行日志。
+- `tool_start`、`tool_result` 不作为顶层 SSE 事件；工具明细进入执行 trace 或运行日志，前端通过消息右侧终端图标按 `message_id` 拉取执行日志。
 - `error.message` 只放错误文本，不承载附件、主持人下一步或完整消息结构；需要给用户展示的恢复说明应另发标准 `message` 事件。
 - 前端可以把 `progress.phase` 映射成中文 UI 文案，但不能把 UI 文案或本地 `_streaming` 状态写回 API、历史、运行态或 mock。
 - 前端不得从 `message.content` 正则推断招募专家、下一位专家、文件引用或路由结果；这些必须来自结构化字段。

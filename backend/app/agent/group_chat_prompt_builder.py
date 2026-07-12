@@ -37,9 +37,8 @@ def build_expert_turn_prompt(
 ) -> PromptBundle:
     """Build the HumanMessage content for one expert turn.
 
-    `next_action` is the host handoff contract. It must stay visible to the
-    expert, while the latest user input stays explicit instead of only appearing
-    inside a clipped history excerpt.
+    `next_action` is the internal task text derived from the routing message.
+    It stays visible to the expert while the latest user input remains explicit.
     """
     task_text = (next_action or "").strip() or DEFAULT_EXPERT_TASK
     current_user_input = (user_message or "").strip() or "（无）"
