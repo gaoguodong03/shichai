@@ -15,7 +15,7 @@ const messageListTs = readFileSync(
 
 assert.match(
   messagesVue,
-  /v-if="showMessageActions\(msg\)"[\s\S]*?class="\['group-chat-bubble-actions', msg\.role === 'user' && 'group-chat-bubble-actions-user'\]"/,
+  /v-if="showMessageActions\(msg\)"[\s\S]*?class="\['group-chat-bubble-actions', messageSpeakerType\(msg\) === 'user' && 'group-chat-bubble-actions-user'\]"/,
   '所有非系统消息应使用同一组消息操作按钮，用户消息右对齐',
 )
 
@@ -29,11 +29,16 @@ assert.match(messageListTs, /function isMessageCopied\(msg: MsgExt\)/, '复制�
 assert.match(messageListTs, /await navigator\.clipboard\.writeText\(content\)[\s\S]*?markMessageCopied\(msg\)/, '只有剪贴板写入成功后才应标记已复制')
 
 for (const label of ['从此刻分叉会话', '回溯到此发言']) {
-  assert.doesNotMatch(messagesVue, new RegExp(label), `消息操作栏不应再包含“${label}”`)
+  assert.match(messagesVue, new RegExp(label), `消息操作栏应包含“${label}”图标按钮`)
 }
+
+for (const icon of ['terminal.svg', 'chevron-up.svg', 'chevron-down.svg', 'branch.svg', 'rollback.svg']) {
+  assert.match(messagesVue, new RegExp(icon.replace('.', '\\.')), `消息组件应使用 ${icon}`)
+}
+assert.match(messagesVue, /file\.svg/, '消息产物列表应使用项目文件图标')
 
 assert.match(
   messageListTs,
-  /function messageActionContent\(msg: MsgExt\)[\s\S]*?msg\.role === 'user'[\s\S]*?formatUserBubbleForDisplay/,
+  /function messageActionContent\(msg: MsgExt\)[\s\S]*?messageSpeakerType\(msg\) === 'user'/,
   '用户消息的拷贝和保存应使用气泡中可见的正文',
 )

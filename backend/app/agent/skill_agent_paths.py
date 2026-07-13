@@ -87,12 +87,3 @@ def _apply_audio_asr_path_from_user_message(
     if converted and converted != cur:
         logger.info("audio_asr: 工作区音频路径转换为 backend/data 路径: %s -> %s", cur, converted)
         arguments["path"] = converted
-
-
-def _apply_image_generation_workspace_id(arguments: dict, workspace_id: str) -> None:
-    wid = (workspace_id or "").strip()
-    if not wid:
-        return
-    if str(arguments.get("workspace_id") or "").strip():
-        return
-    arguments["workspace_id"] = wid

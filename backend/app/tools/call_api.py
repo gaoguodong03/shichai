@@ -3,10 +3,35 @@ import ipaddress
 import json
 import os
 import re
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
+
+
+@dataclass(frozen=True)
+class HttpToolResponse:
+    """Raw successful HTTP response retained for platform-level artifact ingestion."""
+
+    status_code: int
+    content_type: str
+    body: bytes
+    url: str
+    text: str = ""
+    json_data: Any = None
+
+    def to_model_text(self) -> str:
+        raw = self.text if self.text else self.body.decode("utf-8", errors="replace")
+        if self.json_data is not None:
+            rendered = json.dumps(self.json_data, ensure_ascii=False, indent=2)
+        else:
+            try:
+                data = json.loads(raw)
+                rendered = json.dumps(data, ensure_ascii=False, indent=2)
+            except Exception:
+                rendered = _format_non_json_body(raw, self.content_type, self.url)
+        return f"状态码: {self.status_code}\n\n{rendered}"
 
 
 def _looks_like_html(body: str, content_type: str) -> bool:
@@ -165,13 +190,13 @@ def _ssrf_block_reason(url: str) -> Optional[str]:
     return None
 
 
-def _call_api_impl(
+def _call_api_response_impl(
     url: str,
     method: str = "GET",
     headers_json: str = "",
     body: str = "",
     timeout_seconds: Optional[float] = None,
-) -> str:
+) -> HttpToolResponse | str:
     """
     调用外部 HTTP API。
     参数：url（必填，需含 http:// 或 https://）；method（GET/POST/PUT/DELETE 等，默认 GET）；
@@ -209,15 +234,18 @@ def _call_api_impl(
     try:
         with httpx.Client(timeout=timeout_sec) as client:
             resp = client.request(method, url, content=body if body else None, headers=headers or None)
-        raw = resp.text
-        ct = resp.headers.get("content-type", "") or ""
         try:
-            data = resp.json()
-            text = json.dumps(data, ensure_ascii=False, indent=2)
+            response_json = resp.json()
         except Exception:
-            text = _format_non_json_body(raw, ct, url)
-
-        return f"状态码: {resp.status_code}\n\n{text}"
+            response_json = None
+        return HttpToolResponse(
+            status_code=resp.status_code,
+            content_type=resp.headers.get("content-type", "") or "",
+            body=bytes(getattr(resp, "content", None) or str(resp.text or "").encode("utf-8")),
+            url=str(getattr(resp, "url", None) or url),
+            text=resp.text,
+            json_data=response_json,
+        )
     except httpx.TimeoutException:
         return f"错误：请求超时（{timeout_sec} 秒）。"
     except Exception as e:
@@ -233,3 +261,21 @@ def _call_api_impl(
                 "若您要**生成图片**，请改用 image-generation_generate_image 或 volces-icon_generate_app_icon。"
             )
         return f"错误：请求失败 - {e}"
+
+
+def _call_api_impl(
+    url: str,
+    method: str = "GET",
+    headers_json: str = "",
+    body: str = "",
+    timeout_seconds: Optional[float] = None,
+) -> str:
+    """Compatibility text facade for callers that are not executed by the tool runtime."""
+    result = _call_api_response_impl(
+        url=url,
+        method=method,
+        headers_json=headers_json,
+        body=body,
+        timeout_seconds=timeout_seconds,
+    )
+    return result.to_model_text() if isinstance(result, HttpToolResponse) else result

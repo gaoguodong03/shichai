@@ -756,7 +756,7 @@ def test_read_workspace_file_rejects_json_wrapped_path_argument():
 
     assert "path 不能是 JSON 包装字符串" in out
 
-    source = Path("backend/app/tools/read_file.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "app/tools/read_file.py").read_text(encoding="utf-8")
     assert "__arg1" not in source
 
 
@@ -768,7 +768,7 @@ def test_write_workspace_file_rejects_json_wrapped_path_argument():
 
     assert "path 不能是 JSON 包装字符串" in out
 
-    source = Path("backend/app/tools/write_workspace_file.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "app/tools/write_workspace_file.py").read_text(encoding="utf-8")
     assert "__arg1" not in source
     assert "__arg2" not in source
 

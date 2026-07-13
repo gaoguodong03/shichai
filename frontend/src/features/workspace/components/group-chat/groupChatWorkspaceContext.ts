@@ -33,6 +33,9 @@ export interface GroupChatMessageContext {
   messageSkill: ContextValue
   messageCreatedAt: ContextValue
   messageContent: ContextValue
+  messageTargetAgentName: ContextValue
+  messageArtifactItems: ContextValue
+  openMessageArtifact: ContextValue
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
   formatSkill: ContextValue

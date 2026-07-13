@@ -678,6 +678,8 @@ Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `
 | `skill_result.next_action.skill_session` | 脚本 stdout / 后端 finalizer | 下一轮续跑意图 | 只控制下一条用户消息是否保留同一专家和同一 Skill。 |
 | `tool_execution.status` | 工具运行日志 | 日志面板、排障 | 只表示一次工具调用结果；不得驱动主持人路由或 Skill 会话状态。 |
 | `runtime.phase` / `progress.phase` / `end.phase` | 后端运行态 | 前端运行状态 | 只表示当前回复运行阶段；不得与接口 `status` 或 Skill `execution_status` 混用。 |
+
+MCP / HTTP 工具返回的结构化图片或二进制资源先进入平台统一产物接收层，再形成 `tool_result.output.artifacts`。会话工作区由当前工具调用上下文确定，不由 LLM 参数、工具名称或第三方资源配置确定。第三方工具返回的任意 `path`、URL 或自然语言声明不自动成为 artifact；只有平台完成内容校验并真实写入当前 workspace 后生成的公开相对路径才有效。
 | `tool_execution.output.content` | 工具运行日志 | 日志面板、排障 | 工具输出文本或摘要，不进入聊天消息正文。 |
 | `tool_execution.output.json_data` | 工具运行日志 | 日志面板、排障 | 工具结构化输出，不进入聊天消息正文。 |
 | `tool_execution.output.artifacts[].path` | 工具运行日志 | 日志面板、排障 | 单次工具调用产物路径；最终用户可见产物仍由 `message.artifacts` 暴露。 |

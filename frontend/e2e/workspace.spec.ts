@@ -160,10 +160,10 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     const row = page.locator('[data-message-id="assistant-history"]')
     await expect(row.locator('.group-chat-bubble .group-chat-bubble-actions')).toHaveCount(0)
     await expect(row.locator('.group-chat-message-stack > .group-chat-bubble-actions')).toBeVisible()
-    await expect(row.locator('.group-chat-bubble-action-btn')).toHaveCount(3)
+    await expect(row.locator('.group-chat-bubble-action-btn')).toHaveCount(5)
     await expect(row.getByRole('button', { name: '删除该发言' })).toHaveAttribute('title', '删除该发言')
-    await expect(row.getByRole('button', { name: '从此刻分叉会话' })).toHaveCount(0)
-    await expect(row.getByRole('button', { name: '回溯到此发言' })).toHaveCount(0)
+    await expect(row.getByRole('button', { name: '从此刻分叉会话' })).toBeVisible()
+    await expect(row.getByRole('button', { name: '回溯到此发言' })).toBeVisible()
 
     const copyButton = row.getByRole('button', { name: '拷贝发言内容' })
     await copyButton.click()
@@ -212,12 +212,15 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
   test('专家消息通过 message.artifacts 展示公开产物引用', async ({ page }) => {
     const state = createE2eState()
+    state.fileContent['session-existing:one.md'] = '# 产物一\n\n来自消息产物列表。\n'
+    state.fileContent['session-existing:two.md'] = '# 产物二\n'
     state.sessions[0].messages = [
       {
         message_id: 'assistant-artifacts',
         speaker: { type: 'expert', agent_name: '问答专家' },
         message: {
           content: '产物已经写入工作区。',
+          target_agent_name: '写作专家',
           artifacts: [
             { type: 'file', name: 'one.md', path: 'one.md' },
             { type: 'file', name: 'two.md', path: 'two.md' },
@@ -238,7 +241,13 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('heading', { name: '已有验收会话' }).click()
 
     const row = page.locator('[data-message-id="assistant-artifacts"]')
-    await expect(row.getByRole('button', { name: /artifact:/ })).toHaveCount(0)
+    await expect(row.getByText('发送给：写作专家')).toBeVisible()
+    await expect(row.getByRole('button', { name: '预览文件 one.md' })).toBeVisible()
+    await expect(row.getByRole('button', { name: '预览文件 two.md' })).toBeVisible()
+    await expect(row.locator('.group-chat-sandbox-group-count')).toHaveText('1')
+    await row.getByRole('button', { name: '预览文件 one.md' }).click()
+    await expect(page.locator('.group-chat-workspace-preview-title')).toHaveText('one.md')
+    await expect(page.getByRole('heading', { name: '产物一' })).toBeVisible()
     await row.getByRole('button', { name: '查看工具日志' }).click()
     await expect(row.locator('.group-chat-execution-log-panel')).toContainText('write_workspace_file')
     await row.locator('.group-chat-execution-log-summary').click()

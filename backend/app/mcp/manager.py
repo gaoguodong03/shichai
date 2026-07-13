@@ -820,20 +820,19 @@ class MCPToolManager:
                             "Please retry once; if it persists, check upstream MCP service health."
                         )
                     return f"Error: {err or 'MCP tool call failed'}"
-                if result.content:
-                    block = result.content[0]
-                    text = block.text if hasattr(block, "text") else str(block)
-                else:
-                    text = str(result)
+                text_length = sum(
+                    len(str(getattr(block, "text", "") or ""))
+                    for block in (getattr(result, "content", None) or [])
+                )
                 logger.info(
                     "mcp_tool_call_done server=%s tool=%s ok=true elapsed_ms=%s arg_keys=%s result_len=%s",
                     server_name or "",
                     original_tool_name,
                     elapsed_ms,
                     sorted(call_kwargs.keys()),
-                    len(str(text or "")),
+                    text_length,
                 )
-                return text
+                return result
             except Exception as e:
                 logger.error("MCP 工具执行错误: %s", e, exc_info=True)
                 return f"Error: {e}"

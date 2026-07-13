@@ -61,13 +61,13 @@
                             :title="isMessageExecutionLogsOpen(msg) ? '隐藏工具日志' : '查看工具日志'"
                             @click="toggleMessageExecutionLogs(msg)"
                           >
-                            <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <rect x="3" y="4" width="18" height="16" rx="3" />
-                              <path d="M8 9l3 3-3 3" />
-                              <path d="M13 15h3" />
-                            </svg>
-                            <span v-if="messageExecutionLogRows(msg).length" class="group-chat-sandbox-group-count" aria-hidden="true">{{ messageExecutionLogRows(msg).length }}</span>
-                            <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                            <span class="group-chat-sandbox-group-icon group-chat-message-icon-mask" :style="messageIconStyle(terminalIconUrl)" aria-hidden="true" />
+                            <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ messageExecutionLogRows(msg).length }}</span>
+                            <span
+                              class="group-chat-tool-chevron group-chat-message-icon-mask"
+                              :style="messageIconStyle(isMessageExecutionLogsOpen(msg) ? chevronUpIconUrl : chevronDownIconUrl)"
+                              aria-hidden="true"
+                            />
                           </button>
                         </div>
                         <div
@@ -135,6 +135,28 @@
                             </div>
                           </template>
                         </div>
+                        <div
+                          v-if="messageTargetAgentName(msg) || messageArtifactItems(msg).length"
+                          class="group-chat-message-structured-info"
+                        >
+                          <div v-if="messageTargetAgentName(msg)" class="group-chat-message-target-agent">
+                            发送给：{{ messageTargetAgentName(msg) }}
+                          </div>
+                          <div v-if="messageArtifactItems(msg).length" class="group-chat-message-artifact-list">
+                            <button
+                              v-for="artifact in messageArtifactItems(msg)"
+                              :key="`${msg.message_id || i}-artifact-${artifact.path}`"
+                              type="button"
+                              class="group-chat-message-artifact-btn"
+                              :aria-label="`预览文件 ${artifact.name}`"
+                              :title="artifact.path"
+                              @click="openMessageArtifact(artifact)"
+                            >
+                              <span class="group-chat-message-artifact-icon group-chat-message-icon-mask" :style="messageIconStyle(fileIconUrl)" aria-hidden="true" />
+                              <span>{{ artifact.name }}</span>
+                            </button>
+                          </div>
+                        </div>
                         </div>
                         <div
                           v-if="showMessageActions(msg)"
@@ -183,6 +205,28 @@
                             </svg>
                           </button>
                           <button
+                            v-if="msg.message_id"
+                            type="button"
+                            class="group-chat-bubble-action-btn"
+                            aria-label="从此刻分叉会话"
+                            title="从此刻分叉会话"
+                            :disabled="!canMessageStateAction(msg, i)"
+                            @click="forkMessageState(msg, i)"
+                          >
+                            <span class="group-chat-action-icon group-chat-message-icon-mask" :style="messageIconStyle(branchIconUrl)" aria-hidden="true" />
+                          </button>
+                          <button
+                            v-if="msg.message_id"
+                            type="button"
+                            class="group-chat-bubble-action-btn"
+                            aria-label="回溯到此发言"
+                            title="回溯到此发言"
+                            :disabled="!canMessageStateAction(msg, i)"
+                            @click="rollbackMessageState(msg, i)"
+                          >
+                            <span class="group-chat-action-icon group-chat-message-icon-mask" :style="messageIconStyle(rollbackIconUrl)" aria-hidden="true" />
+                          </button>
+                          <button
                             type="button"
                             class="group-chat-bubble-action-btn"
                             aria-label="保存到工作区"
@@ -213,6 +257,12 @@
 <script setup lang="ts">
 import { useGroupChatMessageContext } from './groupChatWorkspaceContext'
 import type { GroupMessage } from '../../composables/useGroupMessageList'
+import terminalIconUrl from '@/assets/icons/message/terminal.svg'
+import chevronUpIconUrl from '@/assets/icons/message/chevron-up.svg'
+import chevronDownIconUrl from '@/assets/icons/message/chevron-down.svg'
+import branchIconUrl from '@/assets/icons/message/branch.svg'
+import rollbackIconUrl from '@/assets/icons/message/rollback.svg'
+import fileIconUrl from '@/assets/icons/workspace/file.svg'
 
 const {
   groupMessagesRef,
@@ -229,6 +279,9 @@ const {
   messageSkill,
   messageCreatedAt,
   messageContent,
+  messageTargetAgentName,
+  messageArtifactItems,
+  openMessageArtifact,
   activeStreamingSpeakerName,
   streamingPulse,
   formatSkill,
@@ -250,10 +303,20 @@ const {
   toggleExecutionLogDetail,
   isExecutionLogDetailOpen,
   toggleMessageExecutionLogs,
+  forkMessageState,
+  rollbackMessageState,
+  canMessageStateAction,
 } = useGroupChatMessageContext()
 
 function showMessageActions(msg: GroupMessage) {
-  return Boolean(messageContent(msg).trim())
+  return Boolean(messageContent(msg).trim() || msg.message_id)
+}
+
+function messageIconStyle(url: string) {
+  return {
+    WebkitMaskImage: `url(${url})`,
+    maskImage: `url(${url})`,
+  }
 }
 
 function formatExecutionLogStatus(status?: string) {

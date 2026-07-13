@@ -120,26 +120,6 @@ def test_apply_audio_asr_path_does_not_infer_from_user_message_file_ref(monkeypa
     assert args == {"language": "zh"}
 
 
-def test_apply_image_generation_workspace_id_defaults_to_current_workspace():
-    from app.agent import skill_agent_paths
-
-    args = {"description": "河南胡辣汤封面", "workspace_id": ""}
-
-    skill_agent_paths._apply_image_generation_workspace_id(args, "group-image")
-
-    assert args["workspace_id"] == "group-image"
-
-
-def test_apply_image_generation_workspace_id_preserves_explicit_workspace():
-    from app.agent import skill_agent_paths
-
-    args = {"description": "河南胡辣汤封面", "workspace_id": "custom-workspace"}
-
-    skill_agent_paths._apply_image_generation_workspace_id(args, "group-image")
-
-    assert args["workspace_id"] == "custom-workspace"
-
-
 def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     import app.mcp.manager as mcp_manager
 
@@ -1255,7 +1235,7 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
     tool = mgr._create_tool_spec(mcp_tool, session="stale-session", server_name="mcp-exa")
     out = await tool.acall(query="pytest")
 
-    assert out == "ok after reconnect"
+    assert out.content[0].text == "ok after reconnect"
     assert reconnects == ["mcp-exa"]
     assert calls[0][3] == "stale-session"
     assert calls[1][3] == "fresh-session"

@@ -40,6 +40,7 @@ LAYER1_CORE_MODULES: frozenset[str] = frozenset(
         "test_session_preset_validate",
         "test_simple_agent_tool_intent",
         "test_skill_agent_tool_resolution",
+        "test_tool_artifact_ingestion",
         "test_sandbox_service",
         "test_workspace_files",
     }

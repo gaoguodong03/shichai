@@ -45,7 +45,7 @@
 
 这些内容进入专项测试、全流程测试或上线前手工验收。
 
-## 已纳入第一层的测试文件（当前 24 个）
+## 已纳入第一层的测试文件（当前 25 个）
 
 以下列表必须与 `backend/tests/conftest.py` 的 `LAYER1_CORE_MODULES` 同步。
 
@@ -78,6 +78,7 @@
 | `test_file_ref_and_gateway.py` | 文件引用、路径保护、工具网关、MCP 参数和脚本执行入口。 |
 | `test_group_chat_skill_script_cli_flow.py` | 群聊中 Skill 脚本工具调用、manifest 参数和 CLI 转换。 |
 | `test_skill_agent_tool_resolution.py` | Skill 工具名解析、别名拒绝和标准 stdout 摘要。 |
+| `test_tool_artifact_ingestion.py` | MCP / HTTP 结构化图片和二进制返回的安全校验、会话工作区落盘与 artifact 生成。 |
 | `test_simple_agent_tool_intent.py` | SimpleAgent 工具意图、工具结果综合和错误停止规则。 |
 | `test_llm_config.py` | LLM provider 配置、环境变量引用、参数白名单和提示日志。 |
 

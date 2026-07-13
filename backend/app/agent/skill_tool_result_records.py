@@ -115,7 +115,19 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
         raw_message = str(raw_payload.get("message") or raw_payload.get("content") or "").strip()
         if raw_message:
             message = raw_message
-            output = {"content": raw_message, "json_data": raw_payload}
+            output = {"content": raw_message}
+            json_data = raw_payload.get("json_data")
+            if isinstance(json_data, dict):
+                output["json_data"] = json_data
+        raw_status = str(raw_payload.get("execution_status") or "").strip()
+        if raw_status in {"succeeded", "failed", "blocked"}:
+            status = raw_status
+            if status == "failed":
+                error_log = {
+                    "message": message or "工具执行失败",
+                    "raw_output": text,
+                    "retryable": False,
+                }
     if str(tool_name or "").startswith("run_skill_script_") and isinstance(raw_payload, dict):
         stdout = str(raw_payload.get("stdout") or "")
         stderr = str(raw_payload.get("stderr") or "")

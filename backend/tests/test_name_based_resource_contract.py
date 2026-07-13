@@ -105,10 +105,10 @@ def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
         called.update(kwargs)
         return "ok"
 
-    monkeypatch.setattr(call_api_mod, "_call_api_impl", fake_call_api)
+    monkeypatch.setattr(call_api_mod, "_call_api_response_impl", fake_call_api)
     import app.tools.http_api_tool as http_api_tool_mod
 
-    monkeypatch.setattr(http_api_tool_mod, "_call_api_impl", fake_call_api)
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_response_impl", fake_call_api)
     tool = create_http_api_tool(
         {
             "name": "Exa 搜索",
@@ -148,10 +148,10 @@ def test_saved_http_api_tool_only_resolves_platform_env_syntax(monkeypatch):
         return "ok"
 
     monkeypatch.setenv("EXA_API_KEY", "host-secret")
-    monkeypatch.setattr(call_api_mod, "_call_api_impl", fake_call_api)
+    monkeypatch.setattr(call_api_mod, "_call_api_response_impl", fake_call_api)
     import app.tools.http_api_tool as http_api_tool_mod
 
-    monkeypatch.setattr(http_api_tool_mod, "_call_api_impl", fake_call_api)
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_response_impl", fake_call_api)
     tool = create_http_api_tool(
         {
             "name": "Exa 搜索",

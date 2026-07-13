@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_spec import ToolSpec
-from app.tools.call_api import _call_api_impl
+from app.tools.call_api import _call_api_response_impl
 
 _TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 
@@ -77,7 +77,7 @@ def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = 
     cfg = (row or {}).get("config") if isinstance((row or {}).get("config"), dict) else {}
     env_vars = env_vars or {}
 
-    def _execute(query: Dict[str, Any] | None = None, body: Any = None, headers: Dict[str, Any] | None = None) -> str:
+    def _execute(query: Dict[str, Any] | None = None, body: Any = None, headers: Dict[str, Any] | None = None) -> object:
         merged_query = _subst_jsonish(_merge_dict(cfg.get("query"), query), env_vars)
         merged_headers = _subst_jsonish(_merge_dict(cfg.get("header"), headers), env_vars)
         configured_body = cfg.get("body")
@@ -89,7 +89,7 @@ def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = 
             _append_path(_subst_placeholders(str(cfg.get("base_url") or ""), env_vars), str(cfg.get("path") or "")),
             merged_query,
         )
-        return _call_api_impl(
+        return _call_api_response_impl(
             url=url,
             method=str(cfg.get("type") or "GET"),
             headers_json=json.dumps(merged_headers, ensure_ascii=False) if merged_headers else "",

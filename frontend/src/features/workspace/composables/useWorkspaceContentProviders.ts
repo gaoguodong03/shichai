@@ -1,5 +1,5 @@
 import { apiRequest } from '@/api/base'
-import { ref, watch, computed } from 'vue'
+import { nextTick, ref, watch, computed } from 'vue'
 import {
   provideGroupChatComposerContext,
   provideGroupChatMessageContext,
@@ -200,6 +200,14 @@ export function useWorkspaceContentProviders(args: {
     await refreshGroupWorkspaceAfterExternalChange()
   }
 
+  async function previewMessageArtifact(artifact: { name: string; path: string }) {
+    if (!showGroupWorkspace.value) {
+      showGroupWorkspace.value = true
+      await nextTick()
+    }
+    await previewWorkspaceFile(artifact)
+  }
+
   const {
     groupMessagesRef,
     groupDisplayMessages,
@@ -215,6 +223,9 @@ export function useWorkspaceContentProviders(args: {
     messageSkill,
     messageCreatedAt,
     messageContent,
+    messageTargetAgentName,
+    messageArtifactItems,
+    openMessageArtifact,
     saveAgentMessageToFile,
     copyAgentMessageToClipboard,
     isMessageCopied,
@@ -231,6 +242,7 @@ export function useWorkspaceContentProviders(args: {
     loadGroupDetail,
     onSessionForked,
     onSessionRolledBack,
+    previewMessageArtifact,
   })
   const {
     showInsertFileModal,
@@ -538,6 +550,9 @@ export function useWorkspaceContentProviders(args: {
     messageSkill,
     messageCreatedAt,
     messageContent,
+    messageTargetAgentName,
+    messageArtifactItems,
+    openMessageArtifact,
     activeStreamingSpeakerName,
     streamingPulse,
     formatSkill,

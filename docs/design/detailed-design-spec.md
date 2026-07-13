@@ -438,8 +438,11 @@ POST /api/sessions/{session_id}/chat/stream
 3. 资源详情页可测试连接和查看工具列表。
 4. 专家运行时根据 Skill `allowed-tools.mcp` 加载允许的 MCP Server。
 5. 工具调用通过 MCP manager 执行，调用事实写入执行 trace 或运行日志，并交给专家继续判断下一步。
+6. MCP / HTTP 保留原始协议返回；统一产物接收层从当前调用上下文取得会话工作区，校验标准图片或二进制内容并落盘，再生成 `tool_result.output.artifacts`。
 
 MCP / HTTP / workspace 工具本身不返回 `next_action`。工具执行后回到 LLM，由模型判断继续调用工具或进入 finalizer；finalizer 必须输出完整 `expert_final_state.v2`。工具记录不是消息或跨轮路由事实源，MCP 原始正文、stdout 和 stderr 不进入聊天气泡。
+
+第三方 MCP / HTTP 配置保持标准导入即用，不新增平台专属 `workspace_id` 参数。禁止按工具名硬编码保存逻辑，也禁止从任意文本、URL 字段或工具声明路径猜测产物；平台只接收协议可确定识别且通过安全校验的内容。
 
 关键文件：
 

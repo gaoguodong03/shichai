@@ -384,6 +384,10 @@ Skill frontmatter 和正文共同决定专家本轮能力边界。
 
 MCP 原始正文、网页正文、stdout、stderr、调用参数和耗时属于工具结果或日志，不属于 `message.content`。如果工具产生了文件、图片或目录，工具层只能登记到 `tool_result.output.artifacts` 或执行日志 `output.artifacts`；是否作为用户可见产物出现在聊天消息里，必须由 finalizer 显式写入 `expert_final_state.v2.message.artifacts`。
 
+MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产物保存参数。工具必须按自身原协议返回；平台在工具返回后、生成 `tool_result` 前运行统一产物接收层，并使用当前工具调用已经绑定的会话上下文完成落盘。产物接收不得按工具名、MCP server 名、HTTP 工具名或业务字段名分支，也不得向第三方工具 schema 注入额外参数。
+
+统一产物接收层只自动处理可程序验证的协议内容：MCP `ImageContent`、`EmbeddedResource` 中的二进制资源，以及 HTTP 响应的明确二进制 `Content-Type`。普通文本、任意 JSON 字段、自然语言中的 URL 或工具声称的本地路径不得通过猜测转换成产物。平台必须在工作区内生成目标路径，完成大小限制、真实 MIME、内容有效性、路径穿越和落盘存在性校验后，才能登记 `tool_result.output.artifacts`。
+
 #### 2.5.14.1 `tool_result`、Skill 执行上下文与 `skill_result` 的关系
 
 三者不是逐层嵌套的三个响应对象：
@@ -1129,6 +1133,8 @@ run_skill_script_<skill>
 ### 5.4 MCP 与 HTTP
 
 MCP 工具走 `app.mcp.manager`。保存的 HTTP API 工具走 `create_http_api_tool()`，由资源中心保存的 URL、method、默认 query/header/body 决定请求目标；后端执行时必须做 SSRF、用户级环境变量引用和 URL 安全校验。
+
+MCP manager 必须保留 SDK 的结构化 `CallToolResult`，不得在产物接收前只取第一个 content block 或整体压成字符串。HTTP API wrapper 必须在产物接收前保留响应状态、`Content-Type` 和原始 body。两类工具的资源配置均保持导入即用，不增加施才专属保存字段。
 
 MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具执行后回到 LLM 决策：LLM 可以继续调用工具，也可以进入专家 finalizer。最终进入聊天气泡的必须是 finalizer 生成并通过校验的 `expert_final_state.v2.message.content`，不是工具原始返回，也不是工具循环中的中间 `AIMessage.content`。工具调用参数、stdout、stderr、结构化返回、MCP 原始正文和调用耗时属于执行 trace 或运行日志，不进入前端消息 payload，也不作为跨轮路由事实源。
 

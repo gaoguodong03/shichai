@@ -31,6 +31,10 @@ pypdf>=4.0.0
 python-docx>=1.0.0
 openpyxl>=3.1.0
 
+# 工具返回产物校验：按文件头识别真实类型，并验证图片内容
+filetype==1.2.0
+Pillow==12.3.0
+
 # 测试（下限对齐 pytest 8 + asyncio 插件；不设上限以便跟随安全修复）
 pytest>=8.2.0,<10
 pytest-asyncio>=0.24.0

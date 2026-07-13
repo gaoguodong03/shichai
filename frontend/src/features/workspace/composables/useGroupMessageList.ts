@@ -21,6 +21,7 @@ export type GroupMessage = {
   message?: {
     content?: string
     attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    artifacts?: Array<{ type: string; path: string; name?: string }>
     target_agent_name?: string | null
   }
   created_at?: string
@@ -40,6 +41,8 @@ type MsgExt = {
   message?: {
     content?: string
     attachments?: Array<{ type?: string; path?: string; name?: string }>
+    artifacts?: Array<{ type?: string; path?: string; name?: string }>
+    target_agent_name?: string | null
   }
 }
 
@@ -50,6 +53,7 @@ export function useGroupMessageList(args: {
   loadGroupDetail: () => Promise<void> | void
   onSessionForked: (sessionId: string) => void | Promise<void>
   onSessionRolledBack: () => void | Promise<void>
+  previewMessageArtifact: (artifact: { name: string; path: string }) => void | Promise<void>
 }) {
   const {
     groupDetail,
@@ -58,6 +62,7 @@ export function useGroupMessageList(args: {
     loadGroupDetail,
     onSessionForked,
     onSessionRolledBack,
+    previewMessageArtifact,
   } = args
 
   const groupMessagesRef = ref<HTMLElement | null>(null)
@@ -229,6 +234,27 @@ export function useGroupMessageList(args: {
     return [...new Set(names)]
   }
 
+  function messageTargetAgentName(msg: MsgExt): string {
+    return String(msg?.message?.target_agent_name || '').trim()
+  }
+
+  function messageArtifactItems(msg: MsgExt): Array<{ type: string; name: string; path: string }> {
+    const artifacts = Array.isArray(msg?.message?.artifacts) ? msg.message.artifacts : []
+    return artifacts.flatMap((item) => {
+      const path = String(item?.path || '').trim()
+      if (!path) return []
+      return [{
+        type: String(item?.type || 'file').trim() || 'file',
+        name: String(item?.name || path.split('/').pop() || path).trim(),
+        path,
+      }]
+    })
+  }
+
+  async function openMessageArtifact(artifact: { name: string; path: string }) {
+    await previewMessageArtifact(artifact)
+  }
+
   function messageActionContent(msg: MsgExt): string {
     const content = messageContent(msg)
     return messageSpeakerType(msg) === 'user' ? content : agentBodyContent(content)
@@ -379,19 +405,35 @@ export function useGroupMessageList(args: {
     }
     expandedExecutionLogMessageId.value = messageId
     expandedExecutionLogKey.value = ''
-    if (messageExecutionLogs.value[messageId]) return
+    if (Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) return
+    await loadMessageExecutionLogs(msg, true)
+  }
+
+  async function loadMessageExecutionLogs(msg: MsgExt & { message_id?: string }, notifyOnError = false) {
+    const sessionId = String(groupDetail.value?.id || '').trim()
+    const messageId = String(msg?.message_id || '').trim()
+    if (!sessionId || !messageId) return
+    if (Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) return
+    if (messageExecutionLogsLoading.value[messageId]) return
     messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: true }
     try {
       const response = await fetchMessageExecutionLogs(sessionId, messageId)
+      if (String(groupDetail.value?.id || '').trim() !== sessionId) return
       messageExecutionLogs.value = {
         ...messageExecutionLogs.value,
         [messageId]: Array.isArray(response.data?.logs) ? response.data.logs : [],
       }
     } catch {
       messageExecutionLogs.value = { ...messageExecutionLogs.value, [messageId]: [] }
-      await appAlert({ title: '日志加载失败', message: '工具日志加载失败', variant: 'danger' })
+      if (notifyOnError) await appAlert({ title: '日志加载失败', message: '工具日志加载失败', variant: 'danger' })
     } finally {
       messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: false }
+    }
+  }
+
+  function preloadMessageExecutionLogs(messages: GroupMessage[]) {
+    for (const msg of messages) {
+      if (canShowMessageExecutionLogs(msg)) void loadMessageExecutionLogs(msg)
     }
   }
 
@@ -490,6 +532,10 @@ export function useGroupMessageList(args: {
   watch(
     () => groupDetail.value?.id,
     (sessionId) => {
+      messageExecutionLogs.value = {}
+      messageExecutionLogsLoading.value = {}
+      expandedExecutionLogMessageId.value = ''
+      expandedExecutionLogKey.value = ''
       if (sessionId) loadSessionCheckpoints()
       else sessionCheckpoints.value = []
     },
@@ -512,6 +558,7 @@ export function useGroupMessageList(args: {
       const shouldFollow = sessionChanged || isNearGroupBottom()
       const nextMessages = Array.isArray(messages) ? messages.map(toDisplayMessage) : []
       groupDisplayMessages.value = nextMessages
+      preloadMessageExecutionLogs(nextMessages)
       nextTick(() => {
         scheduleHydrateAuthImages()
         if (sessionChanged) {
@@ -537,6 +584,9 @@ export function useGroupMessageList(args: {
     messageContent,
     isShortSingleLine,
     userAttachmentNames,
+    messageTargetAgentName,
+    messageArtifactItems,
+    openMessageArtifact,
     formatGroupMsgTime,
     formatGroupMsgFullTime,
     saveAgentMessageToFile,

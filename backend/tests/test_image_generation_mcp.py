@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import base64
-import json
-import re
-from pathlib import Path
 
 import pytest
 import httpx
+from mcp.types import ImageContent, TextContent
 
 from app.mcp.stdio import image_generation
 from app.tools import chatanywhere_image_cli_lib
@@ -35,148 +33,27 @@ def test_get_api_key_ignores_legacy_chatanywhere_env(monkeypatch: pytest.MonkeyP
         image_generation.get_api_key()
 
 
-def test_generate_image_saves_data_url_to_workspace(
+def test_generate_image_returns_standard_mcp_content_without_saving(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ):
-    workspace_root = tmp_path / "users" / "u1" / "sessions" / "workspaces" / "s1"
     image_b64 = base64.b64encode(b"fake-png").decode("ascii")
 
-    monkeypatch.setattr(image_generation, "get_workspace_root_path", lambda workspace_id: workspace_root)
     monkeypatch.setattr(
         image_generation,
         "_generate_image",
         lambda *, description, pic_size: f"data:image/png;base64,{image_b64}",
     )
 
-    result = json.loads(
-        image_generation.generate_image(
-            description="古风少年站在雪夜山门前",
-            pic_size="1024x1024",
-            workspace_id="s1",
-        )
+    result = image_generation.generate_image(
+        description="古风少年站在雪夜山门前",
+        pic_size="1024x1024",
     )
 
-    assert result["execution_status"] == "succeeded"
-    assert "result_code" not in result
-    assert "message" not in result
-    assert result["content"] == "图片生成完成。"
-    assert len(result["artifacts"]) == 1
-    artifact = result["artifacts"][0]
-    assert set(artifact) == {"type", "name", "path"}
-    assert artifact["type"] == "image"
-    assert artifact["name"].startswith("图片-")
-    assert artifact["path"].startswith("generated_images/图片-")
-    assert re.match(r"^generated_images/图片-\d{16}-[0-9a-f]{8}\.png$", artifact["path"])
-    assert not re.search(r"/图片-\d{8}-\d{6}", artifact["path"])
-    assert artifact["path"].endswith(".png")
-    assert (workspace_root / artifact["path"]).read_bytes() == b"fake-png"
-
-
-def test_generate_image_without_workspace_uses_single_generated_images_dir(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    image_b64 = base64.b64encode(b"fake-jpg").decode("ascii")
-
-    monkeypatch.setattr(image_generation, "DEFAULT_OUTPUT_ROOT", tmp_path / "data")
-    monkeypatch.setattr(
-        image_generation,
-        "_generate_image",
-        lambda *, description, pic_size: f"data:image/jpeg;base64,{image_b64}",
-    )
-
-    result = json.loads(
-        image_generation.generate_image(
-            description="河南胡辣汤封面",
-            pic_size="1024x1792",
-            workspace_id="",
-        )
-    )
-
-    assert result["execution_status"] == "succeeded"
-    assert "result_code" not in result
-    assert "message" not in result
-    assert result["content"] == "图片生成完成。"
-    assert len(result["artifacts"]) == 1
-    artifact = result["artifacts"][0]
-    assert set(artifact) == {"type", "name", "path"}
-    assert artifact["path"].startswith("generated_images/图片-")
-    assert (tmp_path / "data" / artifact["path"]).read_bytes() == b"fake-jpg"
-
-
-def test_generate_image_saves_to_mcp_runtime_user_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    from app.api.group_chat_state import save_session_definitions
-    from app.core.user_context import reset_current_user_identity, set_current_user_identity
-    from app.session_state.service import list_session_checkpoints
-
-    image_b64 = base64.b64encode(b"runtime-user-jpg").decode("ascii")
-
-    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    monkeypatch.setenv("ST49_MCP_USER_ID", "user-runtime")
-    monkeypatch.setenv("ST49_MCP_USERNAME", "runtime@example.com")
-    monkeypatch.setattr(
-        image_generation,
-        "_generate_image",
-        lambda *, description, pic_size: f"data:image/jpeg;base64,{image_b64}",
-    )
-    token = set_current_user_identity(user_id="user-runtime", username="runtime@example.com")
-    try:
-        save_session_definitions(
-            {
-                "group-runtime": {
-                    "title": "图片生成",
-                    "agent_names": [],
-                    "created_at": "2026062908104800",
-                    "updated_at": "2026062908104800",
-                }
-            }
-        )
-    finally:
-        reset_current_user_identity(token)
-
-    result = json.loads(
-        image_generation.generate_image(
-            description="河南烩面封面",
-            pic_size="1024x1792",
-            workspace_id="group-runtime",
-        )
-    )
-
-    expected = (
-        tmp_path
-        / "users"
-        / "user-runtime"
-        / "sessions"
-        / "group-runtime"
-        / "workspace"
-        / result["artifacts"][0]["path"]
-    )
-    assert result["execution_status"] == "succeeded"
-    assert "result_code" not in result
-    assert "message" not in result
-    assert result["content"] == "图片生成完成。"
-    assert len(result["artifacts"]) == 1
-    assert set(result["artifacts"][0]) == {"type", "name", "path"}
-    assert expected.read_bytes() == b"runtime-user-jpg"
-    token = set_current_user_identity(user_id="user-runtime", username="runtime@example.com")
-    try:
-        checkpoints = list_session_checkpoints("group-runtime")
-    finally:
-        reset_current_user_identity(token)
-    assert checkpoints[-1]["trigger"] == "workspace_changed"
-    assert not (
-        tmp_path
-        / "users"
-        / "free4inno"
-        / "sessions"
-        / "workspaces"
-        / "group-runtime"
-        / result["artifacts"][0]["path"]
-    ).exists()
+    assert isinstance(result[0], TextContent)
+    assert result[0].text == "图片生成完成。"
+    assert isinstance(result[1], ImageContent)
+    assert result[1].mimeType == "image/png"
+    assert result[1].data == image_b64
 
 
 def test_generate_image_reports_upstream_http_error_as_failure(monkeypatch: pytest.MonkeyPatch):
@@ -186,13 +63,8 @@ def test_generate_image_reports_upstream_http_error_as_failure(monkeypatch: pyte
         lambda *, description, pic_size: "请求失败 HTTP 301: <html>Moved Permanently</html>",
     )
 
-    result = json.loads(image_generation.generate_image(description="雪夜山门", pic_size="1024x1024"))
-
-    assert result["execution_status"] == "failed"
-    assert "result_code" not in result
-    assert "message" not in result
-    assert result["content"] == "请求失败 HTTP 301: <html>Moved Permanently</html>"
-    assert result["artifacts"] == []
+    with pytest.raises(RuntimeError, match="请求失败 HTTP 301"):
+        image_generation.generate_image(description="雪夜山门", pic_size="1024x1024")
 
 
 def test_chatanywhere_image_default_base_uses_https(monkeypatch: pytest.MonkeyPatch):

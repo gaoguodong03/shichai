@@ -11,7 +11,6 @@ from app.agent.simple_agent import SimpleAgent
 from app.agent.skill_execution_prompt_rules import skill_execution_extra_instructions
 from app.agent.skill_agent_paths import (
     _apply_audio_asr_path_from_user_message,
-    _apply_image_generation_workspace_id,
     _normalize_read_file_path_argument,
     _tool_is_workspace_plain_read_file,
 )
@@ -23,6 +22,7 @@ from app.agent.skill_tool_result_records import (
 )
 from app.agent.structured_output_contracts import ExpertFinalStatePayload, SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
+from app.agent.tool_artifact_ingestion import ingest_tool_result
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +260,10 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
     def _audio_transcription_text_for_prompt(tool_name: str, result: object) -> str | None:
         if not tool_name.startswith("run_skill_script_audio-transcription"):
             return None
-        text = str(result) if not isinstance(result, str) else result
+        if isinstance(result, dict):
+            text = json.dumps(result, ensure_ascii=False)
+        else:
+            text = str(result) if not isinstance(result, str) else result
         try:
             outer = json.loads(text)
         except Exception:
@@ -344,8 +347,6 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             if tool:
                 if tool_name == "audio-asr_transcribe_audio_file":
                     _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
-                if tool_name == "image-generation_generate_image":
-                    _apply_image_generation_workspace_id(arguments, workspace_id)
                 if _tool_is_workspace_plain_read_file(tool_name):
                     _normalize_read_file_path_argument(arguments)
                 tool_attempt_debug.append({
@@ -391,6 +392,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                             sorted(arguments.keys()) if isinstance(arguments, dict) else [],
                         )
                         result = await _execute_tool_safely(tool, arguments)
+                        result = await ingest_tool_result(result, workspace_id=workspace_id)
                         result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
                         logger.info(
                             "skill_tool_execute_done tool=%s elapsed_ms=%s result_len=%s",
