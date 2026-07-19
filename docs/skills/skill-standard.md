@@ -1,13 +1,15 @@
 # 书童四九 Skill 规范
 
-本文定义 Skill 的目录、工具授权、专家最终输出、阶段门禁和上线验收。字段与运行语义以 `docs/contracts/runtime-interface-contract.md` 和 `docs/contracts/data-structure-and-field-logic.md` 为准。
+本文定义普通专家 Skill 的目录、Frontmatter、正文模板和平台职责边界。字段与运行语义以 `docs/contracts/runtime-interface-contract.md`、`docs/contracts/data-structure-and-field-logic.md` 和 `docs/skills/sandbox-tool-interface.md` 为准。
+
+普通 Skill 用来描述一项可复用业务能力的执行方式和结束条件。专家长期职责写在专家资源中，场景阶段和跨专家调度写在主持人 Skill 中，平台协议不复制到普通 Skill。
 
 ## 1. 目录
 
 ```text
 <directory_name>/
   SKILL.md
-  scripts/              # 脚本型 Skill 可选
+  scripts/              # 需要确定性脚本时可选
     manifest.json
     <entry>.py
   references/           # 可选稳定参考
@@ -16,15 +18,15 @@
 
 - `SKILL.md` 是唯一必需入口。
 - 脚本只能位于当前 Skill 的 `scripts/`。
-- 工作产物写入会话 workspace，不写入 Skill 目录。
-- 没有 `scripts/manifest.json` 的脚本不注入为模型工具。
+- 工作产物进入当前会话 workspace，不写入 Skill 目录。
+- 没有 `scripts/manifest.json` 的脚本不作为本轮 Skill 工具加载。
 
 ## 2. Frontmatter
 
 ```yaml
 ---
-name: 示例技能
-description: 当用户需要处理某类明确任务时使用；写清近似任务边界。
+name: 【Skill 名称】
+description: 当【触发条件】时使用；不用于【近似但不适用的任务】。
 allowed-tools:
   mcp: []
   http_api: []
@@ -35,161 +37,117 @@ allowed-tools:
 | 字段 | 规则 |
 | --- | --- |
 | `name` | 必填，用户可读名称。 |
-| `description` | 必填，只写触发场景和边界，不复述完整流程。 |
-| `allowed-tools.mcp` | 允许调用的 MCP server 名称。 |
-| `allowed-tools.http_api` | 允许调用的已保存 HTTP API 工具。 |
-| `allowed-tools.python` | 脚本所需 Python 依赖。 |
+| `description` | 必填，只写触发条件和近似任务边界，不复述正文流程。 |
+| `allowed-tools.mcp` | 本 Skill 允许调用的 MCP server 名称。 |
+| `allowed-tools.http_api` | 本 Skill 允许调用的已保存 HTTP API 工具。 |
+| `allowed-tools.python` | 当前 Skill 脚本所需 Python 依赖。 |
 
-工作区 CRUD 是平台默认能力，不写入 `allowed-tools`。不要兼容旧 `mcp_server_ids`、`api`、`workspace`、`skill_script` 或通用 `call_api` 声明。
+工作区能力由平台提供，不写入 `allowed-tools`。工具声明只使用以上当前字段，不增加兼容字段或通用工具入口。
 
-## 3. 正文结构
+## 3. 平台与 Skill 的职责边界
 
-流程型 Skill 建议包含：角色边界、触发条件、输入要求、阶段与门禁、工具和文件规则、最终输出合同、常见错误。
+### 3.1 平台负责
 
-脚本型 Skill 建议包含：调用时机、manifest 参数、stdout 合同、stderr 和退出码、产物规则、失败处理。
+以下内容由平台统一提供，不写入普通 Skill 正文：
 
-Skill 正文应给出可复制的当前合同，不用旧字段黑名单代替正向模板。
+- 项目整体提示词、专家职责和专家提示词。
+- 当前专家绑定的 Skill 清单。
+- 当前实际可用工具列表及通用工具调用说明。
+- 工作区工具的路径、安全、版本化和真实写入合同。
+- 脚本入口发现、工具命名和通用参数传递方式。
+- 专家最终输出结构、字段枚举、校验和协议失败处理。
+- 工具结果回灌、聊天消息生成和内部流程控制映射。
+- 主持人调度、跨专家交接和场景阶段推进。
 
-## 4. 工作区规则
+普通 Skill 不复制平台 JSON 示例，不解释平台流程控制字段，不列旧字段黑名单，也不要求模型输出隐藏状态块。
 
-- 新建产物优先使用 `create_workspace_artifact`；用户明确指定固定路径时才使用 `write_workspace_file`。
-- `path` 是当前 workspace 相对路径，不写宿主机绝对路径或 `backend/data/`。
-- `content` 是完整文件内容，不写“见上文”、摘要占位或路径说明。
-- 修改已有文件前先列目录并读取真实路径；修改稿另存版本，不覆盖源文件。
-- 只有工具成功后才能说文件已保存。
-- 同一阶段允许一次写入多个必要产物。
-- 工具级产物进入 `tool_result.output.artifacts`；用户可见产物由 finalizer 写入 `message.artifacts`。
+### 3.2 普通 Skill 负责
 
-## 5. 专家最终输出
+普通 Skill 只定义：
 
-所有专家 Skill 最终只输出一个严格 JSON 对象：
+- 这项业务能力特有的处理方式、顺序和质量要求。
+- 业务上何时需要等待用户并保留当前 Skill。
+- 业务上何时已经完成并释放当前 Skill。
+- 确有必要时的阶段门禁、工具选择、文件、脚本或产物规则。
 
-```json
-{
-  "schema_version": "expert_final_state.v2",
-  "execution_status": "succeeded",
-  "message": {
-    "content": "给用户看的自然语言或 Markdown。",
-    "attachments": [],
-    "artifacts": [
-      {"type": "markdown", "name": "结果文件", "path": "outputs/result.md"}
-    ]
-  },
-  "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
-  }
-}
-```
+## 4. 通用模板
 
-字段规则：
+普通 Skill 正文只要求两个部分：`执行规则` 和 `结束条件`。
 
-| 字段 | 规则 |
-| --- | --- |
-| `schema_version` | 固定 `expert_final_state.v2`。 |
-| `execution_status` | `succeeded`、`blocked`、`failed`。 |
-| `message.content` | 面向用户的最终正文，不复制 MCP 原文、stdout、stderr 或工具 JSON。 |
-| `message.attachments` | 传给后续处理的输入文件。 |
-| `message.artifacts` | 本轮向用户暴露的产物，可为多个。 |
-| `next_action.agent_turn` | `continue` 或 `respond`。 |
-| `next_action.skill_session` | `keep` 或 `release`。 |
+````markdown
+---
+name: 【Skill 名称】
+description: 当【触发条件】时使用；不用于【近似但不适用的任务】。
+allowed-tools:
+  mcp: []
+  http_api: []
+  python: []
+---
 
-不得输出隐藏状态块、顶层 `content`、顶层 `artifacts`、`handoff`、`resume`、`reason`、`instruction`、`result_code` 或 `workflow_state`。
+# 【Skill 名称】
 
-## 6. 工具后决策与 finalizer
+## 执行规则
 
-MCP、HTTP 和 workspace 工具只返回工具事实，不返回专家最终消息或 `next_action`。
+- 【本 Skill 特有的处理方式】。
+- 【必须遵守的业务顺序或质量要求】。
+- 【需要时在这里写输入、工具、文件或脚本规则】。
 
-```text
-LLM 决定调用工具
-  -> 工具返回 output.content / json_data / artifacts
-  -> LLM 判断继续调用工具或进入 finalizer
-      -> 继续调用工具：不落最终专家消息
-      -> 进入 finalizer：调用 submit_expert_final_state 提交 expert_final_state.v2
-  -> 平台校验并生成 message + skill_result
-```
+## 结束条件
 
-`submit_expert_final_state` 是平台内部最终回复提交接口，不是 Skill 可声明或执行的业务工具，不产生 `tool_result`。模型只负责填写 `expert_final_state.v2`；平台按 Pydantic schema 校验并映射字段。平台不得把工具原文、工具摘要或中间 AIMessage 拼成 `message.content`。finalizer 缺失或结构非法时按协议失败，并保留执行日志。
+- 当【需要用户补充或确认的条件】时，向用户提出具体问题，并保留当前 Skill。
+- 当【本 Skill 的业务结果完成条件】满足时，说明实际结果，并释放当前 Skill。
+````
 
-## 7. 流程控制
+方括号内容是模板变量。创建具体 Skill 时必须替换或删除，不能把占位符带入可用资源。
 
-- 当前专家还需行动：`agent_turn=continue`。
-- 当前专家回复用户：`agent_turn=respond`。
-- 下一条用户消息继续当前专家和 Skill：`skill_session=keep`。
-- 下一轮回正常入口和主持人调度：`skill_session=release`。
+`执行规则` 可以包含多条业务步骤，但不为输入、工具或文件机械拆分空章节。`结束条件` 必须写成可判断的业务事实，不能只写“任务完成后结束”。
 
-等待用户确认并继续当前 Skill 的标准组合：
+## 5. 按需章节
 
-```json
-{
-  "schema_version": "expert_final_state.v2",
-  "execution_status": "blocked",
-  "message": {"content": "请用户确认具体事项。", "attachments": [], "artifacts": []},
-  "next_action": {"agent_turn": "respond", "skill_session": "keep"}
-}
-```
+只有真实业务需要时，才在两段式模板中增加以下章节：
 
-阶段完成并释放 Skill 的标准组合：
+| 章节 | 使用条件 | 只写什么 |
+| --- | --- | --- |
+| `阶段门禁` | 存在不能同轮跨越的确认点 | 进入条件、退出条件和必须等待用户的事实。 |
+| `工具与文件` | 某个工具、路径或文件组织方式是业务要求 | 本 Skill 特有的选择、命名、内容或顺序要求。 |
+| `脚本调用` | 当前 Skill 带有确定性脚本 | 何时调用、业务参数含义和业务结果要求。 |
+| `产物要求` | 交付物有固定格式或组成 | 真实产物应包含的内容和验收标准。 |
+| `失败处理` | 某类业务失败需要特殊处置 | 可恢复条件、需要用户补充的事实或终止条件。 |
 
-```json
-{
-  "schema_version": "expert_final_state.v2",
-  "execution_status": "succeeded",
-  "message": {"content": "阶段完成说明。", "attachments": [], "artifacts": []},
-  "next_action": {"agent_turn": "respond", "skill_session": "release"}
-}
-```
+按需章节不复制通用工作区规则、工具 schema、脚本命令行、平台输出字段或协议错误处理。
 
-流程型 Skill 可在同一阶段连续执行多项动作，但在资料转写作、方案转生成、草稿转下一章节等跨阶段点必须暂停。详见 `docs/skills/skill-session-flow.md`。
+## 6. 脚本资源
 
-## 8. 脚本型 Skill
-
-脚本工具统一由 `scripts/manifest.json` 声明：
+需要确定性执行时，使用 `scripts/manifest.json` 声明脚本：
 
 ```json
 {
   "entry": "process.py",
-  "description": "处理输入并生成工作区产物。",
+  "description": "处理输入并生成业务结果。",
   "args": [
-    {"name": "input_path", "description": "工作区相对路径", "required": true}
+    {"name": "input_path", "description": "输入文件的工作区相对路径", "required": true}
   ]
 }
 ```
 
-- manifest 只写 `entry`、`description`、`args`。
-- 参数名使用 snake_case，平台转换为 CLI 参数。
-- stdout 只输出 `expert_final_state.v2`；stderr 保存诊断；退出码表达成功或失败。
-- 脚本 stdout 与 LLM finalizer 同时存在时必须一致，不允许按优先级猜测。
-- 缺字段、非法枚举、额外旧字段或非 JSON 输出均按协议失败。
+- manifest 只声明 `entry`、`description` 和 `args`。
+- 参数名使用 snake_case，描述业务含义，不暴露宿主机路径或底层命令行数组。
+- `SKILL.md` 的按需“脚本调用”章节只说明调用时机、参数业务语义和结果要求。
+- 脚本运行、结果回灌和失败日志合同统一见 `docs/skills/sandbox-tool-interface.md`，不复制进 Skill 正文。
 
-## 9. 主持人 Skill
+## 7. 主持人 Skill
 
-主持人 Skill 使用 `HostSchedulerDecisionPayload`，不使用专家最终状态：
+主持人 Skill 不使用本模板。主持人只负责具体场景的阶段判断和跨专家调度，完整规范见 `docs/skills/host-skill.md`。
 
-```json
-{
-  "current_phase": "当前阶段",
-  "message": {
-    "content": "给用户或下一位专家的说明。",
-    "target_agent_name": "场内专家名称",
-    "attachments": [],
-    "artifacts": []
-  },
-  "suggested_add_agent_names": []
-}
-```
-
-主持人不调用工具，不代替专家完成任务。完整规范见 `docs/skills/host-skill.md`。
-
-## 10. 验收
+## 8. 验收
 
 上线前至少验证：
 
-1. Frontmatter 可解析，工具授权使用当前字段。
-2. 所有 JSON 示例可通过严格模型校验。
-3. Skill 不含旧控制字段或隐藏状态块。
-4. 工具执行后有 LLM finalizer，工具原文不会进入聊天气泡。
-5. 产物真实存在，`message.artifacts` 使用 workspace 相对路径。
-6. 等待点能写入 continuation，下一条用户消息回到同一 Skill。
-7. release 后下一轮回到主持人或正常入口。
-8. 跨阶段门禁不会被同一专家回合静默越过。
+1. Frontmatter 可解析，`description` 只表达触发条件和边界。
+2. `allowed-tools` 与本 Skill 真实需要的工具一致。
+3. 正文包含非空的 `执行规则` 和 `结束条件`。
+4. 结束条件分别说明等待用户并保留 Skill、完成业务并释放 Skill 的可判断事实。
+5. Skill 不重复专家身份、长期职责、主持人调度或平台固定协议。
+6. 按需章节均对应真实业务要求，不保留空章节或模板占位符。
+7. 带脚本时，manifest 可解析，正文没有自造脚本路径、CLI 参数或工具名称。
+8. 产物、工具和阶段门禁可以通过真实执行场景验证。
