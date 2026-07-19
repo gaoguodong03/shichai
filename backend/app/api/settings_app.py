@@ -11,8 +11,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agent.project_prompt import get_default_project_system_prompt
-from app.agent.scenario_prompt import get_default_scenario_system_prompt
-from app.agent.expert_prompt import get_default_expert_system_prompt
 from app.agent.host_prompt import get_default_host_system_prompt
 from app.api.request_models import StrictRequestModel
 from app.core.llm_bundle import (
@@ -287,18 +285,6 @@ async def update_host_profile(body: HostProfileBody):
 async def get_host_profile_defaults():
     """返回内置默认主持人配置（不读配置文件）。"""
     return {"status": "ok", "data": {**dict(_DEFAULT_HOST_PROFILE)}}
-
-
-@router.get("/settings/resource-prompt-defaults")
-async def get_resource_prompt_defaults():
-    """Return editable defaults for new scenario and expert resources."""
-    return {
-        "status": "ok",
-        "data": {
-            "scenario": {"system_prompt": get_default_scenario_system_prompt()},
-            "expert": {"system_prompt": get_default_expert_system_prompt()},
-        },
-    }
 
 
 @router.post("/settings/host-profile/reset")

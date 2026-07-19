@@ -26,6 +26,17 @@ def test_prompt_editors_explain_the_four_user_owned_prompt_roles():
     assert "场景目标、适用范围、共同要求和完成标准" in main
 
 
+def test_resource_creation_prefills_real_system_prompt_fields():
+    defaults = read("frontend/src/features/resources/resourceSystemPromptDefaults.ts")
+    scenario = read("frontend/src/features/resources/useScenarioEditor.ts")
+    agent = read("frontend/src/features/resources/AgentView.vue")
+
+    assert "DEFAULT_SCENARIO_SYSTEM_PROMPT" in defaults
+    assert "DEFAULT_EXPERT_SYSTEM_PROMPT" in defaults
+    assert "system_prompt: DEFAULT_SCENARIO_SYSTEM_PROMPT" in scenario
+    assert "system_prompt: DEFAULT_EXPERT_SYSTEM_PROMPT" in agent
+
+
 def function_block(src: str, name: str) -> str:
     start = src.index(f"function {name}")
     next_fn = re.search(r"\n  function \w+", src[start + 1 :])

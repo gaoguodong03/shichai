@@ -2,6 +2,7 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { normalizedResourceQuery } from './useResourceSearch'
+import { DEFAULT_SCENARIO_SYSTEM_PROMPT } from './resourceSystemPromptDefaults'
 import type { ResourceSubModule } from '@/features/shell/mainNavigation'
 import { SESSION_PRESETS_UPDATED_EVENT_NAME } from '@/features/workspace/composables/workspacePreferences'
 
@@ -226,7 +227,7 @@ export function useScenarioEditor(options: {
       name: '',
       agent_names: [],
       description: '',
-      system_prompt: '',
+      system_prompt: DEFAULT_SCENARIO_SYSTEM_PROMPT,
       host: {},
     }
     scenarioPresets.value = [

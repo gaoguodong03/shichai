@@ -81,6 +81,17 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(sidebar.getByText('0 位专家', { exact: true })).toHaveCount(0)
   })
 
+  test('新建场景和专家默认填写各自提示词', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/scenario')
+
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await expect(page.getByPlaceholder('写入场景目标、适用范围、共同要求和完成标准。创建会话时保存快照，并持续提供给主持人和专家。')).toHaveValue(/场景目标：/)
+
+    await page.goto('/resources/agent')
+    await page.getByRole('button', { name: '新建专家' }).click()
+    await expect(page.getByPlaceholder('定义专家跨场景、跨 Skill 不变的长期职责、专业标准和输出合同。')).toHaveValue(/你是专业专家/)
+  })
+
   test('新建场景和专家必填为空时弹窗阻止保存', async ({ page }) => {
     const state = createE2eState()
     let scenarioSaveCount = 0

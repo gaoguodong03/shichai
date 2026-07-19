@@ -145,6 +145,7 @@
 import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted, computed } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
+import { DEFAULT_EXPERT_SYSTEM_PROMPT } from './resourceSystemPromptDefaults'
 type SkillRef = { name: string; directory_name: string }
 
 const props = defineProps<{
@@ -177,7 +178,7 @@ watch(
       form.value = {
         name: '',
         description: '',
-        system_prompt: '',
+        system_prompt: DEFAULT_EXPERT_SYSTEM_PROMPT,
         skills: [],
         llm_name: '',
       }
