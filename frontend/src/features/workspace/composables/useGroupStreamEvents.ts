@@ -18,6 +18,8 @@ type StreamRoutePayload = {
   skill?: string
 }
 
+const EXPERT_RUNNING_PLACEHOLDER_TEXT = '正在运行中...'
+
 function speakerType(data: Record<string, unknown> | GroupMessage | null | undefined): string {
   const speaker = data?.speaker && typeof data.speaker === 'object' ? data.speaker as { type?: unknown } : null
   return String(speaker?.type || '').trim()
@@ -89,6 +91,46 @@ export function useGroupStreamEvents(args: {
     return sessionId || selectedGroupSessionId() || ''
   }
 
+  function ensureStreamingExpertPlaceholder(data: StreamRoutePayload, sessionId = selectedGroupSessionId() || '') {
+    if (sessionId && selectedGroupSessionId() !== sessionId) return
+    const agentName = String(data?.agent_name || '').trim()
+    if (!agentName) return
+    const list = groupDisplayMessages.value || []
+    const existingIndex = list.findIndex((message) => (message as GroupMessage)._streamingStatus)
+    const existing = existingIndex >= 0 ? list[existingIndex] as GroupMessage : null
+    const incomingSkill = String(data?.skill || '').trim()
+    const skill = incomingSkill || (
+      speakerAgentName(existing) === agentName
+        ? String(existing?.speaker?.skill || '').trim()
+        : ''
+    )
+    const placeholder: GroupMessage = {
+      speaker: {
+        type: 'expert',
+        agent_name: agentName,
+        ...(skill ? { skill } : {}),
+      },
+      message: { content: EXPERT_RUNNING_PLACEHOLDER_TEXT },
+      _streaming: true,
+      _streamingStatus: true,
+    }
+    if (existingIndex < 0) {
+      groupDisplayMessages.value = [...list, placeholder]
+      nextTick(() => scrollLatestAssistantRowToLowerMiddle())
+      return
+    }
+    if (
+      speakerAgentName(existing) === agentName &&
+      String(existing.speaker?.skill || '').trim() === skill &&
+      messageContent(existing) === EXPERT_RUNNING_PLACEHOLDER_TEXT
+    ) return
+    groupDisplayMessages.value = [
+      ...list.slice(0, existingIndex),
+      placeholder,
+      ...list.slice(existingIndex + 1),
+    ]
+  }
+
   function showStreamingRoutePlaceholder(data: StreamRoutePayload, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
     const agentName = String(data?.agent_name || '').trim()
@@ -98,6 +140,7 @@ export function useGroupStreamEvents(args: {
       agentName,
       skill: String(data?.skill || '').trim(),
     })
+    ensureStreamingExpertPlaceholder(data, sessionId)
   }
 
   /** Replace the streaming placeholder with the complete assistant message. */
@@ -158,6 +201,7 @@ export function useGroupStreamEvents(args: {
         ...(agentName ? { agentName } : {}),
         ...(skill ? { skill } : {}),
       })
+      if (agentName) ensureStreamingExpertPlaceholder({ agent_name: agentName, skill }, sessionId)
       return true
     }
     return false
@@ -213,6 +257,7 @@ export function useGroupStreamEvents(args: {
 
   return {
     showStreamingRoutePlaceholder,
+    ensureStreamingExpertPlaceholder,
     replaceOrPushAssistantMessage,
     clearStreamingPlaceholders,
     consumeStreamingStatusContent,

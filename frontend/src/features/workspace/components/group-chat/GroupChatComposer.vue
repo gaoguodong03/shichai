@@ -10,7 +10,7 @@
                 :auto-switch-ignore-loading="autoSwitchIgnoreLoading"
                 :streaming-speaker-name="currentActiveStreamingMessage ? activeStreamingSpeakerName : ''"
                 :streaming-pulse="streamingPulse"
-                :waiting-for-user="groupWaitingForUser"
+                :confirmation-required="groupConfirmationRequired"
                 :next-speaker-text="nextSpeakerLabelText"
                 :interrupt-hint="orchestrationInterruptHint"
                 :current-streaming="currentGroupStreaming"
@@ -349,11 +349,11 @@
                   </button>
                   <button
                     type="button"
-                    :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
-                    :disabled="groupStreaming || insertLocalFileUploading || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
-                    @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
+                    :class="groupConfirmationRequired ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
+                    :disabled="groupStreaming || insertLocalFileUploading || (groupConfirmationRequired ? (effectiveNextSpeaker === 'host' && !canSend) : !canSend)"
+                    @click="groupConfirmationRequired ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
                   >
-                    {{ currentGroupStreaming ? '运行中' : (insertLocalFileUploading ? '文件上传中…' : (otherSessionStreaming ? '其他会话运行中' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送'))) }}
+                    {{ currentGroupStreaming ? '运行中' : (insertLocalFileUploading ? '文件上传中…' : (otherSessionStreaming ? '其他会话运行中' : (groupConfirmationRequired ? '确认并继续' : '发送'))) }}
                   </button>
                 </div>
               </div>
@@ -380,7 +380,7 @@ const {
   currentActiveStreamingMessage,
   activeStreamingSpeakerName,
   streamingPulse,
-  groupWaitingForUser,
+  groupConfirmationRequired,
   nextSpeakerLabelText,
   orchestrationInterruptHint,
   currentGroupStreaming,

@@ -55,7 +55,7 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">专家长期提示词（可选）</label>
+            <label class="block text-sm font-medium text-primary mb-1">系统提示词</label>
             <textarea
               v-model="form.system_prompt"
               rows="3"
@@ -65,9 +65,7 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-
-            <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+            <label class="block text-sm font-medium text-primary mb-2">技能</label>
             <input
               v-if="skills.length"
               v-model.trim="skillSearch"

@@ -161,7 +161,7 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     default_app_settings = _read("config/app_settings.json")
 
     assert "GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION" not in expert_runtime
-    assert "get_expert_system_prompt" in expert_runtime
+    assert "get_expert_system_prompt" not in expert_runtime
     assert "announcement:" not in host_messages
     assert "reason:" not in host_messages
     assert "suggested_order:" not in host_messages

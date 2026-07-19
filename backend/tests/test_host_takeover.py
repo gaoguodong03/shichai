@@ -68,13 +68,12 @@ def test_host_snapshot_runtime_shape_does_not_emit_legacy_skills_list():
     }
 
 
-def test_host_snapshot_with_empty_prompt_uses_editable_long_term_default():
+def test_host_snapshot_with_empty_prompt_stays_empty():
     from app.agent.group_chat_runtime import _host_snapshot_to_agent
-    from app.agent.platform_prompts import render_platform_prompt
 
     host_agent = _host_snapshot_to_agent({"host": {"name": "四九", "system_prompt": ""}})
 
-    assert host_agent["system_prompt"] == render_platform_prompt("host.system.default.v1", {})
+    assert host_agent["system_prompt"] == ""
 
 
 @pytest.mark.asyncio

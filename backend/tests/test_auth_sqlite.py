@@ -107,6 +107,10 @@ def test_register_initializes_user_id_directory_layout(env_and_client):
     assert (user_root / "settings").is_dir()
     assert not (db_path.parent / "users" / username).exists()
 
+    app_settings = json.loads((user_root / "settings" / "app.json").read_text(encoding="utf-8"))
+    assert app_settings["system_prompt"].startswith("本项目面向【服务对象】，用于【项目总体目标】。")
+    assert "host" not in app_settings
+
     profile = json.loads((user_root / "profile.json").read_text(encoding="utf-8"))
     assert profile["user_id"] == data["user_id"]
     assert profile["username"] == username
@@ -140,6 +144,12 @@ def test_register_reuses_existing_resource_user_id_after_auth_db_reset(env_and_c
     marker = user_root / "resources" / "skills" / "saved" / "SKILL.md"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("---\nname: Saved\n---\nbody\n", encoding="utf-8")
+    app_settings_path = user_root / "settings" / "app.json"
+    app_settings_path.parent.mkdir(parents=True, exist_ok=True)
+    app_settings_path.write_text(
+        json.dumps({"system_prompt": "已有项目规则"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
     (user_root / "profile.json").write_text(
         json.dumps({"user_id": existing_user_id, "username": username}, ensure_ascii=False),
         encoding="utf-8",
@@ -149,6 +159,7 @@ def test_register_reuses_existing_resource_user_id_after_auth_db_reset(env_and_c
 
     assert data["user_id"] == existing_user_id
     assert marker.exists()
+    assert json.loads(app_settings_path.read_text(encoding="utf-8"))["system_prompt"] == "已有项目规则"
     assert not (db_path.parent / "users" / username).exists()
 
 

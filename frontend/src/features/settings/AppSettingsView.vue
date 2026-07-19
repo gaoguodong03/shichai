@@ -5,7 +5,7 @@
       <template v-else>
         <form @submit.prevent="save" class="space-y-6 text-left">
           <section class="bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
-            <label class="block text-sm font-medium text-primary mb-1">项目整体系统提示词（所有角色共享）</label>
+            <label class="block text-sm font-medium text-primary mb-1">项目提示词</label>
             <textarea
               v-model="globalSystemPrompt"
               rows="6"
@@ -48,7 +48,7 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-primary mb-1">主持人长期提示词</label>
+              <label class="block text-sm font-medium text-primary mb-1">系统提示词</label>
               <textarea
                 v-model="form.system_prompt"
                 rows="6"
@@ -58,9 +58,7 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-
-              <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+              <label class="block text-sm font-medium text-primary mb-2">技能</label>
               <input
                 v-if="skills.length"
                 v-model.trim="skillSearch"
@@ -123,6 +121,7 @@
 import { apiRequest } from '@/api/base'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { appAlert } from '@/composables/useAppDialog'
+import { DEFAULT_HOST_SYSTEM_PROMPT } from '@/features/resources/resourceSystemPromptDefaults'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -143,7 +142,7 @@ type HostForm = {
 function emptyForm(): HostForm {
   return {
     name: '四九',
-    system_prompt: '',
+    system_prompt: DEFAULT_HOST_SYSTEM_PROMPT,
     skill_name: '',
     skill_directory: '',
     llm_name: '',
@@ -197,7 +196,9 @@ const missingHostSkillRef = computed(() => {
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
   next.name = String(d.name ?? '四九')
-  next.system_prompt = String(d.system_prompt ?? '')
+  if (Object.prototype.hasOwnProperty.call(d, 'system_prompt')) {
+    next.system_prompt = String(d.system_prompt ?? '')
+  }
   next.llm_name = String(d.llm_name ?? '')
   next.skill_name = String(d.skill_name ?? '').trim()
   next.skill_directory = String(d.skill_directory ?? '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
@@ -263,14 +264,6 @@ async function load() {
     if (j?.status === 'ok' && j?.data) {
       const d = j.data as Record<string, unknown>
       applyHostData(d)
-      const hasAny = Boolean(form.value.name || form.value.system_prompt || form.value.skill_directory)
-      if (!hasAny) {
-        const rd = await apiRequest('/settings/host-profile/defaults')
-        const jd = await rd.json().catch(() => ({}))
-        if (jd?.status === 'ok' && jd?.data) {
-          applyHostData(jd.data as Record<string, unknown>)
-        }
-      }
     }
   } finally {
     loading.value = false

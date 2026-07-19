@@ -16,13 +16,13 @@ def test_prompt_editors_explain_the_four_user_owned_prompt_roles():
     agent = read("frontend/src/features/resources/AgentView.vue")
     main = read("frontend/src/views/MainView.vue")
 
-    assert "项目整体系统提示词" in settings
+    assert ">项目提示词</label>" in settings
     assert "工作区函数" in settings
-    assert "主持人长期提示词" in settings
+    assert ">系统提示词</label>" in settings
     assert "纯调度" in settings
-    assert "专家长期提示词" in agent
+    assert ">系统提示词</label>" in agent
     assert "长期职责、专业标准" in agent
-    assert "场景提示词（会话共享快照）" in main
+    assert main.count(">系统提示词</label>") >= 2
     assert "场景目标、适用范围、共同要求和完成标准" in main
 
 
@@ -30,11 +30,33 @@ def test_resource_creation_prefills_real_system_prompt_fields():
     defaults = read("frontend/src/features/resources/resourceSystemPromptDefaults.ts")
     scenario = read("frontend/src/features/resources/useScenarioEditor.ts")
     agent = read("frontend/src/features/resources/AgentView.vue")
+    settings = read("frontend/src/features/settings/AppSettingsView.vue")
 
     assert "DEFAULT_SCENARIO_SYSTEM_PROMPT" in defaults
+    assert "DEFAULT_HOST_SYSTEM_PROMPT" in defaults
     assert "DEFAULT_EXPERT_SYSTEM_PROMPT" in defaults
     assert "system_prompt: DEFAULT_SCENARIO_SYSTEM_PROMPT" in scenario
+    assert "host: { system_prompt: DEFAULT_HOST_SYSTEM_PROMPT }" in scenario
     assert "system_prompt: DEFAULT_EXPERT_SYSTEM_PROMPT" in agent
+    assert "system_prompt: DEFAULT_HOST_SYSTEM_PROMPT" in settings
+    assert "/settings/host-profile/defaults" not in scenario
+    assert "/settings/host-profile/defaults" not in settings
+    for required in (
+        "只负责调度",
+        "决策前阶段",
+        "判定条件",
+        "本轮动作",
+        "决策后阶段",
+        '"current_phase"',
+        '"suggested_add_agent_names"',
+        "职责边界",
+        "专业标准",
+        '"execution_status"',
+        '"next_action"',
+        "continue + keep",
+        "respond + release",
+    ):
+        assert required in defaults
 
 
 def function_block(src: str, name: str) -> str:
@@ -656,11 +678,11 @@ def test_frontend_scenario_session_create_snapshots_shared_prompt_and_labels_pro
     main = read("frontend/src/views/MainView.vue")
 
     assert "scenario_prompt: String(p.system_prompt || '').trim()" in shortcut
-    assert "项目整体系统提示词（所有角色共享）" in settings
-    assert "主持人长期提示词" in settings
-    assert "场景提示词（会话共享快照）" in main
+    assert ">项目提示词</label>" in settings
+    assert ">系统提示词</label>" in settings
+    assert main.count(">系统提示词</label>") >= 2
     assert "创建会话时保存快照，并持续提供给主持人和专家" in main
-    assert "主持人长期提示词" in main
+    assert "主持人长期提示词" not in main
 
 
 def test_frontend_stores_backend_phase_values_in_stream_state():
@@ -724,6 +746,20 @@ def test_frontend_waiting_state_follows_end_waiting_for_user():
     assert "groupWaitingForUser.value = true" in end_handler.group(0)
     assert "clearAttachedFiles()" in end_handler.group(0)
     assert "groupWaitingForUser.value = !!endData.turns_limit_reached" not in end_handler.group(0)
+
+
+def test_frontend_only_requests_confirmation_for_explicit_next_speaker():
+    orchestration = read("frontend/src/features/workspace/composables/useGroupOrchestrationState.ts")
+    composer = read("frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue")
+    status_bar = read("frontend/src/features/workspace/components/group-chat/GroupChatStatusBars.vue")
+
+    assert "return ''" in orchestration
+    assert "const groupConfirmationRequired = computed" in orchestration
+    assert "&& !!effectiveNextSpeaker.value" in orchestration
+    assert ':confirmation-required="groupConfirmationRequired"' in composer
+    assert "groupConfirmationRequired ? '确认并继续' : '发送'" in composer
+    assert 'v-else-if="confirmationRequired"' in status_bar
+    assert 'v-else-if="waitingForUser"' not in status_bar
 
 
 def test_frontend_local_streaming_placeholders_use_canonical_message_body():

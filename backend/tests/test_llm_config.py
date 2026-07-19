@@ -164,7 +164,7 @@ def test_app_settings_preserves_top_level_system_prompt(monkeypatch, tmp_path):
         reset_current_user_identity(token)
 
 
-def test_app_settings_initializes_project_system_prompt_with_workspace_tool_rules(monkeypatch, tmp_path):
+def test_app_settings_does_not_inject_project_prompt_when_registration_file_is_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
 
@@ -173,20 +173,7 @@ def test_app_settings_initializes_project_system_prompt_with_workspace_tool_rule
 
     token = set_current_user_identity(user_id="u-settings-default", username="u-settings-default")
     try:
-        prompt = load_app_settings()["system_prompt"]
-
-        assert prompt.startswith("本项目面向【服务对象】，用于【项目总体目标】。")
-        assert "所有角色共同遵守：" in prompt
-        assert "工作区文件：" in prompt
-        for tool_name in (
-            "list_workspace_directory",
-            "read_workspace_file",
-            "write_workspace_file",
-            "edit_workspace_file",
-            "rename_workspace_file",
-            "mkdir_workspace",
-        ):
-            assert f"`{tool_name}`" in prompt
+        assert load_app_settings()["system_prompt"] == ""
     finally:
         reset_current_user_identity(token)
 

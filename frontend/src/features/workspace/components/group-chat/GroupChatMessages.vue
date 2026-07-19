@@ -309,13 +309,14 @@ const {
 } = useGroupChatMessageContext()
 
 function showMessageActions(msg: GroupMessage) {
+  if (msg._streaming) return false
   return Boolean(messageContent(msg).trim() || msg.message_id)
 }
 
 function messageIconStyle(url: string) {
   return {
-    WebkitMaskImage: `url(${url})`,
-    maskImage: `url(${url})`,
+    WebkitMaskImage: `url("${url}")`,
+    maskImage: `url("${url}")`,
   }
 }
 

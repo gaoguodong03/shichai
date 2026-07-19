@@ -40,6 +40,12 @@ type Session = {
   agent_names?: string[]
   messages: Message[]
   host?: Record<string, unknown>
+  runtime?: {
+    running: boolean
+    agent_name?: string
+    skill?: string
+    phase?: string
+  }
 }
 
 type SkillRef = {
@@ -292,6 +298,7 @@ function sessionResponse(session: Session, state: E2eState) {
     messages: session.messages,
     agent_names: session.agent_names || [],
     host: session.host || {},
+    ...(session.runtime ? { runtime: session.runtime } : {}),
     agent_map: Object.fromEntries(state.agents.map((a) => [a.name, { name: a.name, description: a.description }])),
   }
   return response
@@ -731,12 +738,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     if (path === '/settings/host-profile' && method === 'PUT') {
       Object.assign(state.hostProfile, readBody(route))
-      return ok(route, state.hostProfile)
-    }
-    if (path === '/settings/host-profile/defaults' && method === 'GET') {
-      return ok(route, { name: '四九', system_prompt: '默认主持人提示词' })
-    }
-    if (path === '/settings/host-profile/reset' && method === 'POST') {
       return ok(route, state.hostProfile)
     }
     if (path === '/settings/env-vars' && method === 'GET') {

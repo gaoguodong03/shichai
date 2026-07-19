@@ -51,13 +51,13 @@
 - [ ] 在 `expert_runtime.py` 让多 Skill 选择复用传入的共享系统提示词，不再独立重读项目提示词。
 - [ ] 运行主持人和专家定向测试并确认通过。
 
-## 任务 4：建立并启用主持人长期默认提示词
+## 任务 4：建立主持人前端创建模板并删除后端兜底
 
-- [ ] 在 `backend/tests/test_platform_prompts.py` 先增加失败测试，断言 `host.system.default.v1` 包含纯调度边界、四列表读取规则和当前 JSON 字段，不包含具体阶段或专家名称。
+- [ ] 在前端静态合同测试中断言 `DEFAULT_HOST_SYSTEM_PROMPT` 包含纯调度边界、四列表读取规则和当前 JSON 字段，不包含具体阶段或专家名称。
 - [ ] 在 `backend/tests/test_host_takeover.py` 调整装配断言：主持人长期提示词承担通用边界，运行时模板只承载本轮变量，不重复第二份主持人职责。
-- [ ] 在 `platform_prompt_templates.json` 新增 `host.system.default.v1`，正文使用已确认的长期提示词；将 `host.select_next_speaker.v1` 收敛为本轮可选专家、阶段、用户输入、最近讨论和 Skill Session 数据块。
+- [ ] 在 `resourceSystemPromptDefaults.ts` 增加 `DEFAULT_HOST_SYSTEM_PROMPT`；将 `host.select_next_speaker.v1` 收敛为本轮可选专家、阶段、用户输入、最近讨论和 Skill Session 数据块。
 - [ ] 从主持人系统消息装配中移除重复的 `host.system.boundary.v1`，保留严格协议重试提示。
-- [ ] 让账号默认主持人配置和重置接口使用 `host.system.default.v1`；已有非空用户配置保持原值。
+- [ ] 删除主持人 defaults/reset 接口和运行时空值回退；设置页与场景创建表单直接预填前端模板，保存时传原值。
 - [ ] 运行平台 Prompt、设置和主持人测试并确认通过。
 
 ## 任务 5：让前端保存场景快照并解释模板职责
@@ -70,7 +70,7 @@
 
 ## 任务 6：把主持人 Skill 收敛为四列表
 
-- [ ] 在 `backend/tests/test_docs_contract_alignment.py` 先增加失败测试，断言 `docs/skills/host-skill.md` 只定义“当前阶段、如果、主持人就、然后进入”四列，不再要求多章节正文和七列阶段表。
+- [ ] 在 `backend/tests/test_docs_contract_alignment.py` 先增加失败测试，断言 `docs/skills/host-skill.md` 只定义“决策前阶段、判定条件、本轮动作、决策后阶段”四列，不再要求多章节正文和七列阶段表。
 - [ ] 重写 `docs/skills/host-skill.md`：平台/长期提示词边界保持简短，通用模板只保留 Frontmatter、标题和四列表。
 - [ ] 同步 Prompt、会话字段和数据结构合同中的 `scenario_prompt`、主持人长期提示词和四列表职责。
 - [ ] 运行文档合同测试并确认通过。

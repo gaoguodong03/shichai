@@ -50,7 +50,7 @@
     </span>
   </div>
   <div
-    v-else-if="waitingForUser"
+    v-else-if="confirmationRequired"
     class="group-chat-speaker-status-input group-chat-speaker-status-paused"
   >
     <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
@@ -76,7 +76,7 @@ defineProps<{
   autoSwitchIgnoreLoading: boolean
   streamingSpeakerName: string
   streamingPulse: string
-  waitingForUser: boolean
+  confirmationRequired: boolean
   nextSpeakerText: string
   interruptHint: string
   currentStreaming: boolean

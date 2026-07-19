@@ -10,8 +10,6 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.agent.project_prompt import get_default_project_system_prompt
-from app.agent.host_prompt import get_default_host_system_prompt
 from app.api.request_models import StrictRequestModel
 from app.core.llm_bundle import (
     build_llm_bundle_zip_bytes,
@@ -76,9 +74,9 @@ _DEFAULT_LLM_PROVIDERS = {
     },
 }
 
-_DEFAULT_HOST_PROFILE: Dict[str, Any] = {
+_EMPTY_HOST_PROFILE: Dict[str, Any] = {
     "name": "四九",
-    "system_prompt": get_default_host_system_prompt(),
+    "system_prompt": "",
     "llm_name": "",
     "skill_name": "",
     "skill_directory": "",
@@ -86,14 +84,14 @@ _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
 
 
 def normalize_host_profile(raw: Any) -> Dict[str, Any]:
-    """Normalize the account-level default host snapshot."""
+    """Normalize a saved account-level host snapshot without injecting prompt text."""
     if not isinstance(raw, dict):
         raw = {}
-    out = dict(_DEFAULT_HOST_PROFILE)
+    out = dict(_EMPTY_HOST_PROFILE)
     out.update(
         {
-            "name": str(raw.get("name") or _DEFAULT_HOST_PROFILE["name"]).strip() or "四九",
-            "system_prompt": str(raw.get("system_prompt") or _DEFAULT_HOST_PROFILE["system_prompt"]),
+            "name": str(raw.get("name") or _EMPTY_HOST_PROFILE["name"]).strip() or "四九",
+            "system_prompt": str(raw.get("system_prompt") or ""),
             "llm_name": str(raw.get("llm_name") or "").strip(),
             "skill_name": str(raw.get("skill_name") or "").strip(),
             "skill_directory": str(raw.get("skill_directory") or "").strip().replace("\\", "/").strip("/"),
@@ -189,8 +187,7 @@ def load_app_settings() -> Dict[str, Any]:
     path = app_settings_path()
     data = {
         "default_llm": "qwen3-max",
-        "system_prompt": get_default_project_system_prompt(),
-        "host": dict(_DEFAULT_HOST_PROFILE),
+        "system_prompt": "",
     }
     if path.exists():
         try:
@@ -251,8 +248,8 @@ class HostProfileBody(StrictRequestModel):
 
 
 def _host_profile_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    hp = data.get("host") or {}
-    return normalize_host_profile(hp if isinstance(hp, dict) else {})
+    hp = data.get("host")
+    return normalize_host_profile(hp) if isinstance(hp, dict) else {}
 
 
 @router.get("/settings/host-profile")
@@ -278,19 +275,6 @@ async def update_host_profile(body: HostProfileBody):
             merged[k] = incoming[k]
     merged = normalize_host_profile(merged)
     save_app_settings({"host": merged})
-    return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
-
-
-@router.get("/settings/host-profile/defaults")
-async def get_host_profile_defaults():
-    """返回内置默认主持人配置（不读配置文件）。"""
-    return {"status": "ok", "data": {**dict(_DEFAULT_HOST_PROFILE)}}
-
-
-@router.post("/settings/host-profile/reset")
-async def reset_host_profile():
-    """将主持人配置恢复为内置默认值。"""
-    save_app_settings({"host": dict(_DEFAULT_HOST_PROFILE)})
     return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
 
 

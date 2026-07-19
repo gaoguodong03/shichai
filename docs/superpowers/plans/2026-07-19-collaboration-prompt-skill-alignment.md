@@ -13,7 +13,7 @@
 ## 文件结构
 
 - `backend/tests/test_collaboration_scenario_resources.py`：验证账号协作资源的提示词分层、Skill 结构和工具声明。
-- `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协作/scenario.json`：保存场景共享契约和主持人长期提示词。
+- `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协同写作/scenario.json`：保存场景共享契约和主持人长期提示词。
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/skills/skill-0909791c1d74/SKILL.md`：保存协作场景唯一四列表。
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/agents/{信息检索专家,文档合著专家,图片生成专家}/agent.json`：保存完整专家长期提示词。
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/skills/{skill-collab-web-research,skill-b604cfa284ca,skill-collab-image-generation}/SKILL.md`：保存三类业务能力的执行规则与结束条件。
@@ -39,7 +39,7 @@ assert "阶段表使用规则" in host_prompt
 assert '"current_phase"' in host_prompt
 assert "信息检索专家" not in host_prompt
 
-assert host_body.count("| 当前阶段 | 如果 | 主持人就 | 然后进入 |") == 1
+assert host_body.count("| 决策前阶段 | 判定条件 | 本轮动作 | 决策后阶段 |") == 1
 assert "| （无） |" in host_body
 assert "\n## " not in host_body
 assert '"current_phase"' not in host_body
@@ -80,7 +80,7 @@ rtk pytest -q backend/tests/test_collaboration_scenario_resources.py
 
 **文件：**
 
-- 修改：`backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协作/scenario.json`
+- 修改：`backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协同写作/scenario.json`
 - 修改：`backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/skills/skill-0909791c1d74/SKILL.md`
 - 测试：`backend/tests/test_collaboration_scenario_resources.py`
 
@@ -90,7 +90,7 @@ rtk pytest -q backend/tests/test_collaboration_scenario_resources.py
 
 - [ ] **步骤 2：写入完整主持人长期提示词**
 
-将 `host.system_prompt` 对齐 `backend/app/agent/platform_prompt_templates.json` 中 `host.system.default.v1` 的职责形状，包含调度职责、工作区边界、阶段表使用规则和主持人 JSON 输出合同，不写死三个专家名称。
+将 `host.system_prompt` 对齐 `frontend/src/features/resources/resourceSystemPromptDefaults.ts` 中 `DEFAULT_HOST_SYSTEM_PROMPT` 的职责形状，包含调度职责、工作区边界、阶段表使用规则和主持人 JSON 输出合同，不写死三个专家名称。
 
 - [ ] **步骤 3：将主持人 Skill 重写为四列表**
 
@@ -120,7 +120,7 @@ rtk pytest -q backend/tests/test_collaboration_scenario_resources.py::test_colla
 
 - [ ] **步骤 1：写入三个完整专家长期提示词**
 
-每个提示词都包含五个固定部分：`职责边界`、`专业标准`、`执行要求`、`输出`、`流程控制`。专业边界和质量标准按专家分别填写；执行、JSON 和流程控制使用当前 `expert.system.default.v1` 合同。
+每个提示词都包含五个固定部分：`职责边界`、`专业标准`、`执行要求`、`输出`、`流程控制`。专业边界和质量标准按专家分别填写；执行、JSON 和流程控制使用当前前端 `DEFAULT_EXPERT_SYSTEM_PROMPT` 合同。
 
 - [ ] **步骤 2：收敛三个普通 Skill**
 
@@ -150,7 +150,7 @@ rtk pytest -q \
 运行：
 
 ```bash
-rtk jq -e . backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协作/scenario.json
+rtk jq -e . backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协同写作/scenario.json
 rtk jq -e . backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/agents/*/agent.json
 ```
 

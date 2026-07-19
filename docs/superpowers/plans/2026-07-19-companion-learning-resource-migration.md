@@ -303,7 +303,7 @@ allowed-tools:
 ---
 ```
 
-正文除标题外只写一张 `当前阶段 | 如果 | 主持人就 | 然后进入` 四列表。表格至少覆盖：
+正文除标题外只写一张 `决策前阶段 | 判定条件 | 本轮动作 | 决策后阶段` 四列表。表格至少覆盖：
 
 - `（无）`：缺少研讨意图时询问主题；用户给出主题或要求开始时调度教师定题并进入 `选题`；
 - `选题`：定题尚未形成时继续调度教师；形成后调度材料研究专家并进入 `材料包`；
@@ -337,7 +337,7 @@ allowed-tools:
   "host": {
     "name": "伴学研讨主持人",
     "llm_name": "",
-    "system_prompt": "从 backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协作/scenario.json 的 host.system_prompt 原样复制；该现行文本包含纯调度边界、自包含任务单、工作区核对、四列表读取方式和主持人结构化输出合同。复制后逐字比较两个字段，必须完全一致。",
+    "system_prompt": "从 backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协同写作/scenario.json 的 host.system_prompt 原样复制；该现行文本包含纯调度边界、自包含任务单、工作区核对、四列表读取方式和主持人结构化输出合同。复制后逐字比较两个字段，必须完全一致。",
     "skill_name": "伴学研讨主持流程",
     "skill_directory": "skill-companion-learning-host"
   }
@@ -415,7 +415,7 @@ for directory in skill_dirs:
 - 材料研究 Skill 的 MCP 列表精确等于 `Exa 搜索`、`Linkup抓取网页`；
 - 目标账号两个同名工具的 `tool.json` 均存在；
 - 主持人表格包含五个专家完整名称、`（无）`、九个业务阶段和 `end`；
-- 助教名称只出现在显式请求条件对应的表格行中，所有这些行的“然后进入”均等于“当前阶段”。
+- 助教名称只出现在显式请求条件对应的表格行中，所有这些行的“决策后阶段”均等于“决策前阶段”。
 
 预期：PASS，无断言错误。
 

@@ -22,7 +22,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
 
     await page.getByPlaceholder('请输入场景描述').fill('通过 UI 自动化保存的场景说明')
-    await page.getByPlaceholder('写入仅适用于该场景的项目规则，会同时提供给主持人和场景内专家。').fill('场景级自动化验收规则')
+    await page.getByPlaceholder('写入场景目标、适用范围、共同要求和完成标准。创建会话时保存快照，并持续提供给主持人和专家。').fill('场景级自动化验收规则')
     await page.getByRole('button', { name: '保存' }).click()
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })
@@ -86,10 +86,17 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
     await page.getByRole('button', { name: '新建场景' }).click()
     await expect(page.getByPlaceholder('写入场景目标、适用范围、共同要求和完成标准。创建会话时保存快照，并持续提供给主持人和专家。')).toHaveValue(/场景目标：/)
+    await expect(page.getByPlaceholder('定义主持人在所有场景中通用的纯调度职责、阶段表读取方式和输出结构。')).toHaveValue(/你是会话主持人，只负责调度/)
+    await expect(page.getByText('主持人长期提示词')).toHaveCount(0)
+    await expect(page.getByText('大模型（可选）')).toHaveCount(0)
+    await expect(page.getByText('技能与基础能力')).toHaveCount(0)
+    await expect(page.getByText('主持人技能（单选）')).toHaveCount(0)
 
     await page.goto('/resources/agent')
     await page.getByRole('button', { name: '新建专家' }).click()
     await expect(page.getByPlaceholder('定义专家跨场景、跨 Skill 不变的长期职责、专业标准和输出合同。')).toHaveValue(/你是专业专家/)
+    await expect(page.getByText('专家长期提示词（可选）')).toHaveCount(0)
+    await expect(page.getByText('技能与基础能力')).toHaveCount(0)
   })
 
   test('新建场景和专家必填为空时弹窗阻止保存', async ({ page }) => {

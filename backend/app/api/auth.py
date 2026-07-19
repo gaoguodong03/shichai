@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone
 
 from app.api.request_models import StrictRequestModel
+from app.agent.project_prompt import get_default_project_system_prompt
+from app.core.atomic_json import atomic_write_json
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
 from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
@@ -171,7 +173,13 @@ async def register(body: RegisterBody):
     user_record = get_user_by_username(name)
     user_id = user_record.user_id if user_record is not None else ""
     if user_id:
-        ensure_user_resource_layout(user_id=user_id, username=name)
+        user_ctx = ensure_user_resource_layout(user_id=user_id, username=name)
+        app_settings_file = user_ctx.settings_dir / "app.json"
+        if not app_settings_file.exists():
+            atomic_write_json(
+                app_settings_file,
+                {"system_prompt": get_default_project_system_prompt()},
+            )
         ensure_empty_session_presets(user_id)
 
     token = create_access_token(name)

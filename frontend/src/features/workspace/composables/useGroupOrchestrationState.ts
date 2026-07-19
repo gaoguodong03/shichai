@@ -293,7 +293,7 @@ export function useGroupOrchestrationState(args: {
     const active = activeStreamingAgentName.value
     const ids = orderedMemberIds.value
 
-    if (groupStreaming.value) {
+    if (currentGroupStreaming.value) {
       if (active && (active === 'host' || ids.includes(String(active)))) return String(active)
       return 'host'
     }
@@ -302,8 +302,14 @@ export function useGroupOrchestrationState(args: {
       if (s === 'host') return 'host'
       if (ids.includes(String(suggested))) return String(suggested)
     }
-    return 'host'
+    return ''
   })
+
+  const groupConfirmationRequired = computed(() => (
+    groupWaitingForUser.value
+    && !currentGroupStreaming.value
+    && !!effectiveNextSpeaker.value
+  ))
 
   const nextSpeakerLabelText = computed(() => {
     const next = effectiveNextSpeaker.value
@@ -403,6 +409,7 @@ export function useGroupOrchestrationState(args: {
     activeStreamingAgentName,
     activeStreamingSpeakerName,
     effectiveNextSpeaker,
+    groupConfirmationRequired,
     nextSpeakerLabelText,
     toolbarDisplaySpeakerId,
     toolbarDisplayShowHostAvatar,

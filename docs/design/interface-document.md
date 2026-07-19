@@ -781,8 +781,6 @@ Content-Type: multipart/form-data
 |------|------|------|
 | `GET` | `/api/settings/host-profile` | 获取默认主持人配置 |
 | `PUT` | `/api/settings/host-profile` | 更新默认主持人配置 |
-| `GET` | `/api/settings/host-profile/defaults` | 获取内置默认主持人 |
-| `POST` | `/api/settings/host-profile/reset` | 重置默认主持人 |
 
 主持人请求体：
 

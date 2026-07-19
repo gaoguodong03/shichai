@@ -12,7 +12,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
-from app.agent.expert_prompt import get_expert_system_prompt
 from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.skill_session_manager import skill_session_for_expert
@@ -193,7 +192,7 @@ async def resolve_expert_skill(
         group_session_id=group_session_id,
         agent_name=agent_name,
         agent_description=str(agent_profile.get("description") or ""),
-        agent_prompt=get_expert_system_prompt(agent_profile),
+        agent_prompt=str(agent_profile.get("system_prompt") or "").strip(),
         project_system_prompt=build_shared_session_prompt(app_settings, session_item),
         llm_name=str(agent_profile.get("llm_name") or app_settings.get("default_llm") or ""),
     )
@@ -251,7 +250,7 @@ async def build_expert_turn_runtime(
 
     tools = await tool_builder(agent_profile, group_session_id, skill)
     skill_content = base_skill_content
-    agent_system = get_expert_system_prompt(agent_profile)
+    agent_system = str(agent_profile.get("system_prompt") or "").strip()
     description = agent_profile.get("description") or ""
     if agent_system:
         skill_content = f"{agent_system}\n\n{skill_content}"

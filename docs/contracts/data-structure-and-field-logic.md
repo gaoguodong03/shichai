@@ -247,7 +247,7 @@ MCP 管理在 [`backend/app/mcp/manager.py`](../../backend/app/mcp/manager.py)�
 ```json
 {
   "default_llm": "qwen3-max",
-  "system_prompt": "缺失时由 project.system.default.v1 初始化，用户保存后使用其原值",
+  "system_prompt": "用户注册时由 project.system.default.v1 写入，此后只使用保存值",
   "host": {
     "name": "四九",
     "system_prompt": "",
@@ -289,8 +289,8 @@ MCP 管理在 [`backend/app/mcp/manager.py`](../../backend/app/mcp/manager.py)�
 | 字段 | 运行时影响 |
 |------|------------|
 | `default_llm` | 专家和主持人没有指定 `llm_name` 时使用。 |
-| `system_prompt` | 项目整体系统提示词。字段缺失时由 `project.system.default.v1` 初始化；已保存值（包括空字符串）保持原样。由 `get_project_system_prompt()` 统一读取，进入主持人调度、专家选择 Skill 和专家执行 Skill；不进入标题生成等内部辅助调用。 |
-| `host` | 账号级默认主持人配置；创建会话时可由场景 `host` 覆盖并写入会话 `host` 快照。 |
+| `system_prompt` | 项目整体系统提示词。用户注册时由 `project.system.default.v1` 写入 `settings/app.json`；设置读取和运行时不做缺失或空值回退。由 `get_project_system_prompt()` 读取保存值，进入主持人调度、专家选择 Skill 和专家执行 Skill；不进入标题生成等内部辅助调用。 |
+| `host` | 账号级主持人配置；前端首次配置时预填主持人模板，保存后端原值。创建会话时可由场景 `host` 覆盖并写入会话 `host` 快照；运行时不补主持人提示词。 |
 | `base_url` / `model` | LLM 客户端实际请求目标和供应商真实模型号，不作为资源身份或 UI 主标题。 |
 | `api_key_env` | 模型使用的环境变量名；运行时先从当前用户 `settings/env.enc.json` 取值，再查宿主机环境变量。 |
 | `params` | 模型调用参数。 |

@@ -79,7 +79,7 @@ export interface GroupChatComposerContext {
   currentActiveStreamingMessage: ContextValue
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
-  groupWaitingForUser: ContextValue
+  groupConfirmationRequired: ContextValue
   nextSpeakerLabelText: ContextValue
   orchestrationInterruptHint: ContextValue
   currentGroupStreaming: ContextValue

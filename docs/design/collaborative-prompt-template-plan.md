@@ -29,15 +29,15 @@
 
 ## 任务 2：专家长期提示词
 
-- [ ] 在 `backend/tests/test_platform_prompts.py` 添加失败测试，断言 `expert.system.default.v1` 包含职责边界、专业标准、统一 JSON 和四种流程组合，不包含具体场景或 Skill 名称。
-- [ ] 在专家资源或运行时测试中断言空 `agent.system_prompt` 使用可编辑默认模板，非空值保持用户配置。
+- [ ] 在前端静态合同测试中断言 `DEFAULT_EXPERT_SYSTEM_PROMPT` 包含职责边界、专业标准、统一 JSON 和四种流程组合，不包含具体场景或 Skill 名称。
+- [ ] 在专家资源或运行时测试中断言新建表单预填模板并保存原值；空 `agent.system_prompt` 在运行时保持为空，不做回退。
 - [ ] 新建 `backend/app/agent/expert_prompt.py`，通过 `render_platform_prompt()` 返回默认模板并归一化专家长期提示词。
 - [ ] 在专家 Skill 选择和执行组装中只注入一次专家长期提示词。
 - [ ] 运行专家与 Prompt 定向测试，确认红灯转绿。
 
 ## 任务 3：主持人和专家 Skill 模板
 
-- [ ] 在 `backend/tests/test_docs_contract_alignment.py` 或资源契约测试中新增失败断言：主持人 Skill 规范必须使用“当前阶段 / 如果 / 主持人就 / 然后进入”四列表，且不得保留旧多章节模板。
+- [ ] 在 `backend/tests/test_docs_contract_alignment.py` 或资源契约测试中新增失败断言：主持人 Skill 规范必须使用“决策前阶段 / 判定条件 / 本轮动作 / 决策后阶段”四列表，且不得保留旧多章节模板。
 - [ ] 新增失败断言：专家 Skill 规范固定为“执行规则 + 结束条件”，结束条件包含等待用户、完成和可选失败，不再定义固定按需章节体系。
 - [ ] 最小修改 `docs/skills/host-skill.md` 和 `docs/skills/skill-standard.md` 使契约通过。
 - [ ] 迁移仓库内受当前测试覆盖的模板或示例资源，禁止批量改写 `backend/data/users` 中与本任务无关的数据。

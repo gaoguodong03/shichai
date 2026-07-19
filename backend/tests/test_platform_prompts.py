@@ -29,53 +29,19 @@ def test_shared_session_prompt_orders_project_before_scenario_once():
     assert session_prompt.build_shared_session_prompt({"system_prompt": "项目整体规则"}, {}) == "项目整体规则"
 
 
-def test_default_host_system_prompt_owns_pure_dispatch_table_and_json_contract():
-    rendered = render_platform_prompt("host.system.default.v1", {})
+def test_user_owned_host_and_expert_prompts_have_no_backend_default_fallback():
+    settings = (ROOT / "backend/app/api/settings_app.py").read_text(encoding="utf-8")
+    host_runtime = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
+    expert_runtime = (ROOT / "backend/app/agent/expert_runtime.py").read_text(encoding="utf-8")
 
-    for required in [
-        "只负责调度",
-        "当前阶段",
-        "如果",
-        "主持人就",
-        "然后进入",
-        '"current_phase"',
-        '"message"',
-        '"target_agent_name"',
-        '"suggested_add_agent_names"',
-    ]:
-        assert required in rendered
-    for scene_specific in ["资料收集阶段", "写作专家", "图片生成专家"]:
-        assert scene_specific not in rendered
-    assert "host.system.boundary.v1" not in PLATFORM_PROMPTS
-
-
-def test_default_expert_system_prompt_owns_long_term_boundary_and_final_contract():
-    rendered = render_platform_prompt("expert.system.default.v1", {})
-
-    for required in [
-        "职责边界",
-        "专业标准",
-        "执行要求",
-        '"execution_status"',
-        '"message"',
-        '"next_action"',
-        "continue + keep",
-        "continue + release",
-        "respond + keep",
-        "respond + release",
-    ]:
-        assert required in rendered
-    for forbidden in ["资料收集阶段", "调度`写作专家`", "推进场景阶段"]:
-        assert forbidden not in rendered
-
-
-def test_expert_system_prompt_uses_default_only_when_profile_prompt_is_empty():
-    expert_prompt = importlib.import_module("app.agent.expert_prompt")
-    default_prompt = render_platform_prompt("expert.system.default.v1", {})
-
-    assert expert_prompt.get_expert_system_prompt({"system_prompt": "专业自定义规则"}) == "专业自定义规则"
-    assert expert_prompt.get_expert_system_prompt({"system_prompt": ""}) == default_prompt
-    assert expert_prompt.get_expert_system_prompt({}) == default_prompt
+    assert "host.system.default.v1" not in PLATFORM_PROMPTS
+    assert "expert.system.default.v1" not in PLATFORM_PROMPTS
+    assert not (ROOT / "backend/app/agent/host_prompt.py").exists()
+    assert not (ROOT / "backend/app/agent/expert_prompt.py").exists()
+    assert "get_default_host_system_prompt" not in settings + host_runtime
+    assert "get_expert_system_prompt" not in expert_runtime
+    assert 'str(host.get("system_prompt") or "").strip()' in host_runtime
+    assert 'str(agent_profile.get("system_prompt") or "").strip()' in expert_runtime
 
 
 def test_platform_prompt_templates_live_in_standalone_file():
@@ -85,7 +51,6 @@ def test_platform_prompt_templates_live_in_standalone_file():
     template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
 
     for phrase in [
-        "你是会话主持人，只负责调度",
         "你是当前专家的 Skill 选择器",
         "请基于用户第一条有效输入生成一个简短会话标题",
     ]:
@@ -113,6 +78,28 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
     assert '"next_action"' not in rendered
     assert "只允许输出上述字段" not in rendered
     assert "你是书童四九平台的会话主持人" not in rendered
+
+
+def test_host_prompts_preserve_confirmation_causality_across_expert_returns():
+    runtime_prompt = render_platform_prompt(
+        "host.select_next_speaker.v1",
+        {
+            "agent_names": "图片生成专家",
+            "current_phase": "图片生成",
+            "user_message": "同意",
+            "recent_history": "用户同意方案后，专家才生成图片并请求确认",
+            "skill_sessions": "（无）",
+        },
+    )
+    retry_prompt = render_platform_prompt("host.select_next_speaker.protocol_retry.v1", {})
+
+    assert "触发本轮请求的用户输入" in runtime_prompt
+    assert "不能确认其后才产生的专家成果" in runtime_prompt
+    assert "专家正文只作为判断任务是否完成的证据" in runtime_prompt
+    assert "不能复制、改写或续写到主持人的 message.content" in runtime_prompt
+    assert "不得再次调度同一专家完成同一任务" in runtime_prompt
+    assert "该消息之后才产生的专家成果" in retry_prompt
+    assert "必须等待新的用户输入" in retry_prompt
 
 
 def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():
@@ -184,7 +171,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
     ]:
         assert phrase not in combined
     for prompt_id in [
-        "host.system.default.v1",
         "host.select_next_speaker.protocol_retry.v1",
         "expert.select_skill.user_prompt.v1",
         "expert.select_skill.protocol_retry.v1",

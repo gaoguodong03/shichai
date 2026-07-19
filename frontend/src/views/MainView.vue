@@ -543,7 +543,7 @@
                   />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-primary mb-1">场景提示词（会话共享快照）</label>
+                  <label class="block text-sm font-medium text-primary mb-1">系统提示词</label>
                   <textarea
                     v-model="scenarioDraft.system_prompt"
                     rows="6"
@@ -564,7 +564,7 @@
                       />
                     </div>
                     <div>
-                      <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
+                      <label class="block text-sm font-medium text-primary mb-1">大模型</label>
                       <select
                         v-model="scenarioLeaderLlmId"
                         class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
@@ -583,7 +583,7 @@
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-primary mb-1">主持人长期提示词</label>
+                    <label class="block text-sm font-medium text-primary mb-1">系统提示词</label>
                     <textarea
                       v-model="scenarioLeaderSystemPrompt"
                       rows="6"
@@ -592,8 +592,7 @@
                     />
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-                    <div class="text-xs font-medium text-muted mb-1.5">主持人技能（单选）</div>
+                    <label class="block text-sm font-medium text-primary mb-2">技能</label>
                     <input
                       v-if="skills.length"
                       v-model.trim="scenarioLeaderSkillSearch"

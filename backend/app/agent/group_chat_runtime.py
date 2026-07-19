@@ -28,7 +28,6 @@ from app.agent.group_context import normalize_discussion_goal, scheduler_memory_
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_host_decision import _apply_decision_to_ctx, finalize_host_scheduler_decision
 from app.agent.group_entry_router import resolve_group_entry_route
-from app.agent.host_prompt import get_default_host_system_prompt
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_prompt import build_shared_session_prompt
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent
@@ -74,7 +73,7 @@ def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
         "name": str(host.get("name") or "四九").strip() or "四九",
         "description": "群聊主持人",
         "llm_name": str(host.get("llm_name") or "").strip(),
-        "system_prompt": str(host.get("system_prompt") or get_default_host_system_prompt()).strip(),
+        "system_prompt": str(host.get("system_prompt") or "").strip(),
         "skill_directory": skill_directory,
     }
 

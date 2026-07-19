@@ -13,6 +13,7 @@ USER_RESOURCE_ROOT = (
     / "user-d8f26bf88991429789b4905ba0ae8040"
     / "resources"
 )
+USER_ROOT = USER_RESOURCE_ROOT.parent
 
 
 def _read_json(path: Path) -> dict:
@@ -26,11 +27,18 @@ def _read_skill(path: Path) -> tuple[dict, str]:
     return yaml.safe_load(frontmatter) or {}, body
 
 
+def test_current_user_account_prompts_are_saved_without_runtime_fallback_dependency():
+    settings = _read_json(USER_ROOT / "settings" / "app.json")
+
+    assert str(settings.get("system_prompt") or "").strip()
+    assert str((settings.get("host") or {}).get("system_prompt") or "").strip()
+
+
 def _read_host_flow_rows(body: str) -> list[dict[str, str]]:
     table_lines = [line for line in body.splitlines() if line.startswith("|")]
     assert len(table_lines) >= 3
     headers = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
-    assert headers == ["当前阶段", "如果", "主持人就", "然后进入"]
+    assert headers == ["决策前阶段", "判定条件", "本轮动作", "决策后阶段"]
     assert all(set(cell.strip()) <= {"-", ":"} for cell in table_lines[1].strip("|").split("|"))
     return [
         dict(zip(headers, [cell.strip() for cell in line.strip("|").split("|")], strict=True))
@@ -39,7 +47,7 @@ def _read_host_flow_rows(body: str) -> list[dict[str, str]]:
 
 
 def test_collaboration_scenario_has_three_current_protocol_experts():
-    scenario = _read_json(USER_RESOURCE_ROOT / "scenarios" / "协作" / "scenario.json")
+    scenario = _read_json(USER_RESOURCE_ROOT / "scenarios" / "协同写作" / "scenario.json")
 
     assert scenario["agent_names"] == [
         "信息检索专家",
@@ -70,7 +78,7 @@ def test_collaboration_scenario_has_three_current_protocol_experts():
 
     host_fm, host_body = _read_skill(USER_RESOURCE_ROOT / "skills" / "skill-0909791c1d74" / "SKILL.md")
     assert host_fm["name"] == "协作主持"
-    assert host_body.count("| 当前阶段 | 如果 | 主持人就 | 然后进入 |") == 1
+    assert host_body.count("| 决策前阶段 | 判定条件 | 本轮动作 | 决策后阶段 |") == 1
     assert "| （无） |" in host_body
     assert "\n## " not in host_body
     assert "信息检索专家" in host_body
@@ -83,11 +91,11 @@ def test_collaboration_scenario_has_three_current_protocol_experts():
 
     flow_rows = _read_host_flow_rows(host_body)
     rows_by_phase = {
-        phase: [row for row in flow_rows if row["当前阶段"] == phase]
-        for phase in {row["当前阶段"] for row in flow_rows}
+        phase: [row for row in flow_rows if row["决策前阶段"] == phase]
+        for phase in {row["决策前阶段"] for row in flow_rows}
     }
     assert set(rows_by_phase) == {"（无）", "资料检索", "文档合著", "图片生成"}
-    assert {row["然后进入"] for row in flow_rows} <= {
+    assert {row["决策后阶段"] for row in flow_rows} <= {
         "（无）",
         "资料检索",
         "文档合著",
@@ -124,8 +132,8 @@ def test_collaboration_scenario_has_three_current_protocol_experts():
         actual_rows = rows_by_phase[phase]
         assert len(actual_rows) == len(expected_rows)
         for row, (action_prefix, target_phase) in zip(actual_rows, expected_rows, strict=True):
-            assert row["主持人就"].startswith(action_prefix)
-            assert row["然后进入"] == target_phase
+            assert row["本轮动作"].startswith(action_prefix)
+            assert row["决策后阶段"] == target_phase
     for platform_field in (
         '"current_phase"',
         '"message"',
@@ -225,7 +233,7 @@ def test_collaboration_experts_follow_cross_scenario_prompt_template():
 
 
 def test_collaboration_host_owns_dispatch_output_while_coauthor_uses_business_template():
-    scenario = _read_json(USER_RESOURCE_ROOT / "scenarios" / "协作" / "scenario.json")
+    scenario = _read_json(USER_RESOURCE_ROOT / "scenarios" / "协同写作" / "scenario.json")
     host_prompt = str(scenario["host"].get("system_prompt") or "").strip()
     _, host_body = _read_skill(USER_RESOURCE_ROOT / "skills" / "skill-0909791c1d74" / "SKILL.md")
     _, coauthor_body = _read_skill(USER_RESOURCE_ROOT / "skills" / "skill-b604cfa284ca" / "SKILL.md")

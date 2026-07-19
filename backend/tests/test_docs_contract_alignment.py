@@ -49,8 +49,8 @@ def test_host_skill_standard_uses_only_four_column_transition_table():
     text = (PROJECT_ROOT / "docs" / "skills" / "host-skill.md").read_text(encoding="utf-8")
 
     assert "正文只保留一张四列表" in text
-    assert "| 当前阶段 | 如果 | 主持人就 | 然后进入 |" in text
-    assert "表格顺序就是同一阶段内的判断顺序" in text
+    assert "| 决策前阶段 | 判定条件 | 本轮动作 | 决策后阶段 |" in text
+    assert "表格顺序就是同一决策前阶段内的判断顺序" in text
     assert "一次只执行一行" in text
     for legacy_section in ["## 场内专家", "## 场景阶段", "## 场景流程", "## 专家任务单", "## 场景约束"]:
         assert legacy_section not in text

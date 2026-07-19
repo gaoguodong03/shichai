@@ -16,7 +16,7 @@
 
 修改以下资源：
 
-- `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协作/scenario.json`
+- `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/scenarios/协同写作/scenario.json`
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/skills/skill-0909791c1d74/SKILL.md`
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/agents/信息检索专家/agent.json`
 - `backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources/agents/文档合著专家/agent.json`
@@ -42,7 +42,7 @@
 
 ### 主持人长期提示词
 
-`scenario.json.host.system_prompt` 使用当前 `host.system.default.v1` 的完整职责形状，保留以下内容：
+`scenario.json.host.system_prompt` 使用前端 `DEFAULT_HOST_SYSTEM_PROMPT` 的完整职责形状，保留以下内容：
 
 - 纯调度边界；
 - 一次只调度一位专家；
@@ -69,7 +69,7 @@
 
 `skill-0909791c1d74/SKILL.md` 的 Frontmatter 保持当前字段，正文改为标题加唯一四列表。拟定流程如下：
 
-| 当前阶段 | 如果 | 主持人就 | 然后进入 |
+| 决策前阶段 | 判定条件 | 本轮动作 | 决策后阶段 |
 | --- | --- | --- | --- |
 | （无） | 用户尚未给出可执行目标或缺少决定首个专业环节所需的信息 | 询问用户：请说明需要交付的资料、文档、图片或图文版，以及已有材料 | （无） |
 | （无） | 用户要求搜索、抓取 URL、核验来源，或写作任务明确要求先取得公开资料 | 调度`信息检索专家`：根据用户目标取得可追溯资料，保存实际素材，并以可供用户确认的来源和路径作为完成条件 | 资料检索 |

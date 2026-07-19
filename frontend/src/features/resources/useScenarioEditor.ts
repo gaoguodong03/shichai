@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { normalizedResourceQuery } from './useResourceSearch'
-import { DEFAULT_SCENARIO_SYSTEM_PROMPT } from './resourceSystemPromptDefaults'
+import { DEFAULT_HOST_SYSTEM_PROMPT, DEFAULT_SCENARIO_SYSTEM_PROMPT } from './resourceSystemPromptDefaults'
 import type { ResourceSubModule } from '@/features/shell/mainNavigation'
 import { SESSION_PRESETS_UPDATED_EVENT_NAME } from '@/features/workspace/composables/workspacePreferences'
 
@@ -74,12 +74,7 @@ export function useScenarioEditor(options: {
   const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
 
   function isUnsavedScenarioDraftPreset(s: ScenarioPreset): boolean {
-    return (
-      !(s.name || '').trim() &&
-      !(s.description || '').trim() &&
-      !(s.system_prompt || '').trim() &&
-      !(s.agent_names || []).length
-    )
+    return !(s.name || '').trim()
   }
 
   const filteredScenarioPresets = computed(() => {
@@ -228,7 +223,7 @@ export function useScenarioEditor(options: {
       agent_names: [],
       description: '',
       system_prompt: DEFAULT_SCENARIO_SYSTEM_PROMPT,
-      host: {},
+      host: { system_prompt: DEFAULT_HOST_SYSTEM_PROMPT },
     }
     scenarioPresets.value = [
       next,

@@ -238,14 +238,13 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
     assert "agent_ids" not in updated
 
 
-def test_session_created_from_default_host_omits_display_only_skill_name(client: TestClient):
-    from app.agent.platform_prompts import render_platform_prompt
-
+def test_session_created_from_saved_host_omits_display_only_skill_name(client: TestClient):
     host_resp = client.put(
         "/api/settings/host-profile",
         json={
             "name": "默认主持人",
             "llm_name": "qwen3-max",
+            "system_prompt": "已保存主持人规则",
             "skill_name": "主持人展示 Skill",
             "skill_directory": "group-host",
         },
@@ -259,7 +258,7 @@ def test_session_created_from_default_host_omits_display_only_skill_name(client:
     assert created["host"] == {
         "name": "默认主持人",
         "llm_name": "qwen3-max",
-        "system_prompt": render_platform_prompt("host.system.default.v1", {}),
+        "system_prompt": "已保存主持人规则",
         "skill_directory": "group-host",
     }
     assert "skill_name" not in created["host"]
@@ -269,16 +268,10 @@ def test_session_created_from_default_host_omits_display_only_skill_name(client:
     assert "skill_name" not in detail_resp.json()["data"]["host"]
 
 
-def test_default_host_profile_exposes_editable_long_term_prompt(client: TestClient):
-    from app.agent.platform_prompts import render_platform_prompt
-
+def test_host_profile_defaults_endpoint_is_removed(client: TestClient):
     defaults_resp = client.get("/api/settings/host-profile/defaults")
 
-    assert defaults_resp.status_code == 200
-    defaults = defaults_resp.json()["data"]
-    assert defaults["system_prompt"] == render_platform_prompt("host.system.default.v1", {})
-    assert "只负责调度" in defaults["system_prompt"]
-    assert '"current_phase"' in defaults["system_prompt"]
+    assert defaults_resp.status_code == 404
 
 
 def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):

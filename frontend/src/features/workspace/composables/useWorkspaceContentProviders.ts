@@ -319,6 +319,7 @@ export function useWorkspaceContentProviders(args: {
     currentActiveStreamingMessage,
     activeStreamingSpeakerName,
     effectiveNextSpeaker,
+    groupConfirmationRequired,
     nextSpeakerLabelText,
     toolbarDisplaySpeakerId,
     toolbarDisplayShowHostAvatar,
@@ -393,6 +394,7 @@ export function useWorkspaceContentProviders(args: {
   })
   const {
     showStreamingRoutePlaceholder,
+    ensureStreamingExpertPlaceholder,
     consumeStreamingStatusContent,
     handleStreamMessageEvent,
     handleStreamEndEvent,
@@ -483,6 +485,15 @@ export function useWorkspaceContentProviders(args: {
           scheduleRestoredRuntimePoll,
           setLastRoute: (route) => { lastRoute.value = route },
         })
+        if (parsed.runtime?.running && parsed.runtime.agent_name) {
+          nextTick(() => {
+            if (props.selectedGroupSessionId !== id) return
+            ensureStreamingExpertPlaceholder({
+              agent_name: parsed.runtime?.agent_name,
+              skill: parsed.runtime?.skill,
+            }, id)
+          })
+        }
       } else {
         if (silent) return
         groupDetail.value = null
@@ -584,7 +595,7 @@ export function useWorkspaceContentProviders(args: {
     currentActiveStreamingMessage,
     activeStreamingSpeakerName,
     streamingPulse,
-    groupWaitingForUser,
+    groupConfirmationRequired,
     nextSpeakerLabelText,
     orchestrationInterruptHint,
     currentGroupStreaming,
