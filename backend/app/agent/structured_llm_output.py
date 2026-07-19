@@ -12,6 +12,14 @@ from app.agent.structured_output_contracts import StructuredOutputProtocolError,
 _T = TypeVar("_T", bound=BaseModel)
 
 
+def _bind_json_object_mode(client: Any) -> Any:
+    """Enable provider JSON mode when the client exposes the project bind API."""
+    bind = getattr(client, "bind", None)
+    if not callable(bind):
+        return client
+    return bind(response_format={"type": "json_object"})
+
+
 def response_content_to_text(response: Any) -> str:
     """Normalize common LLM response shapes before strict JSON parsing."""
     raw = response.content if hasattr(response, "content") else str(response)
@@ -45,13 +53,14 @@ async def invoke_pydantic_llm_output(
     This is the only runtime path for LLM calls whose output fields drive
     platform routing, state, tools, persistence, or frontend structure.
     """
-    response = await client.ainvoke(list(messages))
+    structured_client = _bind_json_object_mode(client)
+    response = await structured_client.ainvoke(list(messages))
     raw = response_content_to_text(response)
     try:
         return _parse_and_validate(raw, model, post_validate=post_validate)
     except StructuredOutputProtocolError:
         if retry_messages is None:
             raise
-    retry_response = await client.ainvoke(list(retry_messages))
+    retry_response = await structured_client.ainvoke(list(retry_messages))
     retry_raw = response_content_to_text(retry_response)
     return _parse_and_validate(retry_raw, model, post_validate=post_validate)
