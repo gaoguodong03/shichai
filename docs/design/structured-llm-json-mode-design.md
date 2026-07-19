@@ -1,5 +1,7 @@
 # 结构化 LLM 输出 JSON 模式设计
 
+本文是结构化控制输出链路的正式设计说明。
+
 ## 目标
 
 让所有通过 `invoke_pydantic_llm_output(...)` 的控制面 LLM 调用在生成阶段进入 JSON Object 模式，并在接收阶段继续使用调用方传入的 Pydantic Model 做严格校验，消除主持人偶发返回 Markdown 围栏 JSON 后连续重试失败的问题。

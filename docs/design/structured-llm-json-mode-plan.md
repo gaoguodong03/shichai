@@ -1,5 +1,7 @@
 # 结构化 LLM 输出 JSON 模式实现计划
 
+本文按项目正式设计目录约定记录实现与验证步骤。
+
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:test-driven-development 按本计划顺序执行。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：** 让共享 Pydantic 输出网关在模型生成前统一启用 JSON Object 模式，同时保持现有严格解析、Pydantic 校验与协议重试语义。
