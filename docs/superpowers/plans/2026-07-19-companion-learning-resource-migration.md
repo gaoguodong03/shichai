@@ -78,7 +78,7 @@
 运行：
 
 ```bash
-rtk conda run -n shichai python - <<'PY'
+rtk conda run -n st49 python - <<'PY'
 from pathlib import Path
 
 root = Path("backend/data/users/user-d8f26bf88991429789b4905ba0ae8040/resources")
@@ -395,7 +395,7 @@ for directory in skill_dirs:
     assert body.strip()
 ```
 
-运行：`rtk conda run -n shichai python`，通过标准输入执行上述脚本。
+运行：`rtk conda run -n st49 python`，通过标准输入执行上述脚本。
 
 预期：PASS，无异常。
 
