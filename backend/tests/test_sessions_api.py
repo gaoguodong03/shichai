@@ -281,6 +281,25 @@ def test_default_host_profile_exposes_editable_long_term_prompt(client: TestClie
     assert '"current_phase"' in defaults["system_prompt"]
 
 
+def test_resource_prompt_defaults_expose_resource_shaped_system_prompt_fields(client: TestClient):
+    from app.agent.platform_prompts import render_platform_prompt
+
+    response = client.get("/api/settings/resource-prompt-defaults")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "data": {
+            "scenario": {
+                "system_prompt": render_platform_prompt("scenario.system.default.v1", {}),
+            },
+            "expert": {
+                "system_prompt": render_platform_prompt("expert.system.default.v1", {}),
+            },
+        },
+    }
+
+
 def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):
     from app.agent import group_chat_once
 

@@ -69,6 +69,15 @@ def test_default_expert_system_prompt_owns_long_term_boundary_and_final_contract
         assert forbidden not in rendered
 
 
+def test_default_scenario_system_prompt_is_registered_and_editable():
+    scenario_prompt = importlib.import_module("app.agent.scenario_prompt")
+    rendered = scenario_prompt.get_default_scenario_system_prompt()
+
+    assert rendered == render_platform_prompt("scenario.system.default.v1", {})
+    for required in ["场景目标", "适用范围", "共同要求", "完成标准"]:
+        assert required in rendered
+
+
 def test_expert_system_prompt_uses_default_only_when_profile_prompt_is_empty():
     expert_prompt = importlib.import_module("app.agent.expert_prompt")
     default_prompt = render_platform_prompt("expert.system.default.v1", {})
