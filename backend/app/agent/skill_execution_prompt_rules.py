@@ -23,7 +23,6 @@ def skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     if "read_workspace_file" in names:
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.read.v1", {}))
     if "write_workspace_file" in names:
-        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.artifact.v1", {}))
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.write.v1", {}))
     if "edit_workspace_file" in names:
         file_lines.append(render_platform_prompt("skill.execution.workspace_tool.edit.v1", {}))

@@ -62,6 +62,8 @@ def test_create_skill_execution_agent_injects_self_awareness_after_skill_content
     assert "额外系统提示" in prompt
     assert skill_content in prompt
     assert self_awareness in prompt
+    assert prompt.count("额外系统提示") == 1
+    assert prompt.index("额外系统提示") < prompt.index(skill_content)
     assert prompt.index(skill_content) < prompt.index(self_awareness)
 
 
@@ -80,22 +82,21 @@ def test_create_skill_execution_agent_omits_legacy_prompt_scaffolding():
     assert '{"action":"tool_call"' not in prompt
     assert "额外系统提示" in prompt
     assert skill_content in prompt
-    assert "当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数" in prompt
+    assert "在同一次 agent_turn 内完成所有有依赖关系的工具步骤" in prompt
+    assert "平台不会自动重试失败工具" in prompt
     assert "- read_workspace_file: 读文件" in prompt
 
 
-def test_create_skill_execution_agent_prefers_workspace_artifact_tool_for_new_outputs():
+def test_create_skill_execution_agent_uses_write_workspace_file_for_new_text_outputs():
     agent = create_skill_execution_agent(
         llm=object(),
-        tools=[
-            ToolSpec(name="create_workspace_artifact", description="创建产物"),
-            ToolSpec(name="write_workspace_file", description="写文件"),
-        ],
+        tools=[ToolSpec(name="write_workspace_file", description="写文件")],
         skill_full_content="按技能正文执行。",
     )
     prompt = agent.system_prompt
 
-    assert "create_workspace_artifact" in prompt
-    assert "平台负责唯一命名和版本化" in prompt
+    assert "create_workspace_artifact" not in prompt
+    assert "write_workspace_file" in prompt
+    assert "新建文本文件" in prompt
     assert "当前文件时间戳" not in prompt
     assert "新建工作区文件时直接把这个时间戳写入文件名" not in prompt

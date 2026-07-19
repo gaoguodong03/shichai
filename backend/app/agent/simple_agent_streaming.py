@@ -7,7 +7,7 @@ from typing import Any
 from app.agent.llm_client import bind_tools_compat
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from app.agent.platform_prompts import render_platform_prompt
-from app.agent.structured_llm_output import invoke_pydantic_tool_output
+from app.agent.structured_llm_output import invoke_pydantic_llm_output
 from app.agent.simple_agent_finalization import (
     _post_tool_decision_instruction,
     _tool_budget_finalization_instruction,
@@ -31,8 +31,6 @@ from app.agent.simple_agent_text_tool_protocol import (
 )
 from app.agent.simple_agent_tool_flow import (
     all_workspace_write_calls_already_succeeded as _all_workspace_write_calls_already_succeeded,
-    has_successful_workspace_write_output as _has_successful_workspace_write_output,
-    has_workspace_mutating_tool_call as _has_workspace_mutating_tool_call,
     read_file_should_synthesize_after_result as _read_file_should_synthesize_after_result,
     remember_successful_workspace_writes as _remember_successful_workspace_writes,
 )
@@ -42,6 +40,16 @@ from app.agent.simple_agent_tool_ids import (
     _normalize_tool_message_ids,
 )
 logger = logging.getLogger(__name__)
+
+
+def _message_matches_output_model(message: AIMessage, output_model: Any) -> bool:
+    content = getattr(message, "content", None)
+    try:
+        payload = json.loads(content) if isinstance(content, str) else content
+        output_model.model_validate(payload)
+    except Exception:
+        return False
+    return True
 
 
 async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_mode=None, config: dict | None = None):
@@ -70,7 +78,7 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
 
     client = agent.llm.get_client()
     if tools:
-        client = bind_tools_compat(client, tools)
+        client = bind_tools_compat(client, tools, tool_choice_strategy="auto")
 
     tool_attempt_debug: list[dict[str, Any]] = []
     tool_result_cache: dict[str, dict[str, Any]] = {}
@@ -78,9 +86,41 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
     all_tool_results: list[dict[str, Any]] = []
     successful_workspace_write_keys: set[str] = set()
     last_tool_signature = ""
-    repeated_tool_rounds = 0
     output_continuations = 0
     text_tool_protocol_retries = 0
+    async def _finalize_stopped_tool_loop(step: int) -> AIMessage:
+        messages.append(_post_tool_decision_instruction(all_tool_raw_outputs, tool_results=all_tool_results))
+        if agent.final_output_model is not None:
+            finalizer_client = agent.llm.get_client()
+            bind_fn = getattr(finalizer_client, "bind", None)
+            if callable(bind_fn):
+                finalizer_client = bind_fn(response_format={"type": "json_object"})
+            parsed_final = await invoke_pydantic_llm_output(
+                finalizer_client,
+                messages,
+                agent.final_output_model,
+            )
+            final_message = AIMessage(
+                content=json.dumps(parsed_final.model_dump(mode="json", exclude_none=True), ensure_ascii=False)
+            )
+            source = "stopped_tool_loop_structured_finalizer"
+        else:
+            finalizer_client = agent.llm.get_client()
+            bind_fn = getattr(finalizer_client, "bind", None)
+            if callable(bind_fn):
+                finalizer_client = bind_fn(response_format={"type": "json_object"})
+            final_message = await agent._call_model(finalizer_client, messages, step=step)
+            source = "stopped_tool_loop_finalizer"
+        messages.append(final_message)
+        tool_attempt_debug.append(
+            {
+                "source": source,
+                "matched": True,
+                "content_preview": _extract_text_content(final_message)[:240],
+            }
+        )
+        return final_message
+
     for step in range(agent.max_steps):
         response = await agent._call_model(client, messages, step=step + 1)
         if not (getattr(response, "tool_calls", None) or []) and _looks_like_text_tool_call_protocol(response):
@@ -104,25 +144,19 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
             for tc in tool_calls:
                 name = str(tc.get("name") or "")
                 args = tc.get("args")
-                signatures.append(f"{name}:{args}")
+                args_signature = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
+                signatures.append(f"{name}:{args_signature}")
             current_signature = " | ".join(signatures)
             if current_signature and current_signature == last_tool_signature:
-                repeated_tool_rounds += 1
-            else:
-                repeated_tool_rounds = 1
-                last_tool_signature = current_signature
-            if repeated_tool_rounds > agent.max_repeated_tool_rounds:
                 logger.warning(
-                    "SimpleAgent: detected repeated tool-call rounds, break loop. step=%s repeats=%s signature=%s",
+                    "SimpleAgent: blocked exact duplicate tool-call round. step=%s signature=%s",
                     step + 1,
-                    repeated_tool_rounds,
                     current_signature[:240],
                 )
                 tool_attempt_debug.append(
                     {
                         "source": "repeated_tool_guard",
                         "matched": True,
-                        "repeat_rounds": repeated_tool_rounds,
                         "signature_preview": current_signature[:240],
                     }
                 )
@@ -142,6 +176,7 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                     "tool_attempt_debug": tool_attempt_debug,
                 }
                 break
+            last_tool_signature = current_signature
             if _all_workspace_write_calls_already_succeeded(tool_calls, successful_workspace_write_keys):
                 tool_attempt_debug.append(
                     {
@@ -216,131 +251,7 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 "tool_raw_outputs": tool_raw_outputs,
                 "tool_attempt_debug": tool_attempt_debug,
             }
-            if _read_file_should_synthesize_after_result(tool_out, agent.synthesize_after_read_file_paths, tool_attempt_debug):
-                messages.append(_post_tool_decision_instruction(all_tool_raw_outputs, tool_results=all_tool_results))
-                final_message = await agent._call_model(client, messages, step=step + 2)
-                if _looks_like_text_tool_call_protocol(final_message):
-                    text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
-                        response=final_message,
-                        messages=messages,
-                        tool_attempt_debug=tool_attempt_debug,
-                        retry_count=text_tool_protocol_retries,
-                    )
-                    if should_retry:
-                        final_message = await agent._call_model(client, messages, step=step + 2)
-                        if _looks_like_text_tool_call_protocol(final_message):
-                            text_tool_protocol_retries, protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
-                                response=final_message,
-                                messages=messages,
-                                tool_attempt_debug=tool_attempt_debug,
-                                retry_count=text_tool_protocol_retries,
-                            )
-                            yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
-                            break
-                    else:
-                        yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
-                        break
-                synthesized_tool_message, synthesized_tool_out = await agent._execute_post_tool_decision_tool_calls(
-                    final_message,
-                    messages=messages,
-                    tools=tools,
-                    tool_result_cache=tool_result_cache,
-                    tool_attempt_debug=tool_attempt_debug,
-                    tool_raw_outputs=all_tool_raw_outputs,
-                    initial_state=initial_state,
-                    step=step + 2,
-                    previous_tool_signature=current_signature,
-                    successful_workspace_write_keys=successful_workspace_write_keys,
-                )
-                if synthesized_tool_message is not None and synthesized_tool_out is not None:
-                    all_tool_raw_outputs.extend(
-                        [str(x) for x in (synthesized_tool_out.get("tool_raw_outputs") or []) if str(x or "")]
-                    )
-                    all_tool_results.extend(
-                        [x for x in (synthesized_tool_out.get("tool_results") or []) if isinstance(x, dict)]
-                    )
-                    yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
-                    yield {
-                        "type": "tool_step",
-                        "step": step + 2,
-                        "tool_messages": synthesized_tool_out.get("messages") or [],
-                        "tool_calls": synthesized_tool_out.get("tool_calls") or [],
-                        "tool_results": synthesized_tool_out.get("tool_results") or [],
-                        "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
-                        "tool_attempt_debug": tool_attempt_debug,
-                    }
-                    continue
-                if getattr(final_message, "tool_calls", None):
-                    break
-                messages.append(final_message)
-                yield {"type": "agent_step", "step": step + 2, "message": final_message}
-                break
-            if tools:
-                messages.append(_post_tool_decision_instruction(all_tool_raw_outputs, tool_results=all_tool_results))
-                final_message = await agent._call_model(client, messages, step=step + 2)
-                if _looks_like_text_tool_call_protocol(final_message):
-                    text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
-                        response=final_message,
-                        messages=messages,
-                        tool_attempt_debug=tool_attempt_debug,
-                        retry_count=text_tool_protocol_retries,
-                    )
-                    if should_retry:
-                        final_message = await agent._call_model(client, messages, step=step + 2)
-                        if _looks_like_text_tool_call_protocol(final_message):
-                            text_tool_protocol_retries, protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
-                                response=final_message,
-                                messages=messages,
-                                tool_attempt_debug=tool_attempt_debug,
-                                retry_count=text_tool_protocol_retries,
-                            )
-                            yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
-                            break
-                    else:
-                        yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
-                        break
-                synthesized_tool_message, synthesized_tool_out = await agent._execute_post_tool_decision_tool_calls(
-                    final_message,
-                    messages=messages,
-                    tools=tools,
-                    tool_result_cache=tool_result_cache,
-                    tool_attempt_debug=tool_attempt_debug,
-                    tool_raw_outputs=all_tool_raw_outputs,
-                    initial_state=initial_state,
-                    step=step + 2,
-                    previous_tool_signature=current_signature,
-                    successful_workspace_write_keys=successful_workspace_write_keys,
-                )
-                if synthesized_tool_message is not None and synthesized_tool_out is not None:
-                    all_tool_raw_outputs.extend(
-                        [str(x) for x in (synthesized_tool_out.get("tool_raw_outputs") or []) if str(x or "")]
-                    )
-                    all_tool_results.extend(
-                        [x for x in (synthesized_tool_out.get("tool_results") or []) if isinstance(x, dict)]
-                    )
-                    yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
-                    yield {
-                        "type": "tool_step",
-                        "step": step + 2,
-                        "tool_messages": synthesized_tool_out.get("messages") or [],
-                        "tool_calls": synthesized_tool_out.get("tool_calls") or [],
-                        "tool_results": synthesized_tool_out.get("tool_results") or [],
-                        "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
-                        "tool_attempt_debug": tool_attempt_debug,
-                    }
-                    continue
-                if getattr(final_message, "tool_calls", None):
-                    break
-                messages.append(final_message)
-                tool_attempt_debug.append(
-                    {
-                        "source": "post_tool_decision_final_state",
-                        "matched": True,
-                        "content_preview": _extract_text_content(final_message)[:240],
-                    }
-                )
-                yield {"type": "agent_step", "step": step + 2, "message": final_message}
-                break
+            _read_file_should_synthesize_after_result(tool_out, agent.synthesize_after_read_file_paths, tool_attempt_debug)
             continue
         content = response.content if isinstance(response.content, str) else str(response.content or "")
         if content.strip():
@@ -373,6 +284,13 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 )
                 messages.append(_continuation_instruction())
                 continue
+            if (
+                agent.final_output_model is not None
+                and not _message_matches_output_model(response, agent.final_output_model)
+            ):
+                final_message = await _finalize_stopped_tool_loop(step + 2)
+                yield {"type": "agent_step", "step": step + 2, "message": final_message}
+                break
             yield {
                 "type": "tool_step",
                 "step": step + 1,
@@ -382,6 +300,10 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 "tool_raw_outputs": [],
                 "tool_attempt_debug": tool_attempt_debug,
             }
+
+        elif agent.final_output_model is not None:
+            final_message = await _finalize_stopped_tool_loop(step + 2)
+            yield {"type": "agent_step", "step": step + 2, "message": final_message}
 
         break
 
@@ -395,25 +317,17 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
         if agent.final_output_model is not None:
             messages.append(
                 _tool_budget_structured_finalization_instruction(
-                    tool_name=agent.final_output_tool_name,
                     tool_results=all_tool_results,
                 )
             )
-            retry_messages = [
-                *messages,
-                HumanMessage(
-                    content=render_platform_prompt(
-                        "agent.structured_output.protocol_retry.v1",
-                        {"schema_name": agent.final_output_model.__name__},
-                    )
-                ),
-            ]
-            parsed_final = await invoke_pydantic_tool_output(
-                agent.llm.get_client(),
+            finalizer_client = agent.llm.get_client()
+            bind_fn = getattr(finalizer_client, "bind", None)
+            if callable(bind_fn):
+                finalizer_client = bind_fn(response_format={"type": "json_object"})
+            parsed_final = await invoke_pydantic_llm_output(
+                finalizer_client,
                 messages,
                 agent.final_output_model,
-                tool_name=agent.final_output_tool_name,
-                retry_messages=retry_messages,
             )
             final_message = AIMessage(
                 content=json.dumps(parsed_final.model_dump(mode="json", exclude_none=True), ensure_ascii=False)

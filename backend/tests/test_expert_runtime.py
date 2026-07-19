@@ -53,12 +53,7 @@ class SequencedCapturingLlm:
 def test_resolve_expert_skill_uses_locked_skill_first():
     loader = FakeSkillsLoader({"sk1": "body 1", "sk2": "body 2"})
     orchestration_state = {
-        "continuation": {
-            "owner_agent_name": "专家A",
-            "skill_session": "keep",
-            "skill": "sk2",
-            "message": {"content": "继续处理"},
-        }
+        "skill_sessions": {"专家A": {"skill": "sk2"}}
     }
 
     skill, content, debug = asyncio.run(
@@ -70,7 +65,7 @@ def test_resolve_expert_skill_uses_locked_skill_first():
             agent_name="专家A",
             discussion_goal="goal",
             messages=[],
-            session_item={},
+            session_item={"scenario_prompt": "场景共享任务契约"},
             orchestration_state=orchestration_state,
             app_settings={},
             round_user_text="",
@@ -102,9 +97,12 @@ def test_resolve_expert_skill_uses_expert_profile_in_multi_skill_prompt():
             agent_name="专家A",
             discussion_goal="整理竞品资料",
             messages=[],
-            session_item={},
+            session_item={"scenario_prompt": "场景共享任务契约"},
             orchestration_state={},
-            app_settings={"default_llm": "qwen3-max"},
+            app_settings={
+                "default_llm": "qwen3-max",
+                "system_prompt": "项目统一提示词",
+            },
             round_user_text="先查资料",
             skills_loader=loader,
             llm_resolver=lambda _agent_profile: llm,
@@ -116,8 +114,15 @@ def test_resolve_expert_skill_uses_expert_profile_in_multi_skill_prompt():
     assert debug["strategy"] == "expert_llm_pick"
     assert debug["selected_skill"] == "research"
     assert llm.messages is not None
+    assert "项目统一提示词" in llm.messages[0].content
+    assert llm.messages[0].content.count("项目统一提示词") == 1
+    assert "场景共享任务契约" in llm.messages[0].content
+    assert llm.messages[0].content.count("场景共享任务契约") == 1
     assert "负责资料检索和事实核验" in llm.messages[0].content
     assert "你必须优先核验来源可靠性。" in llm.messages[0].content
+    assert llm.messages[0].content.index("项目统一提示词") < llm.messages[0].content.index("专家名称")
+    assert llm.messages[0].content.index("项目统一提示词") < llm.messages[0].content.index("场景共享任务契约")
+    assert llm.messages[0].content.index("场景共享任务契约") < llm.messages[0].content.index("专家名称")
 
 
 def test_resolve_expert_skill_retries_protocol_output_before_blocking():
@@ -212,7 +217,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     assert "专家系统提示" in runtime.skill_content
     assert "你的职责：写作专家" in runtime.skill_content
     assert "技能正文" in runtime.skill_content
-    assert "Skill 会话状态" in runtime.skill_content
+    assert "Skill 会话状态" not in runtime.skill_content
     assert calls["agent_factory"]["tools"] == runtime.tools
     assert calls["agent_factory"]["synthesize_after_read_file_paths"] == ()
 

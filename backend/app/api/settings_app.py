@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.agent.project_prompt import get_default_project_system_prompt
+from app.agent.host_prompt import get_default_host_system_prompt
 from app.api.request_models import StrictRequestModel
 from app.core.llm_bundle import (
     build_llm_bundle_zip_bytes,
@@ -76,7 +78,7 @@ _DEFAULT_LLM_PROVIDERS = {
 
 _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
     "name": "四九",
-    "system_prompt": "",
+    "system_prompt": get_default_host_system_prompt(),
     "llm_name": "",
     "skill_name": "",
     "skill_directory": "",
@@ -91,7 +93,7 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
     out.update(
         {
             "name": str(raw.get("name") or _DEFAULT_HOST_PROFILE["name"]).strip() or "四九",
-            "system_prompt": str(raw.get("system_prompt") or ""),
+            "system_prompt": str(raw.get("system_prompt") or _DEFAULT_HOST_PROFILE["system_prompt"]),
             "llm_name": str(raw.get("llm_name") or "").strip(),
             "skill_name": str(raw.get("skill_name") or "").strip(),
             "skill_directory": str(raw.get("skill_directory") or "").strip().replace("\\", "/").strip("/"),
@@ -187,7 +189,7 @@ def load_app_settings() -> Dict[str, Any]:
     path = app_settings_path()
     data = {
         "default_llm": "qwen3-max",
-        "system_prompt": "",
+        "system_prompt": get_default_project_system_prompt(),
         "host": dict(_DEFAULT_HOST_PROFILE),
     }
     if path.exists():

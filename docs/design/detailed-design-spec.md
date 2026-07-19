@@ -38,7 +38,7 @@
 |------|----------|----------|----------|----------|
 | 账号与用户上下文 | 登录、注册、改密、受保护访问、用户资源根 | `features/auth`、`features/settings` | `api/auth.py`、`core/security.py`、`core/user_context.py` | UR-01 |
 | 工作区与会话 | 会话列表、消息流、成员、状态、会话文件 | `features/workspace` | `api/sessions.py`、`agent/group_session_service.py` | UR-02、UR-08 |
-| 编排运行时 | 主持人调度、专家路由、等待用户、结束状态 | `useGroupOrchestrationState.ts` | `agent/group_chat_runtime.py`、`group_orchestration_fsm.py` | UR-03 |
+| 编排运行时 | 主持人调度、结构化入口路由、等待用户、结束状态 | `useGroupOrchestrationState.ts` | `agent/group_chat_runtime.py`、`group_entry_router.py` | UR-03 |
 | 资源中心 | 场景、专家、Skill、MCP、模型、文件资源维护 | `features/resources` | `api/agents.py`、`api/settings*.py` | UR-04、UR-09、UR-10 |
 | 工具运行 | Skill 选择、MCP 工具、脚本、文件工具、HTTP API | 工作区消息流和资源详情页 | `agent/tools_for_skill.py`、`agent/tool_gateway.py`、`tools/*` | UR-05、UR-06 |
 | 沙箱 | 沙箱版本、requirements、挂载、网络、超时 | `SandboxSettingsView.vue` | `api/sandbox_settings.py`、`agent/sandbox_*` | UR-07 |
@@ -285,7 +285,7 @@ POST /api/sessions/{session_id}/chat/stream
 
 1. 运行时读取当前会话成员和场景配置。
 2. 如果存在 `target_agent_name`，按用户显式选择进入该专家。
-3. 否则先恢复有效的主持人调度消息或 Skill continuation；没有可恢复路由时调用主持人。
+3. 否则先恢复有效的主持人调度消息；没有结构化目标时调用主持人，并向其提供历史和 Skill Session 摘要。
 4. 主持人只输出 `current_phase`、标准 `message` 和可选 `suggested_add_agent_names`。
 5. 决策通过严格结构校验后，若 `message.target_agent_name` 是场内专家，先写入该主持人消息，再进入专家执行。
 6. 专家回复完成后控制权回到主持人，主持人决定继续另一个专家、同一专家、等待用户或结束。
@@ -294,11 +294,15 @@ POST /api/sessions/{session_id}/chat/stream
 关键文件：
 
 - `backend/app/agent/group_chat_runtime.py`
-- `backend/app/agent/group_orchestration_fsm.py`
+- `backend/app/agent/group_entry_router.py`
 - `backend/app/agent/group_chat_host_runtime.py`
 - `backend/app/agent/group_host_decision.py`
 - `backend/app/agent/group_chat_expert_resolution.py`
 - `backend/app/agent/expert_runtime.py`
+- `backend/app/agent/expert_completion_contract.py`
+- `backend/app/agent/expert_output_publisher.py`
+- `backend/app/agent/agent_turn_controller.py`
+- `backend/app/agent/skill_session_manager.py`
 
 异常处理：
 
@@ -312,7 +316,7 @@ POST /api/sessions/{session_id}/chat/stream
 
 - `backend/tests/test_group_host_decision.py`
 - `backend/tests/test_host_takeover.py`
-- `backend/tests/test_group_orchestration_fsm.py`
+- `backend/tests/test_group_entry_router.py`
 - `backend/tests/test_sessions_api.py`
 - `backend/tests/test_expert_runtime.py`
 
@@ -381,8 +385,8 @@ POST /api/sessions/{session_id}/chat/stream
 4. 根据 `allowed-tools.mcp` 和 `allowed-tools.http_api` 组装外部工具；工作区工具是平台默认能力，当前 Skill 脚本工具由 `scripts/manifest.json` 决定。
 5. 平台统一生成 LLM 可见工具 schema：`name`、`description`、`input_schema`。模型只填写参数，不决定执行路径、URL、脚本入口或工作区根目录。
 6. 模型触发脚本工具时，平台按 `scripts/manifest.json` 的 `args` 校验参数，并转换为 CLI 参数后交给 OpenSandbox。
-7. 脚本型 Skill 的 stdout JSON 必须完整返回 `expert_final_state.v2`：`schema_version`、`execution_status`、`message` 和 `next_action`。
-8. 非脚本 Skill、MCP / HTTP / workspace 工具后必须回到绑定当前工具集的 LLM；模型可继续调用工具，不再需要工具时进入 finalizer。只有 finalizer 的 `expert_final_state.v2.message` 可以成为专家消息。
+7. 脚本型 Skill 的 stdout JSON 必须完整返回 `expert_final_state.v2`：`execution_status`、`message` 和 `next_action`；不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。
+8. 非脚本 Skill、MCP / HTTP / workspace 工具在同一次 `agent_turn` 内运行多步工具循环；每批工具结果作为 `ToolMessage` 回到仍绑定当前工具集的模型，直到模型输出终态或达到工具步数上限。无工具 finalizer 只在模型停止调用工具但终态不合格、或预算耗尽时运行。平台校验终态后先发布非空专家消息，再分别应用 `agent_turn` 和 `skill_session`。
 
 字段边界：
 
@@ -393,7 +397,8 @@ POST /api/sessions/{session_id}/chat/stream
 - 保存型 HTTP API 工具由资源配置决定 URL、method、默认 query/header/body；LLM 只能传 `query`、`headers`、`body` 覆盖或补充参数。通用 `call_api` 不再作为 LLM 可见工具注入。
 - Skill 脚本必须提供 `scripts/manifest.json`。manifest 只写 `entry`、`description`、`args`；平台根据 `args` 自动生成 `input_schema`，并把模型参数转换为 CLI 参数。manifest 不写 `input_schema`、`cli_args` 或 `invocation`。
 - `execution_status` 只允许 `succeeded`、`blocked`、`failed`，不使用 `needs_input` 或 `result_code`。
-- `next_action.agent_turn` 控制当前专家继续行动或回复用户；`next_action.skill_session` 控制下一条用户消息是否保留同一专家和 Skill。两个维度互不替代。
+- `next_action.agent_turn` 控制下一次执行权是否继续给当前专家；`next_action.skill_session` 控制同一专家后续被调用时是否沿用当前 Skill。两个维度互不替代。
+- `next_action` 只存在于模型终态和平台内部控制对象中，不写入消息 `skill_result`；消息 `skill_result` 只保存 `execution_status`。
 - 执行日志使用 `source=mcp|script|workspace|api|host`，不设置 `unknown`。`provider` 表示 MCP server、Skill `directory_name`、`workspace`、保存的 HTTP API 工具名或 `host`；`provider_tool` 表示 MCP 原始工具、脚本入口、工作区动作、API 动作名或主持人调度动作名。执行层应尽量记录 `provider` 和 `provider_tool`，便于 trace 与排障；确实无值时省略，不写 `null`，也不得用这两个字段驱动业务分支。
 - `error_log`、stdout、stderr、调用参数、耗时和中间结构化返回属于执行 trace 或运行日志，不进入 `history.json` 的消息核心字段。
 
@@ -421,7 +426,7 @@ POST /api/sessions/{session_id}/chat/stream
 - `backend/tests/test_skill_agent_tool_resolution.py`
 - `backend/tests/test_skill_mcp_and_script_requirements.py`
 - `backend/tests/test_group_chat_skill_script_cli_flow.py`
-- `backend/tests/test_group_orchestration_fsm.py`
+- `backend/tests/test_group_entry_router.py`
 
 ### 6.6 MCP 工具能力
 
@@ -440,7 +445,7 @@ POST /api/sessions/{session_id}/chat/stream
 5. 工具调用通过 MCP manager 执行，调用事实写入执行 trace 或运行日志，并交给专家继续判断下一步。
 6. MCP / HTTP 保留原始协议返回；统一产物接收层从当前调用上下文取得会话工作区，校验标准图片或二进制内容并落盘，再生成 `tool_result.output.artifacts`。
 
-MCP / HTTP / workspace 工具本身不返回 `next_action`。工具执行后回到 LLM，由模型判断继续调用工具或进入 finalizer；finalizer 必须输出完整 `expert_final_state.v2`。工具记录不是消息或跨轮路由事实源，MCP 原始正文、stdout 和 stderr 不进入聊天气泡。
+MCP / HTTP / workspace 工具本身不返回 `next_action`。一次 `agent_turn` 可以包含多个有依赖关系的工具步骤；工具执行后回到同一模型上下文，模型可以继续选择下一个工具，也可以输出完整 `expert_final_state.v2`。`next_action.agent_turn=continue` 表示新的业务阶段，不用于补完搜索后写文件等本轮依赖工具链。工具记录不是消息或跨轮路由事实源，MCP 原始正文、stdout 和 stderr 不进入聊天气泡。
 
 第三方 MCP / HTTP 配置保持标准导入即用，不新增平台专属 `workspace_id` 参数。禁止按工具名硬编码保存逻辑，也禁止从任意文本、URL 字段或工具声明路径猜测产物；平台只接收协议可确定识别且通过安全校验的内容。
 
@@ -691,7 +696,7 @@ MCP / HTTP / workspace 工具本身不返回 `next_action`。工具执行后回�
 |------|--------------|----------|
 | UR-01 账号与用户隔离 | 6.1 | `test_auth_sqlite.py`、`test_user_resource_paths.py`、`auth.spec.ts` |
 | UR-02 工作区与统一会话 | 6.2 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`workspace.spec.ts` |
-| UR-03 主持人与专家协作 | 6.3 | `test_group_host_decision.py`、`test_host_takeover.py`、`test_group_orchestration_fsm.py` |
+| UR-03 主持人与专家协作 | 6.3 | `test_group_host_decision.py`、`test_host_takeover.py`、`test_group_entry_router.py` |
 | UR-04 资源中心 | 6.4 | `test_agents_api.py`、资源中心 E2E |
 | UR-05 Skill 与脚本执行 | 6.5 | `test_skill_agent_tool_resolution.py`、`test_group_chat_skill_script_cli_flow.py` |
 | UR-06 MCP 工具能力 | 6.6 | `test_file_ref_and_gateway.py`、`test_mcp_skill_resolution.py` |

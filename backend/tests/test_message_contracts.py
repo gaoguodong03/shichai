@@ -2,16 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent.message_contracts import ChatMessageRecord, MessageSpeaker, SkillResult, WorkspaceAttachment
-from app.agent.structured_output_contracts import ExpertFinalStatePayload
+from app.agent.expert_completion_contract import ExpertFinalStatePayload
 from app.agent.structured_output_contracts import ArtifactRef
-
-
-def v2_next_action():
-    return {
-        "agent_turn": "respond",
-        "skill_session": "release",
-    }
-
 
 def test_user_message_record_uses_nested_message_object():
     message = ChatMessageRecord(
@@ -47,7 +39,6 @@ def test_expert_message_record_uses_current_skill_result_shape():
         created_at="2026062908104900",
         skill_result={
             "execution_status": "succeeded",
-            "next_action": v2_next_action(),
         },
     )
 
@@ -57,17 +48,12 @@ def test_expert_message_record_uses_current_skill_result_shape():
     assert "target_agent_name" not in dumped["message"]
     assert dumped["skill_result"] == {
         "execution_status": "succeeded",
-        "next_action": {"agent_turn": "respond", "skill_session": "release"},
     }
 
 
 def test_skill_result_rejects_workflow_state_field():
     payload = {
         "execution_status": "blocked",
-        "next_action": {
-            "agent_turn": "respond",
-            "skill_session": "keep",
-        },
         "workflow_state": {
             "stage": "context_collection",
             "stage_status": "waiting_confirmation",
@@ -83,7 +69,6 @@ def test_skill_result_rejects_legacy_content_and_artifacts_fields():
         "execution_status": "succeeded",
         "content": "旧正文",
         "artifacts": [{"type": "file", "name": "报告", "path": "reports/report.md"}],
-        "next_action": v2_next_action(),
     }
 
     with pytest.raises(ValidationError):
@@ -92,7 +77,6 @@ def test_skill_result_rejects_legacy_content_and_artifacts_fields():
 
 def test_expert_final_state_maps_visible_message_and_control_separately():
     payload = {
-        "schema_version": "expert_final_state.v2",
         "execution_status": "succeeded",
         "message": {
             "content": "我已经整理好资料，并保存为工作区文档。",
@@ -108,6 +92,18 @@ def test_expert_final_state_maps_visible_message_and_control_separately():
     assert final_state.next_action.agent_turn == "respond"
 
 
+def test_expert_final_state_rejects_schema_version_field():
+    payload = {
+        "schema_version": "expert_final_state.v2",
+        "execution_status": "succeeded",
+        "message": {"content": "完成。"},
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+
+    with pytest.raises(ValidationError):
+        ExpertFinalStatePayload.model_validate(payload)
+
+
 def test_skill_result_requires_speaker_skill_directory():
     payload = {
         "message_id": "msg-host",
@@ -116,7 +112,6 @@ def test_skill_result_requires_speaker_skill_directory():
         "created_at": "2026062908104900",
         "skill_result": {
             "execution_status": "succeeded",
-            "next_action": v2_next_action(),
         },
     }
 
@@ -236,9 +231,18 @@ def test_message_speaker_rejects_invalid_identity_shapes(speaker):
 def test_skill_result_rejects_old_fields(old_key, value):
     payload = {
         "execution_status": "succeeded",
-        "next_action": v2_next_action(),
         old_key: value,
     }
 
     with pytest.raises(ValidationError):
         SkillResult.model_validate(payload)
+
+
+def test_message_skill_result_rejects_runtime_control_fields():
+    with pytest.raises(ValidationError):
+        SkillResult.model_validate(
+            {
+                "execution_status": "succeeded",
+                "next_action": {"agent_turn": "respond", "skill_session": "keep"},
+            }
+        )

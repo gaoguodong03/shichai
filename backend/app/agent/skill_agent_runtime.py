@@ -20,7 +20,7 @@ from app.agent.skill_tool_result_records import (
     _tool_result_record_from_exception,
     _tool_result_record_from_raw,
 )
-from app.agent.structured_output_contracts import ExpertFinalStatePayload, SkillScriptStdoutPayload
+from app.agent.expert_completion_contract import ExpertFinalStatePayload, SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
 from app.agent.tool_artifact_ingestion import ingest_tool_result
 
@@ -75,8 +75,10 @@ def _skill_script_prompt_summary(result: object) -> str | None:
     if not isinstance(payload, dict):
         return None
 
+    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
     stdout_payload = _json_object_from_tool_result(payload.get("stdout"))
-    candidates = [stdout_payload, payload]
+    output_stdout_payload = _json_object_from_tool_result(output.get("stdout"))
+    candidates = [stdout_payload, output_stdout_payload, payload]
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -97,9 +99,6 @@ def _skill_script_prompt_summary(result: object) -> str | None:
 
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
 _SKILL_AGENT_MAX_STEPS = max(2, int(os.getenv("SKILL_AGENT_MAX_STEPS", "6")))
-_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
-    1, int(os.getenv("SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS", "1"))
-)
 
 async def _execute_tool_safely(tool: ToolSpec, arguments: dict) -> object:
     """统一执行工具，兼容 func=None 但 coroutine 可用的 ToolSpec。"""
@@ -180,10 +179,8 @@ def create_skill_execution_agent(
         tool_runner=_tool_runner,
         timeout_s=float(_LLM_AGENT_TIMEOUT),
         max_steps=_SKILL_AGENT_MAX_STEPS,
-        max_repeated_tool_rounds=_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS,
         synthesize_after_read_file_paths=synthesize_after_read_file_paths,
         final_output_model=ExpertFinalStatePayload,
-        final_output_tool_name="submit_expert_final_state",
     )
 
 

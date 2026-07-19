@@ -79,7 +79,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 | 设置-主持人/应用 | 主持人 profile、默认模型、模型配置保存与敏感字段隐藏 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-环境变量 | 环境变量新增、列表隐藏真实值、更新、删除 | `tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-沙箱 | 镜像 variant 保存、requirements 保存/merge、用户级沙箱复用/重建、网络策略、预热去重 | `tests/test_sandbox_service.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
-| 编排与场景运行时 | 场景会话恢复、专家 runtime、主持人接管、轮次状态机、用户等待合约 | `tests/test_sessions_api.py`、`tests/test_expert_runtime.py`、`tests/test_group_orchestration_fsm.py`、`tests/test_host_takeover.py` |
+| 编排与场景运行时 | 场景会话恢复、专家 runtime、主持人接管、结构化入口路由、用户等待合约 | `tests/test_sessions_api.py`、`tests/test_expert_runtime.py`、`tests/test_group_entry_router.py`、`tests/test_host_takeover.py` |
 | 记忆与审计 | 群聊记忆注入、事实存储、旧版运行审计文件清理合同 | `tests/test_group_chat_group_memory.py`、`tests/test_group_memory_store.py`、`tests/test_group_chat_cleanup_contract.py` |
 | 启动与生命周期 | FastAPI 生命周期、懒加载初始化、预热开关 | `tests/test_lifespan.py` |
 

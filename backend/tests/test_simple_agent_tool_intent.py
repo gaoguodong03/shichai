@@ -5,9 +5,10 @@ from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent_finalization import (
     _post_tool_decision_instruction,
+    _tool_budget_structured_finalization_instruction,
 )
 from app.agent.simple_agent import SimpleAgent
-from app.agent.structured_output_contracts import ExpertFinalStatePayload
+from app.agent.expert_completion_contract import ExpertFinalStatePayload
 from app.agent.tool_spec import ToolSpec
 
 
@@ -46,7 +47,6 @@ def _v2_skill_stdout(
 ):
     _ = (handoff, reason)
     return {
-        "schema_version": "expert_final_state.v2",
         "execution_status": execution_status,
         "message": {
             "content": instruction,
@@ -80,12 +80,7 @@ class _BindingSensitiveClient:
     async def ainvoke(self, messages):
         if not self._bound:
             self._state.unbound_calls += 1
-            return AIMessage(
-                content=(
-                    'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
-                    'content="# Web 信息检索候选清单")'
-                )
-            )
+            return self._state.final_message
         self._state.bound_calls += 1
         if self._state.bound_calls == 1:
             return self._state.search_call
@@ -141,7 +136,7 @@ class _BudgetFinalizerState:
         self.bound_calls = 0
         self.unbound_calls = 0
         self.json_mode_calls = 0
-        self.submission_calls = 0
+        self.forbidden_finalizer_tool_bindings = 0
 
 
 class _BudgetFinalizerClient:
@@ -151,12 +146,10 @@ class _BudgetFinalizerClient:
         *,
         bound: bool = False,
         json_mode: bool = False,
-        submission_mode: bool = False,
     ):
         self._state = state
         self._bound = bound
         self._json_mode = json_mode
-        self._submission_mode = submission_mode
 
     def bind_tools(self, tools, *args, **kwargs):
         names = {
@@ -164,11 +157,13 @@ class _BudgetFinalizerClient:
             for item in tools
             if isinstance(item, dict)
         }
+        if "submit_expert_final_state" in names:
+            self._state.forbidden_finalizer_tool_bindings += 1
+            raise AssertionError("expert finalizer must use JSON output, not submit_expert_final_state tool calls")
         return _BudgetFinalizerClient(
             self._state,
             bound=True,
             json_mode=self._json_mode,
-            submission_mode="submit_expert_final_state" in names,
         )
 
     def bind(self, **kwargs):
@@ -178,22 +173,9 @@ class _BudgetFinalizerClient:
             self._state,
             bound=self._bound,
             json_mode=json_mode,
-            submission_mode=self._submission_mode,
         )
 
     async def ainvoke(self, messages):
-        if self._submission_mode:
-            self._state.submission_calls += 1
-            return AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "id": "tc-submit-final",
-                        "name": "submit_expert_final_state",
-                        "args": json.loads(str(self._state.final_message.content)),
-                    }
-                ],
-            )
         if not self._bound:
             self._state.unbound_calls += 1
             if self._json_mode:
@@ -227,9 +209,9 @@ def test_post_tool_decision_instruction_does_not_embed_raw_tool_outputs():
     message = _post_tool_decision_instruction(raw_outputs)
     text = str(message.content)
 
-    assert "工具执行结果已经加入当前上下文" in text
-    assert "如果仍需工具" in text
-    assert "如果不再需要工具" in text
+    assert "模型已经停止发起工具调用" in text
+    assert "不要发起 MCP、HTTP、workspace 或脚本工具调用" in text
+    assert "平台不会自动重试失败工具" in text
     assert "internal stdout" not in text
     assert "internal stderr" not in text
     assert "structured return" not in text
@@ -245,7 +227,7 @@ def test_post_tool_decision_instruction_includes_structured_tool_facts_without_r
             "output": {"content": raw_outputs[0]},
         },
         {
-            "tool_call": {"name": "create_workspace_artifact", "kind": "workspace"},
+            "tool_call": {"name": "write_workspace_file", "kind": "workspace"},
             "execution_status": "succeeded",
             "output": {
                 "artifacts": [
@@ -264,15 +246,53 @@ def test_post_tool_decision_instruction_includes_structured_tool_facts_without_r
 
     assert "结构化工具事实" in text
     assert "web_search_exa" in text
-    assert "create_workspace_artifact" in text
+    assert "write_workspace_file" in text
     assert "web-crawler/候选清单-2026071201010100.md" in text
     assert "Title: 沈腾" not in text
     assert "Highlights:" not in text
     assert "原始 MCP 正文" not in text
 
 
+def test_post_tool_decision_instruction_reports_missing_workspace_write_without_retrying():
+    tool_results = [
+        {
+            "tool_call": {"name": "web_search_exa", "kind": "mcp", "provider": "Exa 搜索"},
+            "execution_status": "succeeded",
+            "output": {"content": "已获取网页摘要，尚未写入工作区。"},
+        },
+    ]
+
+    message = _post_tool_decision_instruction(["已获取网页摘要"], tool_results=tool_results)
+    text = str(message.content)
+
+    assert "任务要求保存或生成工作区文件" in text
+    assert "结构化工具事实中没有成功的 write_workspace_file" in text
+    assert "平台不会自动重试失败工具" in text
+    assert "next_action.agent_turn 填 respond" in text
+    assert "不得用于补完本轮本应连续完成的依赖工具链" in text
+    assert "write_workspace_file" in text
+
+
+def test_tool_budget_finalizer_cannot_claim_workspace_save_without_successful_write():
+    message = _tool_budget_structured_finalization_instruction(
+        tool_results=[
+            {
+                "tool_call": {"name": "web_search_exa", "kind": "mcp"},
+                "execution_status": "succeeded",
+                "output": {"content": "检索摘要"},
+            }
+        ]
+    )
+
+    text = str(message.content)
+    assert "平台不会自动重试失败工具" in text
+    assert "没有成功的 write_workspace_file" in text
+    assert "不得声称已保存" in text
+    assert "execution_status 填 failed 或 blocked" in text
+
+
 @pytest.mark.asyncio
-async def test_simple_agent_finalizes_with_unbound_llm_after_tool_budget_is_exhausted():
+async def test_simple_agent_uses_structured_finalizer_when_tool_budget_is_exhausted():
     search_call = AIMessage(
         content="",
         tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "沈腾"}}],
@@ -311,16 +331,15 @@ async def test_simple_agent_finalizes_with_unbound_llm_after_tool_budget_is_exha
         tool_runner=_tool_runner,
         max_steps=1,
         final_output_model=ExpertFinalStatePayload,
-        final_output_tool_name="submit_expert_final_state",
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="搜集资料")]})
 
-    assert calls == ["mcp_web_search", "read_workspace_file"]
-    assert state.bound_calls == 2
-    assert state.unbound_calls == 0
-    assert state.json_mode_calls == 0
-    assert state.submission_calls == 1
+    assert calls == ["mcp_web_search"]
+    assert state.bound_calls == 1
+    assert state.unbound_calls == 1
+    assert state.json_mode_calls == 1
+    assert state.forbidden_finalizer_tool_bindings == 0
     assert json.loads(str(out["messages"][-1].content)) == json.loads(str(final_state.content))
     assert any(
         item.get("source") == "tool_budget_exhausted_finalizer"
@@ -542,7 +561,7 @@ async def test_simple_agent_retries_post_tool_text_protocol_before_falling_back_
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([search_call, text_protocol, structured_write, final]),
+        llm=_FakeLLM([search_call, final]),
         tools=[
             ToolSpec(name="mcp_web_search", description="search"),
             ToolSpec(name="write_workspace_file", description="write workspace file"),
@@ -554,18 +573,15 @@ async def test_simple_agent_retries_post_tool_text_protocol_before_falling_back_
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料并保存")]})
 
-    assert calls == ["mcp_web_search", "write_workspace_file"]
+    assert calls == ["mcp_web_search"]
     final_text = str(out["messages"][-1].content)
     assert "已保存：web-crawler/候选清单-2026062816200000.md" in final_text
     assert "工具已执行完成。以下是本轮工具返回摘要" not in final_text
-    assert any(
-        item.get("source") == "text_tool_call_protocol_retry"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert not any(item.get("source") == "text_tool_call_protocol_retry" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_uses_bound_tools_when_synthesizing_after_search_result():
+async def test_simple_agent_keeps_one_agent_turn_alive_for_search_then_workspace_write():
     search_call = AIMessage(
         content="",
         tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "智能软件工程伦理"}}],
@@ -627,12 +643,144 @@ async def test_simple_agent_uses_bound_tools_when_synthesizing_after_search_resu
 
     assert calls == ["mcp_web_search", "write_workspace_file"]
     assert state.unbound_calls == 0
-    assert state.bound_calls >= 3
+    assert state.bound_calls == 3
+    assert [item["tool"] for item in out["tool_calls"]] == [
+        "mcp_web_search",
+        "write_workspace_file",
+    ]
     assert "已保存：web-crawler/候选清单-2026062816200000.md" in str(out["messages"][-1].content)
 
 
+@pytest.mark.parametrize("invalid_content", ["资料检索完成。", ""])
 @pytest.mark.asyncio
-async def test_simple_agent_rejects_repeated_synthesis_tool_call_without_direct_final():
+async def test_simple_agent_normalizes_invalid_final_json_only_after_model_stops_calling_tools(invalid_content):
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "沈腾"}}],
+    )
+    invalid_final = AIMessage(content=invalid_content)
+    valid_final = AIMessage(content=json.dumps(_v2_skill_stdout(instruction="资料检索完成。"), ensure_ascii=False))
+
+    class _Client:
+        def __init__(self, root, *, bound=False, json_mode=False):
+            self.root = root
+            self.bound = bound
+            self.json_mode = json_mode
+
+        def bind_tools(self, tools, *args, **kwargs):
+            return _Client(self.root, bound=True, json_mode=self.json_mode)
+
+        def bind(self, **kwargs):
+            response_format = kwargs.get("response_format")
+            return _Client(
+                self.root,
+                bound=self.bound,
+                json_mode=isinstance(response_format, dict) and response_format.get("type") == "json_object",
+            )
+
+        async def ainvoke(self, messages):
+            self.root.append((self.bound, self.json_mode))
+            if self.bound and len([item for item in self.root if item[0]]) == 1:
+                return search_call
+            if self.bound:
+                return invalid_final
+            return valid_final
+
+    class _LLM:
+        def __init__(self):
+            self.calls = []
+
+        def get_client(self):
+            return _Client(self.calls)
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [ToolMessage(content="检索摘要", tool_call_id="tc-search")],
+            "tool_calls": [{"tool": "mcp_web_search", "arguments": {"query": "沈腾"}}],
+            "tool_results": [
+                {
+                    "tool_call": {"name": "mcp_web_search", "kind": "mcp"},
+                    "execution_status": "succeeded",
+                    "output": {"content": "检索摘要"},
+                }
+            ],
+            "tool_raw_outputs": ["检索摘要"],
+        }
+
+    llm = _LLM()
+    agent = SimpleAgent(
+        llm=llm,
+        tools=[ToolSpec(name="mcp_web_search", description="search")],
+        system_prompt="输出 expert_final_state.v2。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        final_output_model=ExpertFinalStatePayload,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="检索沈腾资料")]})
+
+    assert llm.calls == [(True, False), (True, False), (False, True)]
+    assert json.loads(str(out["messages"][-1].content)) == json.loads(str(valid_final.content))
+    assert any(
+        item.get("source") == "stopped_tool_loop_structured_finalizer"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_does_not_retry_or_switch_tools_after_failed_tool_result():
+    failed_search = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "linkup-search", "args": {"query": "沈腾"}}],
+    )
+    final_state = AIMessage(
+        content=json.dumps(
+            _v2_skill_stdout(
+                execution_status="failed",
+                instruction="检索工具执行失败，本轮没有保存任何文件。",
+            ),
+            ensure_ascii=False,
+        )
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        calls.append(tool_call["name"])
+        return {
+            "messages": [ToolMessage(content="-32603 Invalid response format", tool_call_id="tc-search")],
+            "tool_calls": [{"tool": tool_call["name"], "arguments": tool_call["args"]}],
+            "tool_results": [
+                {
+                    "tool_call": {"name": tool_call["name"], "kind": "mcp"},
+                    "execution_status": "failed",
+                    "output": {"error": "-32603 Invalid response format"},
+                }
+            ],
+            "tool_raw_outputs": ["-32603 Invalid response format"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([failed_search, final_state]),
+        tools=[
+            ToolSpec(name="linkup-search", description="search"),
+            ToolSpec(name="web_search_exa", description="search"),
+        ],
+        system_prompt="输出 expert_final_state.v2。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        final_output_model=ExpertFinalStatePayload,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="检索沈腾资料并保存")]})
+
+    assert calls == ["linkup-search"]
+    assert [item["tool"] for item in out["tool_calls"]] == ["linkup-search"]
+    assert json.loads(str(out["messages"][-1].content))["execution_status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_rejects_exact_duplicate_tool_call_without_executing_it_again():
     list_call = AIMessage(
         content="",
         tool_calls=[{"id": "tc-list", "name": "list_workspace_directory", "args": {}}],
@@ -668,14 +816,55 @@ async def test_simple_agent_rejects_repeated_synthesis_tool_call_without_direct_
     assert state.unbound_calls == 1
     assert str(out["messages"][-1].content) == "工作区当前为空；我将直接基于用户要求起草文章。"
     assert all("工具已执行完成。以下是本轮工具返回摘要" not in str(getattr(message, "content", "")) for message in out["messages"])
-    assert any(
-        item.get("source") == "post_tool_decision_repeated_tool_calls_ignored"
-        for item in (out.get("tool_attempt_debug") or [])
+    assert any(item.get("source") == "repeated_tool_guard" for item in (out.get("tool_attempt_debug") or []))
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_duplicate_guard_ignores_argument_key_order():
+    first_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-first",
+                "name": "web_search_exa",
+                "args": {"query": "沈腾", "numResults": 5},
+            }
+        ],
     )
-    assert any(
-        item.get("source") == "tool_budget_exhausted_finalizer"
-        for item in (out.get("tool_attempt_debug") or [])
+    reordered_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-second",
+                "name": "web_search_exa",
+                "args": {"numResults": 5, "query": "沈腾"},
+            }
+        ],
     )
+    final = AIMessage(content="检索已停止。")
+    calls: list[dict] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        calls.append(tool_call["args"])
+        return {
+            "messages": [ToolMessage(content="检索摘要", tool_call_id=tool_call["id"])],
+            "tool_calls": [{"tool": tool_call["name"], "arguments": tool_call["args"]}],
+            "tool_raw_outputs": ["检索摘要"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([first_call, reordered_call, final]),
+        tools=[ToolSpec(name="web_search_exa", description="search")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=3,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="检索沈腾")]})
+
+    assert calls == [{"query": "沈腾", "numResults": 5}]
+    assert any(item.get("source") == "repeated_tool_guard" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
@@ -822,16 +1011,13 @@ async def test_simple_agent_ignores_second_write_workspace_file_call_after_succe
         tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
         system_prompt="x",
         tool_runner=_tool_runner,
-        max_steps=1,
+        max_steps=3,
     )
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
 
     assert call_count == 1
-    assert any(
-        item.get("source") == "post_tool_decision_repeated_tool_calls_ignored"
-        for item in (out.get("tool_attempt_debug") or [])
-    )
+    assert any(item.get("source") == "repeated_tool_guard" for item in (out.get("tool_attempt_debug") or []))
 
 
 @pytest.mark.asyncio
@@ -939,7 +1125,7 @@ async def test_simple_agent_always_asks_llm_for_final_response_after_write_tool(
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_continues_after_script_next_action_to_write_workspace():
+async def test_simple_agent_continues_from_script_result_to_workspace_write_in_one_agent_turn():
     script_call = AIMessage(
         content="",
         tool_calls=[
@@ -1444,7 +1630,7 @@ async def test_simple_agent_stream_continues_after_script_next_action_to_write_w
             final_debug = ev.get("tool_attempt_debug") or []
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert final_debug
+    assert sum(item.get("source") == "structured_tool_calls" for item in final_debug) == 2
 
 
 @pytest.mark.asyncio
@@ -1788,10 +1974,10 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
     out = await agent.ainvoke({"messages": [HumanMessage(content="转文字")]})
 
     assert str(out["messages"][-1].content) == f"音频转写完成：\n{transcript}"
-    assert any(
-        item.get("source") == "post_tool_decision_final_state"
+    assert sum(
+        item.get("source") == "structured_tool_calls"
         for item in (out.get("tool_attempt_debug") or [])
-    )
+    ) == 1
 
 
 @pytest.mark.asyncio
@@ -1881,7 +2067,7 @@ async def test_simple_agent_does_not_replace_final_llm_failure_with_tool_output(
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_keeps_tool_bound_client_after_tool_result():
+async def test_simple_agent_keeps_tools_bound_until_model_returns_final_content():
     first = AIMessage(
         content="",
         tool_calls=[
@@ -1906,8 +2092,6 @@ async def test_simple_agent_keeps_tool_bound_client_after_tool_result():
             self.root.calls.append({"bound": self.bound, "message_count": len(messages)})
             if len(self.root.calls) == 1:
                 return first
-            if not self.bound:
-                raise AssertionError("工具结果不得切换到未绑定工具的补丁客户端")
             return AIMessage(content="工具结果已总结")
 
     class _LLM:

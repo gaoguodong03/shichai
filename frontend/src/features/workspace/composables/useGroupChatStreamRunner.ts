@@ -1,8 +1,17 @@
 import { streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
 
-type StreamState = { sawExpertAssistantMessageThisRun: boolean }
+type StreamState = {
+  sawExpertAssistantMessageThisRun: boolean
+  sawPersistedFailureMessage: boolean
+}
 type StreamProgress = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
+
+function streamErrorDetail(error: unknown): string {
+  if (error instanceof Error) return String(error.message || '').trim()
+  const payload = error as Record<string, unknown> | null | undefined
+  return String(payload?.message || payload?.detail || payload?.error || '').trim()
+}
 
 export function createGroupChatStreamRunner(deps: {
   isSelectedSession: (sessionId: string) => boolean
@@ -20,7 +29,10 @@ export function createGroupChatStreamRunner(deps: {
     signal?: AbortSignal,
   ): Promise<boolean> {
     const isSelectedStreamSession = () => deps.isSelectedSession(sessionId)
-    const state = { sawExpertAssistantMessageThisRun: false }
+    const state: StreamState = {
+      sawExpertAssistantMessageThisRun: false,
+      sawPersistedFailureMessage: false,
+    }
     let shouldEmitMessageSent = false
     let gotEnd = false
     let streamFailed = false
@@ -38,17 +50,19 @@ export function createGroupChatStreamRunner(deps: {
             deps.consumeStreamingStatusContent(data, sessionId)
           },
           onMessage: (data) => {
+            if (streamServerErrored) state.sawPersistedFailureMessage = true
             deps.handleStreamMessageEvent(data, state, sessionId)
           },
           onEnd: (data) => {
             deps.handleStreamEndEvent(data, state, sessionId)
-            shouldEmitMessageSent = true
+            const endFailed = String(data?.phase || '').trim().toLowerCase() === 'failed'
+            shouldEmitMessageSent = !endFailed && !streamServerErrored
             gotEnd = true
           },
           onError: (error) => {
             streamServerErrored = true
             console.error('SSE 事件失败', error)
-            const detail = error instanceof Error ? (error.message || '').trim() : String((error as Record<string, unknown>)?.error || (error as Record<string, unknown>)?.detail || '').trim()
+            const detail = streamErrorDetail(error)
             failureHint = detail || failureHint
           },
         },
@@ -65,10 +79,11 @@ export function createGroupChatStreamRunner(deps: {
 
     if (signal?.aborted) return false
 
-    if (!gotEnd || streamFailed || streamServerErrored) {
+    const runFailed = !gotEnd || streamFailed || streamServerErrored || !shouldEmitMessageSent
+    if (runFailed) {
       deps.setStreamingPhase('failed', sessionId)
     }
-    if (!shouldEmitMessageSent && !gotEnd && isSelectedStreamSession()) {
+    if (runFailed && !state.sawPersistedFailureMessage && isSelectedStreamSession()) {
       const visibleError = failureHint
         ? `系统提示：本轮请求失败（${failureHint}）。请重新登录后重试。`
         : '系统提示：本轮请求失败。请重新登录后重试。'

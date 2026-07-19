@@ -592,6 +592,58 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByRole('button', { name: '确认并继续' })).toBeVisible()
   })
 
+  test('error 后接 failed end 仍显示服务器错误 message', async ({ page }) => {
+    await bootLoggedInApp(page)
+    await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: [
+          `event: error\ndata: ${JSON.stringify({ type: 'error', run_id: 'run-failed', code: 'EXPERT_FINAL_STATE_INVALID', message: '专家最终态无效' })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-failed', phase: 'failed', waiting_for_user: true })}\n\n`,
+        ].join(''),
+      })
+    })
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入消息').fill('触发失败')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.getByText('系统提示：本轮请求失败（专家最终态无效）。请重新登录后重试。')).toBeVisible()
+  })
+
+  test('后端已发送持久化失败消息时不重复追加本地错误', async ({ page }) => {
+    await bootLoggedInApp(page)
+    const failedContent = '问答专家本轮执行失败（错误码：EXPERT_FINAL_STATE_INVALID）。请稍后重试或调整任务。'
+    await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: [
+          `event: error\ndata: ${JSON.stringify({ type: 'error', run_id: 'run-persisted-failed', code: 'EXPERT_FINAL_STATE_INVALID', message: '专家最终态无效' })}\n\n`,
+          `event: message\ndata: ${JSON.stringify({
+            message_id: 'msg-persisted-failed',
+            speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+            message: { content: failedContent },
+            created_at: '2026071814060000',
+            skill_result: {
+              execution_status: 'failed',
+              next_action: { agent_turn: 'respond', skill_session: 'release' },
+            },
+          })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-persisted-failed', phase: 'failed', waiting_for_user: true })}\n\n`,
+        ].join(''),
+      })
+    })
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入消息').fill('触发持久化失败')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.getByText(failedContent, { exact: true })).toHaveCount(1)
+    await expect(page.getByText('系统提示：本轮请求失败', { exact: false })).toHaveCount(0)
+  })
+
   test('场景会话工作空间显示场景主持人名称', async ({ page }) => {
     const state = createE2eState()
     state.hostProfile.name = '全局主持'

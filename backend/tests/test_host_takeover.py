@@ -10,14 +10,14 @@ from app.api import group_chat_state as state
 
 
 def test_strict_host_response_rejects_extra_fields():
-    raw = '```json\n{"current_phase": "补充信息", "next_speaker": "专家甲", "next_action": "请补充要点", "extra_note": "继续"}\n```'
+    raw = '{"current_phase": "补充信息", "next_speaker": "专家甲", "next_action": "请补充要点", "extra_note": "继续"}'
     out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], host_mode="scene")
     assert out["message"] == {"content": HOST_PROTOCOL_ERROR_MESSAGE}
     assert "interrupt_reason" not in out
 
 
 def test_strict_host_response_accepts_wait_message():
-    raw = '```json\n{"current_phase": "补充信息", "message": {"content": "请补充信息"}}\n```'
+    raw = '{"current_phase": "补充信息", "message": {"content": "请补充信息"}}'
     out = parse_strict_host_scheduler_output(raw, [], host_mode="recruitment")
     assert out["message"] == {"content": "请补充信息"}
 
@@ -68,20 +68,24 @@ def test_host_snapshot_runtime_shape_does_not_emit_legacy_skills_list():
     }
 
 
+def test_host_snapshot_with_empty_prompt_uses_editable_long_term_default():
+    from app.agent.group_chat_runtime import _host_snapshot_to_agent
+    from app.agent.platform_prompts import render_platform_prompt
+
+    host_agent = _host_snapshot_to_agent({"host": {"name": "四九", "system_prompt": ""}})
+
+    assert host_agent["system_prompt"] == render_platform_prompt("host.system.default.v1", {})
+
+
 @pytest.mark.asyncio
-async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_path):
+async def test_skill_session_does_not_route_owner_without_host_target(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.write_group_orchestration_state(
-        "s-continuation",
+        "s-skill-session",
         {
-            "continuation": {
-                "owner_agent_name": "文书专员",
-                "skill_session": "keep",
-                "skill": "writer-skill",
-                "message": {"content": "继续根据用户补充写正文。"},
-            }
+            "skill_sessions": {"文书专员": {"skill": "writer-skill"}}
         },
     )
 
@@ -108,10 +112,10 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
     events = [
         item
         async for item in runtime._run_contract_events(
-            group_session_id="s-continuation",
+            group_session_id="s-skill-session",
             request=GroupChatRequest(message="这里是补充材料", message_id="msg-user-1"),
             run_id="run-1",
-            session_definitions={"s-continuation": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
+            session_definitions={"s-skill-session": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
             session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
             app_settings={},
             agent_map={"文书专员": {"name": "文书专员", "skills": [{"directory_name": "writer-skill"}]}},
@@ -122,25 +126,21 @@ async def test_continuation_runs_owner_then_returns_to_host(monkeypatch, tmp_pat
         )
     ]
 
-    assert captured == {"agent_name": "文书专员", "next_action": "继续根据用户补充写正文。"}
     assert any('"message": {"content": "请确认是否继续。"}' in event for event in events)
     assert any('"phase": "awaiting_user"' in event for event in events)
+    assert captured == {}
+    assert state.load_group_orchestration_state("s-skill-session")["skill_sessions"]["文书专员"]["skill"] == "writer-skill"
 
 
 @pytest.mark.asyncio
-async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypatch, tmp_path):
+async def test_host_takeover_text_does_not_execute_skill_session_route(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.write_group_orchestration_state(
         "s-host-takeover-text",
         {
-            "continuation": {
-                "owner_agent_name": "文书专员",
-                "skill_session": "keep",
-                "skill": "writer-skill",
-                "message": {"content": "继续旧 Skill"},
-            },
+            "skill_sessions": {"文书专员": {"skill": "writer-skill"}},
         },
     )
 
@@ -156,8 +156,6 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
     async def _expert_turn(**kwargs):
         nonlocal expert_calls
         expert_calls += 1
-        assert kwargs["agent_name"] == "文书专员"
-        assert kwargs["next_action"] == "继续旧 Skill"
         kwargs["outcome"].succeed()
         yield 'event: end\ndata: {"type":"end","run_id":"run-1","phase":"awaiting_user","waiting_for_user":true}\n\n'
 
@@ -182,8 +180,9 @@ async def test_host_takeover_text_does_not_clear_short_term_route_state(monkeypa
         )
     ]
 
-    assert expert_calls == 1
+    assert expert_calls == 0
     assert any('"message": {"content": "请确认是否继续旧 Skill。"}' in event for event in events)
+    assert state.load_group_orchestration_state("s-host-takeover-text")["skill_sessions"]["文书专员"]["skill"] == "writer-skill"
 
 
 @pytest.mark.asyncio
@@ -331,7 +330,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
             return "网文专用主持 Skill 正文"
 
     class FakeResponse:
-        content = '```json\n{"current_phase":"阶段2","message":{"content":"请写大纲","target_agent_name":"写作专家"}}\n```'
+        content = '{"current_phase":"阶段2","message":{"content":"请写大纲","target_agent_name":"写作专家"}}'
 
     class FakeClient:
         async def ainvoke(self, messages):
@@ -357,7 +356,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
         discussion_goal="写网文",
         recent_messages="用户：写一个故事",
         last_speaker_agent_name=None,
-        extra_system_prompt="",
+        extra_system_prompt="项目统一提示词\n\n场景共享任务契约",
         group_session_id="group-1",
         app_settings={},
         session_item=session_item,
@@ -369,8 +368,15 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     user_prompt = calls["messages"][1].content
     assert "主持人系统提示" in system_prompt
     assert "网文专用主持 Skill 正文" in system_prompt
-    assert "只允许输出上述字段" in user_prompt
-    assert '"target_agent_name"' in user_prompt
+    assert system_prompt.count("项目统一提示词") == 1
+    assert system_prompt.count("场景共享任务契约") == 1
+    assert system_prompt.index("项目统一提示词") < system_prompt.index("主持人系统提示")
+    assert system_prompt.index("项目统一提示词") < system_prompt.index("场景共享任务契约")
+    assert system_prompt.index("场景共享任务契约") < system_prompt.index("主持人系统提示")
+    assert system_prompt.index("主持人系统提示") < system_prompt.index("网文专用主持 Skill 正文")
+    assert "书童四九平台主持人" not in system_prompt
+    assert "只允许输出上述字段" not in user_prompt
+    assert '"target_agent_name"' not in user_prompt
     assert '"next_action"' not in user_prompt
     assert "scheduler_state" not in session_item
 
@@ -416,4 +422,5 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
     assert out["message"] == {"content": "请写大纲", "target_agent_name": "写作专家"}
     retry_prompt = calls[1][1].content
     assert "主持人调度输出未通过平台 JSON 协议校验" in retry_prompt
-    assert '"suggested_add_agent_names"' in retry_prompt
+    assert '"suggested_add_agent_names"' not in retry_prompt
+    assert "主持人长期提示词" in retry_prompt

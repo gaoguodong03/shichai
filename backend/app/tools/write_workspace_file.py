@@ -26,7 +26,6 @@ class WriteWorkspaceFileInput(BaseModel):
 
     path: str = Field(description=render_platform_prompt("tool.schema.write_workspace_file.path.v1", {}))
     content: str = Field(
-        default="",
         description=render_platform_prompt("tool.schema.write_workspace_file.content.v1", {}),
     )
     overwrite: bool = Field(

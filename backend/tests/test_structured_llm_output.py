@@ -5,7 +5,10 @@ import pytest
 
 from app.agent.messages import HumanMessage
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
-from app.agent.structured_output_contracts import ExpertSkillSelectionPayload, StructuredOutputProtocolError
+from app.agent.structured_output_contracts import (
+    ExpertSkillSelectionPayload,
+    StructuredOutputProtocolError,
+)
 
 
 class _Response:
@@ -41,7 +44,7 @@ async def test_invoke_pydantic_llm_output_validates_first_response():
 async def test_invoke_pydantic_llm_output_retries_with_same_pydantic_schema():
     client = _Client(
         '说明：{"selected_skill":"writer"}',
-        '```json\n{"selected_skill":"research"}\n```',
+        '{"selected_skill":"research"}',
     )
 
     out = await invoke_pydantic_llm_output(
@@ -53,6 +56,20 @@ async def test_invoke_pydantic_llm_output_retries_with_same_pydantic_schema():
 
     assert out.selected_skill == "research"
     assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_rejects_markdown_fenced_json():
+    client = _Client('```json\n{"selected_skill":"research"}\n```')
+
+    with pytest.raises(StructuredOutputProtocolError):
+        await invoke_pydantic_llm_output(
+            client,
+            [HumanMessage(content="select")],
+            ExpertSkillSelectionPayload,
+        )
+
+    assert len(client.calls) == 1
 
 
 @pytest.mark.asyncio

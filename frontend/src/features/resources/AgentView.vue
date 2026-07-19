@@ -55,12 +55,12 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">系统提示词（可选）</label>
+            <label class="block text-sm font-medium text-primary mb-1">专家长期提示词（可选）</label>
             <textarea
               v-model="form.system_prompt"
               rows="3"
               class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-              placeholder="请输入系统提示词（可选）"
+              placeholder="定义专家跨场景、跨 Skill 不变的长期职责、专业标准和输出合同。"
             />
           </div>
 

@@ -8,11 +8,13 @@
 - 会话 CRUD / 事件流：[`backend/app/agent/group_session_service.py`](../../backend/app/agent/group_session_service.py)
 - 会话状态存储：[`backend/app/api/group_chat_state.py`](../../backend/app/api/group_chat_state.py)
 - 群聊运行时：[`backend/app/agent/group_chat_runtime.py`](../../backend/app/agent/group_chat_runtime.py)
-- 入口路由与续跑状态：[`backend/app/agent/group_orchestration_fsm.py`](../../backend/app/agent/group_orchestration_fsm.py)
+- 结构化入口路由：[`backend/app/agent/group_entry_router.py`](../../backend/app/agent/group_entry_router.py)
+- 专家完成结果投影：[`backend/app/agent/expert_completion_contract.py`](../../backend/app/agent/expert_completion_contract.py)
+- Skill Session 管理：[`backend/app/agent/skill_session_manager.py`](../../backend/app/agent/skill_session_manager.py)
 - 主持人严格输出与后处理：[`backend/app/agent/group_host_decision.py`](../../backend/app/agent/group_host_decision.py)
 - 专家运行时：[`backend/app/agent/expert_runtime.py`](../../backend/app/agent/expert_runtime.py)
 - 工具组装：[`backend/app/agent/tools_for_skill.py`](../../backend/app/agent/tools_for_skill.py)
-- Skill Agent 工具循环：[`backend/app/agent/skill_agent_runtime.py`](../../backend/app/agent/skill_agent_runtime.py)
+- Skill Agent 执行：[`backend/app/agent/skill_agent_runtime.py`](../../backend/app/agent/skill_agent_runtime.py)
 - 前端流式请求：[`frontend/src/api/chat.ts`](../../frontend/src/api/chat.ts)
 - 前端编排状态：[`frontend/src/features/workspace/composables/useGroupOrchestrationState.ts`](../../frontend/src/features/workspace/composables/useGroupOrchestrationState.ts)
 - E2E mock：[`frontend/e2e/fixtures/mockApi.ts`](../../frontend/e2e/fixtures/mockApi.ts)
@@ -31,7 +33,7 @@
 | 下一步动作说明 | `message.content` |
 | 招募建议 | `suggested_add_agent_names` |
 | 专家发言 | `agent_name` |
-| 短期续跑状态 | `orchestration_state.json.continuation` |
+| 专家 Skill 绑定 | `orchestration_state.json.skill_sessions` |
 | 主持人跨轮调度状态 | `orchestration_state.json.host_scheduler` |
 | 专家引用 Skill | `skills[].directory_name` |
 | 模型引用 | `llm_name` / `default_llm` |
@@ -41,7 +43,7 @@
 1. 前端、后端、mock、测试必须使用同一套字段名。
 2. 新增接口字段前，先说明它的生产方、消费方和生命周期。
 3. 运行时主路径不做旧字段兜底；历史文件保留是数据迁移问题，不是运行时契约问题。
-4. 任何跳转问题都先查最新有效消息的 `message.target_agent_name`、`orchestration_state.json.continuation`、`orchestration_state.json.host_scheduler` 和 `history.json` 中的 Skill 结果。
+4. 任何跳转问题都先查最新有效消息的 `message.target_agent_name` 和 `orchestration_state.json.host_scheduler`；`skill_sessions` 只影响专家被选中后的 Skill 复用，不产生路由。
 5. `leader` / `leader_agent_name` / `host_config` 是旧术语；会话和资源中心统一使用 `host`，主持人名称统一使用 `host.name`。
 
 ## 2. 一次流式对话的端到端链路
@@ -126,7 +128,7 @@ vNext 的核心收敛点：
 5. `message.artifacts` 表示本消息产出或暴露给用户的产物；用户、主持人、专家都可以使用。
 6. `tool_result.output` 统一承载工具输出；文本字段叫 `content`，结构化字段叫 `json_data`，产物字段叫 `artifacts`。
 7. `skill_result` 不再保存 `content`；可见正文在 `message.content`，可见产物在 `message.artifacts`，工具原输出在执行日志。
-8. `skill_result.next_action` 只保留 `agent_turn` 和 `skill_session` 两个维度。
+8. 模型 `expert_final_state.v2.next_action` 保留 `agent_turn` 和 `skill_session` 两个维度；平台解析后分别交给独立控制模块，不写入消息 `skill_result`。
 9. 主持人不再输出 `next_speaker` / `next_action`；主持人输出 `current_phase`、`message`、`suggested_add_agent_names`。
 10. 专家落盘只接受 `expert_final_state.v2`；工具执行后的中间 `AIMessage`、`ToolMessage`、deterministic tool summary 和 MCP 原文都不是可落盘专家回复。
 
@@ -138,7 +140,7 @@ scenario.json
   -> HostSchedulerDecisionPayload
   -> host ChatMessageRecord
   -> route/progress SSE
-  -> expert runtime + tool_results
+  -> expert runtime + one tool-call phase
   -> ToolExecutionLogRecord
   -> LLM finalization
   -> expert_final_state.v2
@@ -155,7 +157,7 @@ scenario.json
 | --- | --- |
 | `name` | 场景身份；资源中心按名称保存、导入和查找。 |
 | `description` | 场景说明；用于列表、搜索和导出，不直接驱动运行时路由。 |
-| `system_prompt` | 场景级说明；作为创建会话时的初始化材料，不是会话运行时主字段。 |
+| `system_prompt` | 场景共享任务契约；创建会话时复制为 `session.json.scenario_prompt` 会话快照。 |
 | `host` | 场景主持人快照；创建会话时复制到 `session.json.host`。 |
 | `host.name` | 主持人显示名。 |
 | `host.llm_name` | 主持人使用的模型名称。 |
@@ -166,13 +168,14 @@ scenario.json
 
 #### 2.5.2 会话定义：`sessions/{session_id}/session.json`
 
-`session.json` 是当前会话的运行资源快照。主持人和专家调度都只读取会话自己的 `host` 和 `agent_names`。
+`session.json` 是当前会话的运行资源快照。主持人和专家只读取会话自己的 `host`、`agent_names` 和 `scenario_prompt`，不回读场景资源。
 
 | 字段 | 作用 |
 | --- | --- |
 | `title` | 会话标题，前端左侧列表展示。 |
 | `title_auto_generated` | 标识标题是否仍由后端自动维护；用户手动改名后不得自动改回。 |
 | `agent_names` | 当前会话内可调度专家名单；`message.target_agent_name` 必须命中这里的专家名称。 |
+| `scenario_prompt` | 场景共享任务契约的会话快照；持续进入主持人调度、专家 Skill 选择和专家执行。 |
 | `host` | 本会话主持人快照。 |
 | `host.name` | 主持人显示名，写入主持人消息 `speaker.agent_name`。 |
 | `host.llm_name` | 主持人调度使用的模型。 |
@@ -325,7 +328,7 @@ Skill frontmatter 和正文共同决定专家本轮能力边界。
 | `message.target_agent_name` | 指定要执行的专家。 |
 | `message.content` | 本轮任务说明；用户消息或主持人消息都走同一字段。 |
 | `message.attachments` | 本轮专家可使用的输入文件。 |
-| `orchestration_state.continuation` | 判断是否锁定同一专家和同一 Skill。 |
+| `orchestration_state.skill_sessions[agent_name]` | 该专家被主持人或请求选中后，判断是否复用已绑定 Skill。 |
 | `agent.json` | 专家配置、模型、职责和可用 Skill。 |
 | `SKILL.md` | 本轮 Skill frontmatter、正文和工具权限。 |
 
@@ -334,7 +337,7 @@ Skill frontmatter 和正文共同决定专家本轮能力边界。
 | `blocked` | 专家执行是否被配置缺失、模型缺失、Skill 缺失等问题阻断。 |
 | `skill` | 本轮实际使用的 Skill 目录名。 |
 | `skill_route_diagnostics` | Skill 路由诊断信息；只用于日志和排障。 |
-| `agent` | 实际执行模型和工具循环的 Agent。 |
+| `agent` | 实际执行模型和同一 `agent_turn` 内多步工具循环的 Agent。 |
 | `tools` | 本轮注入给 Agent 的工具集合。 |
 
 #### 2.5.13 进度事件：SSE `progress`
@@ -354,12 +357,12 @@ Skill frontmatter 和正文共同决定专家本轮能力边界。
 
 #### 2.5.14 工具执行结果：`tool_results`
 
-工具循环内部会积累结构化工具结果。它是专家 finalizer、执行日志和排障事实的输入，不是前端消息 payload，也不是 `ChatMessageRecord.message` 的输入。
+每次 `agent_turn` 内允许执行多个有依赖关系的工具步骤，并为每一步产生结构化工具结果。每批结果必须作为 `ToolMessage` 留在同一模型上下文，模型据此选择后续工具或输出最终 JSON。平台不自动重试失败工具，也不自动切换同类工具。工具结果是终态校验、执行日志和排障事实的输入，不是前端消息 payload，也不是 `ChatMessageRecord.message` 的输入。
 
 `tool_results` 只能进入以下位置：
 
-1. 回灌给 LLM，供模型判断是否继续调用工具。
-2. 交给专家 finalizer，供其生成 `expert_final_state.v2`。
+1. 回灌给同一 `agent_turn` 的 LLM，供模型选择下一工具或生成本次专家最终状态。
+2. 在模型停止调用工具但终态不合格、或工具预算耗尽时，交给无工具 finalizer 生成 `expert_final_state.v2`。
 3. 写入执行日志，供右侧终端 / 日志面板展示。
 
 `tool_results` 不得直接生成或拼接：
@@ -395,8 +398,8 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
 | 名称 | 出现位置 | 生命周期 | 作用 |
 | --- | --- | --- | --- |
 | Skill 执行上下文 | 专家运行时内部 | 从选中 Skill 开始，到本步专家执行结束 | 提供 Skill 指令、允许工具、阶段规则和当前消息上下文；它是执行环境，不是落盘返回字段。 |
-| `tool_result` | 专家工具循环和执行日志 | 每次工具调用产生一条或多条 | 把一次工具执行事实返回给当前 Skill 下的专家 LLM，供模型继续判断；不进入 `history.json`。 |
-| `skill_result` | 最终专家 `ChatMessageRecord` | 专家本步形成最终状态时产生一次 | 保存本步 `execution_status` 和 `next_action`；不保存工具原文、可见正文或产物正文。 |
+| `tool_result` | 专家多步工具循环和执行日志 | 每次工具调用产生一条或多条 | 把一次工具执行事实返回给当前 Skill 下同一 `agent_turn` 的专家 LLM，供模型选择下一工具或生成本次专家最终状态；不进入 `history.json`。 |
+| `skill_result` | 最终专家 `ChatMessageRecord` | 专家本步形成最终状态时产生一次 | 只保存本步 `execution_status`；不保存运行控制、工具原文、可见正文或产物正文。 |
 
 因此，正确返回方向是：
 
@@ -405,25 +408,27 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
   -> LLM 发起 tool_call
   -> 工具执行并返回 tool_result
   -> tool_result 回到同一专家、同一 Skill 的 LLM 上下文
-  -> LLM 判断：继续调用工具，或进入 finalizer
-      -> 继续：不生成 ChatMessageRecord，也不生成 skill_result
-      -> finalizer：通过 submit_expert_final_state 提交 expert_final_state.v2
-  -> 平台一次性拆分为：
-      -> expert_final_state.v2.message -> ChatMessageRecord.message
-      -> execution_status + next_action -> ChatMessageRecord.skill_result
+  -> 模型继续发起 tool_call，或停止调用工具并输出 expert_final_state.v2 JSON
+  -> 平台一次性校验并投影为独立内部对象
+      -> message -> ExpertOutputPublisher；非空时始终发布
+      -> execution_status -> ChatMessageRecord.skill_result
+      -> next_action.agent_turn -> AgentTurnController
+      -> next_action.skill_session -> SkillSessionManager
+  -> agent_turn=continue：发布非空消息后，同一专家进入下一次 agent_turn
+  -> agent_turn=respond：发布非空消息后，把控制权交回主持人/编排层
 ```
 
-这里不存在“工具先返回 `skill_result`，再由 `skill_result` 返回 `message`”的链路。`skill_result` 不是工具结果聚合容器，也不是 `message.content` 的素材仓库；它与 `message` 是同一个 `expert_final_state.v2` 经严格校验后生成的两个并列落盘结果。
+这里不存在“工具先返回 `skill_result`，再由 `skill_result` 返回 `message`”的链路。`skill_result` 只是消息关联的执行状态快照；`message` 和两个控制指令由同一个 `expert_final_state.v2` 经严格校验后投影到不同平台模块。
 
 平台必须遵守以下边界：
 
 1. 工具执行器只能生产 `tool_result` 和执行日志，不能生产 `ChatMessageRecord.message`。
-2. 专家工具循环只能把 `tool_result` 回灌给 LLM，不能用程序模板、字符串拼接或摘要函数把它转换成聊天正文。
+2. 专家多步工具循环只能把 `tool_result` 回灌给同一 `agent_turn` 的 LLM，不能用程序模板、字符串拼接或摘要函数把它转换成聊天正文。
 3. 专家最终 LLM 必须同时决定面向用户的 `message` 与本步控制状态 `execution_status / next_action`，并输出 `expert_final_state.v2`。
-4. 平台 finalizer 只负责结构化调用、严格校验和字段映射，不负责代替模型撰写自然语言。
-5. finalizer 缺失、超时、返回空正文或结构非法时，本轮按协议失败；工具事实保留在日志中，不生成“工具已执行完成”之类的补丁消息。
+4. 平台终态层负责严格校验和字段映射；无工具 finalizer 只在模型停止调用工具但终态不合格、或工具预算耗尽时做一次结构化规范化，不执行业务工具。
+5. 无工具 finalizer 缺失、超时、返回空正文或结构非法时，本轮按协议失败；工具事实保留在日志中，不生成“工具已执行完成”之类的补丁消息。
 
-`submit_expert_final_state` 是 finalizer 阶段的平台内部结构化提交接口，不是业务工具：它不执行 MCP、HTTP、workspace 或脚本动作，不生成 `tool_result`，也不写工具执行日志。平台把 `ExpertFinalStatePayload` 的 Pydantic schema 作为该接口参数 schema，要求模型恰好调用一次；参数校验通过后再映射为 `message + skill_result`。首次参数未通过 schema 校验时，只允许按同一 schema 重问一次，不允许从普通文本、Markdown 或工具原文中猜测和拼装字段。
+`expert_final_state.v2` 是工具循环的严格 JSON 终态，不是业务工具调用：它不执行 MCP、HTTP、workspace 或脚本动作，不生成 `tool_result`，也不写工具执行日志。平台把模型输出文本按严格 JSON 解析，并用 `ExpertFinalStatePayload` 做 Pydantic 校验；校验通过后再映射为 `message + skill_result`。模型停止调用工具但输出不合格时，平台允许一次不绑定业务工具的结构化规范化；规范化仍不合格则本轮按协议失败。平台不从普通文本、Markdown 或工具原文中猜测和拼装字段。
 
 #### 2.5.15 执行日志：`ToolExecutionLogRecord`
 
@@ -463,16 +468,18 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
 LLM 读取当前 message.content / attachments / 历史上下文
   -> LLM 决定调用工具
   -> 工具返回 tool_result.output.content / json_data / artifacts
-  -> LLM 读取工具结果并判断是否继续调用工具或进入 finalizer
-      -> 继续调用工具：不落最终专家消息
-      -> 进入 finalizer：产出 expert_final_state.v2
+  -> LLM 读取工具结果并产出 expert_final_state.v2
+      -> 非空 message：无论控制组合如何都先发布专家消息
+      -> agent_turn=continue：同一专家进入下一次 agent_turn
+      -> agent_turn=respond：交回主持人/编排层
   -> 平台校验 expert_final_state.v2
   -> 从 expert_final_state.v2.message 生成 ChatMessageRecord.message
-  -> 从 expert_final_state.v2.execution_status / next_action 生成 ChatMessageRecord.skill_result
+  -> 从 expert_final_state.v2.execution_status 生成 ChatMessageRecord.skill_result
+  -> 将 expert_final_state.v2.next_action 投影给两个内部控制模块
   -> 平台落盘 ChatMessageRecord
 ```
 
-专家运行时不得把工具循环中的中间 `AIMessage.content` 通过累积、拼接、去重等方式组装成最终气泡。带 `tool_calls` 的 `AIMessage` 只表示模型决定调用工具；工具后的普通 `AIMessage` 也不能默认成为专家回复，除非它通过 finalizer 校验为 `expert_final_state.v2.message.content`。
+专家运行时不得把多步工具循环中的中间 `AIMessage.content` 通过累积、拼接、去重等方式组装成最终气泡。带 `tool_calls` 的 `AIMessage` 只表示模型决定调用工具；模型停止调用工具后的普通 `AIMessage` 也不能默认成为专家回复，除非它本身通过 `expert_final_state.v2` 校验，或经无工具 finalizer 规范化后通过校验。
 
 deterministic tool summary 只属于平台内部失败诊断或日志摘要，不是专家自然语言回复。实现中不得用“工具已执行完成。以下是本轮工具返回摘要”或类似文本填充 `message.content`。
 
@@ -489,9 +496,8 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | 字段 | 作用 |
 | --- | --- |
 | `execution_status` | 专家 / Skill 本步结果：`succeeded`、`blocked`、`failed`。 |
-| `next_action` | 当前专家回合结束后的结构化控制信号。 |
 
-`skill_result` 不保存 `content`。可见回复读取 `message.content`，可见产物读取 `message.artifacts`，工具原始输出读取执行日志和 `tool_result.output`。
+`skill_result` 不保存 `content`、产物或 `next_action`。可见回复读取 `message.content`，可见产物读取 `message.artifacts`，工具原始输出读取执行日志和 `tool_result.output`；运行控制只存在于模型终态和平台内部控制对象中。
 
 #### 2.5.18 产物引用：`ArtifactRef`
 
@@ -505,33 +511,32 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 `path` 不得指向 `memory/`、`checkpoints/` 或执行日志目录。前端可以把 `message.artifacts` 渲染为正文前的产物按钮，点击后在右侧预览；工具级产物仍在执行日志详情中展示。
 
-#### 2.5.19 专家下一步控制：`SkillNextAction`
+#### 2.5.19 专家下一步控制：内部控制对象
 
-`skill_result.next_action` 只包含两个正交维度：当前专家本轮是否继续行动，以及下一条用户消息是否保持 Skill 会话。
+模型输出的 `expert_final_state.v2.next_action` 在严格校验后被投影为两个内部控制对象；它们不进入 `ChatMessageRecord.skill_result`。
 
 | 字段 | 作用 |
 | --- | --- |
-| `agent_turn` | `continue` 或 `respond`；控制当前专家本轮是否继续行动。 |
-| `skill_session` | `keep` 或 `release`；控制下一条用户消息是否继续回到同一专家和同一 Skill。 |
+| `agent_turn` | `continue` 或 `respond`；控制下一次执行权是否继续给当前专家。 |
+| `skill_session` | `keep` 或 `release`；控制同一专家后续被调用时是否沿用当前 Skill。 |
 
 取值规则：
 
 | 组合 | 含义 |
 | --- | --- |
-| `agent_turn=continue` | 当前专家本轮继续行动，例如继续调用工具、继续编辑文件或继续分析；不落最终专家消息。 |
-| `agent_turn=respond` | 当前专家本轮停止工具行动并生成面向用户的消息；可以落专家消息。 |
-| `skill_session=keep` | 下一条用户消息继续回到同一专家和同一 Skill。 |
-| `skill_session=release` | 释放 Skill 会话锁，下一轮走正常入口或主持人调度。 |
+| `agent_turn=continue` | 先发布本轮非空专家消息，再调度同一专家进入下一次独立业务阶段；不得用它补完本轮搜索、读取、写入之间的依赖工具链。 |
+| `agent_turn=respond` | 先发布本轮非空专家消息，再把控制权交回主持人/编排层。 |
+| `skill_session=keep` | 保留当前专家的当前 Skill 绑定；无论是 `agent_turn=continue` 还是主持人后续再次选择该专家，都沿用原 Skill。 |
+| `skill_session=release` | 释放当前专家的当前 Skill 绑定；该专家后续再次被调用时重新选择 Skill。 |
 
 #### 2.5.20 脚本 stdout / 专家 finalizer：`expert_final_state.v2`
 
 脚本型 Skill stdout 或非脚本专家 finalizer 都必须直接产出同一个最终状态协议；不再解析隐藏状态块。
 
-`expert_final_state.v2` 是专家消息落盘的唯一入口。无论专家使用 MCP、HTTP、workspace、脚本还是不调用工具，最终都必须归一到该结构。平台只从该结构生成 `ChatMessageRecord.message` 和 `ChatMessageRecord.skill_result`。
+`expert_final_state.v2` 是专家完成结果的唯一模型入口。无论专家使用 MCP、HTTP、workspace、脚本还是不调用工具，最终都必须归一到该结构。平台校验一次后，分别生成专家输出、执行状态、Agent Turn 指令和 Skill Session 指令。
 
 | 字段 | 作用 |
 | --- | --- |
-| `schema_version` | 固定为 `expert_final_state.v2`，用于协议版本校验。 |
 | `execution_status` | 专家本步状态：`succeeded`、`blocked`、`failed`。 |
 | `message` | 专家最终消息体；`agent_turn=respond` 时必须有非空 `message.content`。 |
 | `message.content` | 专家最终自然语言回复。 |
@@ -539,7 +544,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `message.artifacts` | 专家本步产出或暴露给用户的产物。 |
 | `next_action` | 专家回合结束后的控制信号。 |
 | `next_action.agent_turn` | 当前专家本轮继续行动还是回复用户。 |
-| `next_action.skill_session` | 下一条用户消息是否保持同一专家和同一 Skill。 |
+| `next_action.skill_session` | 同一专家后续被调用时是否沿用当前 Skill。 |
 
 缺字段、字段非法、枚举非法或出现冲突状态块，都按协议失败处理。
 
@@ -549,22 +554,19 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | --- | --- |
 | `message` | `ChatMessageRecord.message` |
 | `execution_status` | `ChatMessageRecord.skill_result.execution_status` |
-| `next_action` | `ChatMessageRecord.skill_result.next_action` |
+| `next_action` | 不落盘到消息；投影到 `AgentTurnController` 和 `SkillSessionManager`。 |
 
 `expert_final_state.v2` 不允许携带 `tool_results`、`tool_raw_results`、`stdout`、`stderr`、MCP 原始正文或网页全文。需要排障的原始事实必须从执行日志读取。
 
-#### 2.5.21 跨轮续跑：`orchestration_state.json.continuation`
+#### 2.5.21 跨轮 Skill 绑定：`orchestration_state.json.skill_sessions`
 
-当 `skill_result.next_action.skill_session=keep` 时，平台写入 `continuation`。
+当模型终态的 `next_action.skill_session=keep` 时，平台按专家名称保存当前实际 Skill。
 
 | 字段 | 作用 |
 | --- | --- |
-| `owner_agent_name` | 下一轮用户消息优先接回的专家名称。 |
-| `skill_session` | 固定为 `keep`，表示保持同一专家和同一 Skill。 |
-| `skill` | 记录继续使用的 Skill 目录名。 |
-| `message` | 下一轮恢复时提供给主持人或专家的标准消息上下文。 |
+| `skill_sessions.<agent_name>.skill` | 该专家以后再次被调度时复用的 Skill 目录名。 |
 
-`continuation` 不是当前轮消息，也不是主持人输出；它只在下一轮入口路由和上下文组装时生效。
+`skill_sessions` 不保存消息、不声明下一位专家，也不产生路由。最近专家输出来自 `history.json`；主持人只把 Skill Session 当作结构化上下文，并根据完整用户意图独立决定是否调度该专家。
 
 #### 2.5.22 结束事件：SSE `end`
 
@@ -589,14 +591,14 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `message.target_agent_name` | 统一路由入口 | 多套 `next_speaker` / `target_agent_name` 优先级分支。 |
 | `message.attachments` | 本消息携带的输入文件 | 工具输出或执行日志。 |
 | `message.artifacts` | 本消息对用户可见的产物 | 工具原始输出替代品。 |
-| `skill_result.next_action.agent_turn` | 当前专家本轮继续行动或回复用户 | 下一条用户消息归属。 |
-| `skill_result.next_action.skill_session` | 下一条用户消息是否保持同一专家和 Skill | 当前工具循环是否继续。 |
+| `expert_final_state.v2.next_action.agent_turn` | 当前请求内是否继续同一专家 | Skill 是否复用、消息是否发布。 |
+| `expert_final_state.v2.next_action.skill_session` | 同一专家后续被调用时是否沿用当前 Skill | 下一次执行权归属、专家路由。 |
 | `HostSchedulerDecisionPayload.message` | 主持人标准消息 | 旧 `next_speaker` / `next_action`。 |
 | `tool_execution.output.content` | 右侧终端日志文本输出 | 聊天气泡正文。 |
 | `tool_execution.output.json_data` | 工具结构化输出 | 聊天气泡正文。 |
 | `tool_execution.source` / `provider` / `provider_tool` | 日志来源和工具归因 | 路由、Skill 选择或消息事实。 |
 | `artifacts[].path` | workspace 产物路径 | 日志正文替代品。 |
-| `orchestration_state.continuation` | 下一轮续跑意图 | 当前轮可见消息。 |
+| `orchestration_state.skill_sessions` | 按专家保存 Skill 绑定 | 当前轮可见消息、下一位专家。 |
 
 ## 3. 跳转规则
 
@@ -609,7 +611,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | 填写来源 | 规则 | 产物 |
 | --- | --- | --- |
 | 用户显式选择专家 | 请求中的 `target_agent_name` 写入用户消息 `message.target_agent_name`。 | 用户消息直接成为路由消息。 |
-| `continuation` 续跑 | 如果上一轮要求保持同一专家和 Skill，平台用 `continuation` 构造或提示主持人构造标准消息。 | 标准消息带 `message.target_agent_name`。 |
+| Skill Session 上下文 | 主持人可看到按专家保存的 Skill 绑定，但必须根据完整用户意图自行决定是否选择该专家。 | Skill Session 本身不生成标准消息。 |
 | 主持人调度 | 主持人输出 `HostSchedulerDecisionPayload.message`。 | 主持人消息带或不带 `message.target_agent_name`。 |
 | 0 专家或需要招募 | 主持人消息不带 `target_agent_name`，并通过 `suggested_add_agent_names` 表达邀请建议。 | 等待用户确认。 |
 
@@ -623,9 +625,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 {
   "next_speaker": "专家名称 | user | end | invite",
   "next_action": "下一步动作说明",
-  "route_source": "empty_group | target_agent | host_scheduler_state | continuation | host_scheduler",
-  "skill_session": "none | keep",
-  "skill": "skill-directory 或 null"
+  "route_source": "empty_group | target_agent | host_scheduler_state | host_scheduler"
 }
 ```
 
@@ -634,8 +634,6 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `next_speaker` | 从 `message.target_agent_name` 派生的内部执行目标。专家名称必须在当前 `agent_names` 中；`user` 表示等待用户，`end` 表示结束，`invite` 只用于内部表达招募入口。 |
 | `next_action` | 从 `message.content` 派生的内部任务说明。进入专家时作为专家 prompt 的任务文本。 |
 | `route_source` | 仅后端内部和测试断言使用，不进入前端 API、SSE payload 或持久化业务数据。 |
-| `skill_session` | `none` 表示正常选 Skill；`keep` 表示继续 `skill` 指定的 Skill。 |
-| `skill` | 仅 `skill_session=keep` 时有值。 |
 
 `reason`、`instruction`、`speaker_task`、`next_prompt`、`handoff_reason`、`resume_target_agent_name`、`pending_*` 不属于统一路由决策契约。
 
@@ -652,21 +650,15 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 前端只消费后端最终返回的 `suggested_add_agent_names`。是否展示邀请条由后端事件决定，不再依赖会话定义里的模式字段。
 
-### 3.3 短期续跑状态
+### 3.3 Skill Session 与路由分离
 
-跨请求续跑意图由 `orchestration_state.json` 的 `continuation` 表示：
+跨请求 Skill 复用由 `orchestration_state.json` 的 `skill_sessions` 表示：
 
 ```json
 {
-  "continuation": {
-    "owner_agent_name": "专家名称",
-    "skill_session": "keep",
-    "skill": "skill-directory",
-    "message": {
-      "content": "用户回复后继续由该专家使用该 Skill 处理。",
-      "target_agent_name": "专家名称",
-      "attachments": [],
-      "artifacts": []
+  "skill_sessions": {
+    "信息检索专家": {
+      "skill": "skill-directory"
     }
   }
 }
@@ -676,16 +668,11 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 | 条件 | 结果 |
 | --- | --- |
-| 请求指定了 `target_agent_name` | 写入用户消息 `message.target_agent_name`，并清理冲突的 `continuation`。 |
+| 请求指定了 `target_agent_name` | 写入用户消息 `message.target_agent_name` 并路由；不清理其他专家 Skill 绑定。 |
 | `host_scheduler.message.target_agent_name` 是场内专家 | 先恢复主持人阶段，再由主持人发出可见交接消息后进入该专家。 |
-| `continuation.owner_agent_name` 为空 | 走主持人。 |
-| `continuation.owner_agent_name` 不在当前 `agent_names` | 走主持人，并清理 `continuation`。 |
-| `continuation.skill_session == "keep"` | 把 owner、Skill 和 `message` 作为主持人调度提示；主持人通常应继续交给同一专家同一 Skill，但不得跳过主持人消息。 |
-| 没有 `continuation` | 走主持人；主持人重新判断专家、用户或结束。 |
+| 没有结构化目标 | 走主持人；主持人根据完整用户输入、历史和 Skill Session 摘要判断专家、用户或结束。 |
 
-`message.content` 文本不清理 `continuation`。需要指定本轮专家时使用 `message.target_agent_name`；需要跨轮锁定或释放 Skill 时，由后端根据 `skill_result.next_action.skill_session` 和 `orchestration_state.json` 的结构化字段把状态交给主持人判断。
-
-这表示：没有 `message.target_agent_name` 和存在 `continuation` 不是一回事。前者只是当前消息不路由专家；后者表示下一轮用户消息到来时，主持人应看到的续跑锁定意图和上下文依据。
+平台不得从 `message.content` 的关键词、正则或固定短语推断路由。需要指定本轮专家时使用 `message.target_agent_name`；Skill 绑定只在专家已经被选中后参与 Skill 选择。
 
 ### 3.4 主持人调度
 
@@ -738,7 +725,7 @@ interrupt_reason = "protocol_error"
 
 `current_phase` 和 `message` 必填，`suggested_add_agent_names` 可选。`suggested_add_agent_names` 出现时，`message.target_agent_name` 必须为空；招募不再使用 `"invite"` 表达。
 
-平台所有要求 LLM 返回机器可读控制结构的调用，都必须经统一结构化输出入口完成严格 schema 校验。普通 JSON 输出走 `LLM raw output -> strict JSON object -> Pydantic model_validate`；专家 finalizer 走 `submit_expert_final_state arguments -> Pydantic model_validate`。该规则适用于主持人调度、专家 Skill 选择、专家 finalizer，以及以后新增的任何会驱动平台分支、路由、状态、工具、落盘或前端结构展示的 LLM 输出字段。专家最终正文虽然是自然语言，但必须作为 `expert_final_state.v2.message.content` 的字段通过结构化入口返回；普通标题、摘要和展示文案只有在不驱动平台落盘或状态机时，才不使用该入口。
+平台所有要求 LLM 返回机器可读控制结构的调用，都必须经统一结构化输出入口完成严格 schema 校验。JSON 输出统一走 `LLM raw output -> strict JSON object -> Pydantic model_validate`；该规则适用于主持人调度、专家 Skill 选择、专家 finalizer，以及以后新增的任何会驱动平台分支、路由、状态、工具、落盘或前端结构展示的 LLM 输出字段。专家最终正文虽然是自然语言，但必须作为 `expert_final_state.v2.message.content` 的字段通过结构化入口返回；普通标题、摘要和展示文案只有在不驱动平台落盘或状态机时，才不使用该入口。
 
 `group_host_decision.py` 使用严格结构解析，`extra="forbid"`。多余字段、非 JSON、非法 `message.target_agent_name` 都不是可展示的主持人业务回复。主持人模型第一次输出未通过结构校验时，平台只允许按同一字段 schema 做一次协议重问；重问仍未通过时才转成系统保护决策，等待用户或管理员重试。平台不得从非标准文本中抽取字段、不得把模型解释文字当主持人消息展示，也不得把旧字段补丁化映射成当前字段。`next_speaker`、`next_action`、`speaker_task`、`reason`、`invite`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 和 id 类字段都不是主持人 JSON 契约的一部分：
 
@@ -768,12 +755,12 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 1. `build_expert_turn_runtime()` 解析本轮专家、Skill、工具和 LLM。
 2. 发 `route` 事件：`run_id`、`agent_name`、`skill`。
 3. 构造专家输入：讨论目标、当前 `message.content`、`message.attachments`、最近讨论。
-4. `agent.astream(...)` 进入 `SimpleAgent` 工具循环。
-5. 收集工具调用和结构化 `tool_results`；工具 stdout、stderr、退出码和耗时写入执行 trace 或运行日志。
-6. 每次工具返回后回到 LLM 决策；LLM 可以继续调用工具，也可以进入 finalizer。
-7. 从脚本 stdout 或专家 finalizer 解析 `expert_final_state.v2`，并校验 `message`、`execution_status`、`next_action`。
-8. 从 `expert_final_state.v2.message` 写入专家消息，从 `expert_final_state.v2.execution_status / next_action` 写入 `skill_result`。
-9. 根据 `skill_result.next_action.agent_turn` 判断当前专家本轮是否继续；根据 `skill_result.next_action.skill_session` 更新下一轮 `continuation`。
+4. `agent.astream(...)` 进入一次专家 `agent_turn`。
+5. 本次 `agent_turn` 在最大工具步数内执行零个或多个工具步骤，并聚合结构化 `tool_results`；每批结果留在同一模型上下文，工具 stdout、stderr、退出码和耗时写入执行 trace 或运行日志。
+6. 每批工具返回后回到同一 LLM 上下文，由模型继续选择工具或输出 `expert_final_state.v2`；是否进入下一次独立业务阶段由 `next_action.agent_turn` 决定。
+7. 从脚本 stdout、模型终态或无工具 finalizer 解析 `expert_final_state.v2`，并校验 `message`、`execution_status`、`next_action`。
+8. 先从 `expert_final_state.v2.message` 发布非空专家消息，并把 `execution_status` 写入消息 `skill_result`。
+9. 再把 `next_action.agent_turn` 交给 Agent Turn 控制器，把 `next_action.skill_session` 交给 Skill Session 管理器。
 
 专家执行最多 32 轮；超过后用 `timeout_or_budget_exceeded` 中断并等待用户。
 
@@ -786,6 +773,7 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 | `title` | 前端 / 后端自动标题 | 会话列表、详情 | 存入 `session.json` | 空标题使用“新对话”。 |
 | `title_auto_generated` | 后端创建会话 / 用户手动改名 | 自动标题逻辑 | 存入 `session.json` | 创建时必须为 `true`；用户手动改标题后置为 `false`，之后不得自动置回 `true`。 |
 | `agent_names` | 会话创建、邀请专家、移出专家 | 运行时、前端成员列表 | 存入 `session.json` | 必须是专家 `name` 数组；从场景创建时只用场景专家列表初始化，之后不再关联场景。 |
+| `scenario_prompt` | 场景创建会话 | 主持人调度、专家 Skill 选择、专家执行 | 存入 `session.json` | 创建时复制场景 `system_prompt`；后续不回读场景资源。 |
 | `host` | 场景主持人 / 账号默认主持人 | 主持人运行时、前端展示 | 存入 `session.json` | 会话级主持人快照；上层对象叫 `host`，显示名叫 `host.name`。 |
 | `host.name` | 场景或默认主持人 | 主持人消息、头像、调度提示 | `host` 子字段 | 原 `leader_agent_name`，旧字段删除。 |
 | `host.llm_name` | 场景或默认主持人 | 主持人 LLM 解析 | `host` 子字段 | 引用模型资源 `name`。 |
@@ -796,7 +784,7 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 | `add_agent_names` | 前端邀请条 | `update_group_session()` | 请求字段 | 只追加专家名称；成功后刷新详情。 |
 | `remove_agent_names` | 前端成员管理 | `update_group_session()` | 请求字段 | 只删除专家名称。 |
 
-会话定义不再保存 `scenario_name`、`orchestration_profile`、`system_prompt`、`leader_agent_name`、`host_config`。场景资源只在创建会话时作为初始化模板使用：复制专家名称列表并生成 `host` 快照；会话创建后不再依赖场景资源。
+会话定义不再保存 `scenario_name`、`orchestration_profile`、会话级 `system_prompt`、`leader_agent_name`、`host_config`。场景资源只在创建会话时作为初始化模板使用：复制专家名称列表、`scenario_prompt` 和 `host` 快照；会话创建后不再依赖场景资源。
 
 `sessions/index.json` 不再是会话列表契约。会话列表应扫描 `sessions/{session_id}/session.json`，按 `updated_at` 排序。
 
@@ -860,12 +848,11 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 
 `tool_start`、`tool_result` 不作为顶层 SSE 业务事件。工具 stdout、stderr、退出码、调用参数、结构化返回和调用耗时属于执行 trace 或运行日志；面向用户可展示的最终产物写入 `message.artifacts`，工具级产物写入 `tool_result.output.artifacts` 或执行日志 `output.artifacts`。前端可以在消息右侧展示折叠的“终端/日志”入口，但该入口读取的是按 `message_id` 关联的运行日志，不改变 SSE 事件类型，也不把工具细节塞进 `message.content`。
 
-工作区写入分两层：
+工作区文本新建只有一个模型可见入口：`write_workspace_file(path, content, overwrite=false)`。
 
-- `create_workspace_artifact` 是模型优先使用的高层产物写入工具。模型只提供 `title`、`content`、可选 `kind` / `directory` / `extension`，平台负责生成安全文件名、附加当前时间戳、检测同名冲突并自动追加版本后缀（如 `-02`）。该工具用于新建大纲、正文、资料包、报告、阶段产物和最终产物。
-- `write_workspace_file` 是低层路径写入工具。只有用户明确指定已有路径、固定文件名或确需 `overwrite=true` 时才使用；它按传入 `path` 原样写入，默认不覆盖同名文件。
-
-模型不得为了规避冲突自行猜测时间戳、循环改文件名或在同名错误后随意传 `overwrite=true`。新产物的唯一命名和版本化是平台职责。
+- `path` 与 `content` 在工具 JSON Schema 中都是必填字段；`path` 使用当前工作区明确相对路径，`content` 传完整文本。
+- `overwrite` 默认 `false`。新建文本使用新的明确相对路径；已有文件的局部修改使用 `edit_workspace_file`，重命名或移动使用 `rename_workspace_file`。
+- 平台不再向模型暴露自动命名或自动版本化的第二套文本写入工具。模型不得在同名错误后随意改用 `overwrite=true`。
 
 ### 4.6 SSE message 事件
 
@@ -896,8 +883,8 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 | `message.artifacts` | 是 | 是，限前端产物展示和后续上下文 | 本消息产出或暴露给用户的产物。 |
 | `tool_call.arguments.content` | 否 | 否 | 只属于工具调用参数；日志面板可摘要显示。 |
 | `skill_result.execution_status` | 随 `skill_result` 进入 | 是，限 Skill 本步结果 | 不等于工具日志 `status` 或 SSE `phase`。 |
-| `skill_result.next_action.agent_turn` | 随 `skill_result` 进入 | 是，限当前专家本轮是否继续 | 不决定下一条用户消息归属。 |
-| `skill_result.next_action.skill_session` | 随 `skill_result` 进入 | 是，限下一条用户消息是否保持同专家同 Skill | 不决定当前工具循环是否继续。 |
+| `expert_final_state.v2.next_action.agent_turn` | 否 | 是，限当前请求内是否继续同一专家 | 不决定 Skill 是否复用，也不决定消息是否发布。 |
+| `expert_final_state.v2.next_action.skill_session` | 否 | 是，限同一专家后续是否沿用当前 Skill | 不决定下一次执行权归属。 |
 | `tool_execution.status` | 否 | 否 | 只属于消息右侧工具日志。 |
 | `progress.phase` / `end.phase` | 各自事件内 | 是，限前端运行态 | 不等于接口 `status` 或 Skill `execution_status`。 |
 | `tool_execution.source` / `provider` / `provider_tool` | 否 | 否 | 只属于日志和 trace；不得作为路由、Skill 选择或消息事实。 |
@@ -919,7 +906,7 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 
 `discussion_ended` 已从平台契约删除，不能由后端生成，也不能由前端读取。`end` 只表示当前回复回合结束，不表示整个会话结束；会话关闭、归档或删除必须走会话 API。
 
-`interrupt_reason`、`required_user_fields`、`handoff_reason`、`resume_target_agent_name`、`turn_id`、`token_version`、`next_prompt`、`instruction` 不属于目标 `end` 事件契约。需要跨刷新保存的接续信息写入 `orchestration_state.json.continuation.message`、`continuation.owner_agent_name`、`continuation.skill_session` 和 `continuation.skill`。
+`interrupt_reason`、`required_user_fields`、`handoff_reason`、`resume_target_agent_name`、`turn_id`、`token_version`、`next_prompt`、`instruction` 不属于目标 `end` 事件契约。跨刷新 Skill 绑定写入 `orchestration_state.json.skill_sessions`；专家消息只写入 `history.json`。
 
 ### 4.8 SSE error 事件
 
@@ -979,15 +966,12 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 
 ```json
 {
-  "continuation": {
-    "owner_agent_name": "专家名称",
-    "skill_session": "keep",
-    "skill": "skill-directory",
-    "message": {
-      "content": "面向上下文组装的下一步动作说明",
-      "target_agent_name": "专家名称",
-      "attachments": [],
-      "artifacts": []
+  "skill_sessions": {
+    "信息检索专家": {
+      "skill": "skill-directory"
+    },
+    "写作专家": {
+      "skill": "writer-skill"
     }
   },
   "host_scheduler": {
@@ -1004,14 +988,11 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 
 | 分组 | 字段 | 规则 |
 | --- | --- | --- |
-| `continuation` | `owner_agent_name` | 下一轮用户消息优先接回的专家名称。 |
-| `continuation` | `skill_session` | 固定为 `keep`；由 `skill_result.next_action.skill_session=keep` 推导。 |
-| `continuation` | `skill` | 保持同一 Skill 时填写。 |
-| `continuation` | `message` | 统一承载下一轮给主持人或专家判断的接续消息。 |
+| `skill_sessions` | `<agent_name>.skill` | 该专家再次被选择时复用的 Skill；不承担路由和消息保存。 |
 | `host_scheduler` | `current_phase` | 主持人的跨轮阶段记忆。 |
 | `host_scheduler` | `message` | 主持人已经形成的标准消息；为场内专家时仍需先生成主持人交接消息。 |
 
-旧字段 `runtime_state`、`pending_owner_agent_name`、`pending_skill`、`pending_phase`、`pending_required_user_fields`、`pending_handoff_reason`、`skill_session_owner_name`、`skill_session_skill`、`speaker_task`、`instruction`、`next_prompt` 不属于当前契约。保存 `session.json` 时必须拒绝或剔除这些字段；历史数据迁移可以单独处理，但主运行时不得用它们做兜底。
+旧字段 `runtime_state`、`continuation`、`pending_owner_agent_name`、`pending_skill`、`pending_phase`、`pending_required_user_fields`、`pending_handoff_reason`、`skill_session_owner_name`、`skill_session_skill`、`speaker_task`、`instruction`、`next_prompt` 不属于当前契约。保存 `session.json` 时必须拒绝或剔除这些字段；历史数据迁移可以单独处理，但主运行时不得用它们做兜底。
 
 ### 4.10 `/events/stream` 订阅事件
 
@@ -1106,7 +1087,6 @@ run_skill_script_<skill>
 
 ```json
 {
-  "schema_version": "expert_final_state.v2",
   "execution_status": "succeeded|blocked|failed",
   "message": {
     "content": "专家最终自然语言回复",
@@ -1126,7 +1106,7 @@ run_skill_script_<skill>
 }
 ```
 
-脚本 stdout 必须显式输出 `schema_version`、`execution_status`、`message` 和 `next_action`。`next_action.agent_turn` 控制当前专家本轮继续行动还是回复用户；`next_action.skill_session` 控制下一条用户消息是否保留同一专家和同一 Skill。`agent_turn=respond` 时 `message.content` 必须非空；`agent_turn=continue` 时不落最终专家消息。
+脚本 stdout 必须显式输出 `execution_status`、`message` 和 `next_action`，不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。`next_action.agent_turn` 控制下一次执行权是否继续给当前专家；`next_action.skill_session` 控制同一专家后续被调用时是否沿用当前 Skill。`agent_turn=respond` 时 `message.content` 必须非空；`agent_turn=continue` 时非空 `message` 仍先发布，再继续同一专家。
 
 脚本 stdout 缺少 `message` 或 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：不合成专家回复，保留执行日志，并返回稳定协议错误。
 
@@ -1136,7 +1116,7 @@ MCP 工具走 `app.mcp.manager`。保存的 HTTP API 工具走 `create_http_api_
 
 MCP manager 必须保留 SDK 的结构化 `CallToolResult`，不得在产物接收前只取第一个 content block 或整体压成字符串。HTTP API wrapper 必须在产物接收前保留响应状态、`Content-Type` 和原始 body。两类工具的资源配置均保持导入即用，不增加施才专属保存字段。
 
-MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具执行后回到 LLM 决策：LLM 可以继续调用工具，也可以进入专家 finalizer。最终进入聊天气泡的必须是 finalizer 生成并通过校验的 `expert_final_state.v2.message.content`，不是工具原始返回，也不是工具循环中的中间 `AIMessage.content`。工具调用参数、stdout、stderr、结构化返回、MCP 原始正文和调用耗时属于执行 trace 或运行日志，不进入前端消息 payload，也不作为跨轮路由事实源。
+MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具服务于当前 `agent_turn` 的多步工具循环；模型根据同一上下文中的 `ToolMessage` 继续选择工具或输出最终 JSON。是否进入下一次独立业务阶段由终态中的 `next_action.agent_turn` 表达，不得用下一次 turn 补完当前工具链。最终进入聊天气泡的必须是通过校验的 `expert_final_state.v2.message.content`，不是工具原始返回，也不是工具循环中的中间 `AIMessage.content`。工具调用参数、stdout、stderr、结构化返回、MCP 原始正文和调用耗时属于执行 trace 或运行日志，不进入前端消息 payload，也不作为跨轮路由事实源。
 
 ## 6. 接口统一改造时的默认步骤
 
@@ -1154,7 +1134,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 
 | 表现 | 优先检查 | 典型根因 |
 | --- | --- | --- |
-| 用户补充后没有回到预期专家 | `orchestration_state.json.continuation`、`host_scheduler.message.target_agent_name`、`message.target_agent_name` | 主持人调度覆盖了续跑状态，或 continuation 被清理。 |
+| 用户补充后没有回到预期专家 | 主持人模型输入、`host_scheduler.message.target_agent_name`、`message.target_agent_name` | 主持人没有基于完整用户意图和历史生成结构化目标。 |
 | 明明指定专家却跑了主持人 | `target_agent_name`、`agent_names` | `target_agent_name` 不在当前会话成员里，或请求校验未进入目标契约。 |
 | 不该出现邀请专家条 | `agent_names`、`suggested_add_agent_names` | 后端后处理未清空，或前端 mock 仍伪造建议。 |
 | 主持人输出后没有专家执行 | `message.target_agent_name`、`agent_names`、`protocol_error` | `message.target_agent_name` 不是场内专家名称，或主持人 JSON 严格解析失败。 |
@@ -1169,8 +1149,8 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 接口统一类改动建议至少验证：
 
 ```bash
-rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_chat_expert_turn.py backend/app/agent/group_host_decision.py backend/app/agent/group_orchestration_fsm.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
-rtk python -m pytest backend/tests/test_group_host_decision.py backend/tests/test_group_orchestration_fsm.py backend/tests/test_group_chat_stream_protocol.py -q
+rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_chat_expert_turn.py backend/app/agent/group_host_decision.py backend/app/agent/group_entry_router.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
+rtk python -m pytest backend/tests/test_group_host_decision.py backend/tests/test_group_entry_router.py backend/tests/test_group_chat_stream_protocol.py -q
 rtk npm --prefix frontend run build
 ```
 
@@ -1191,6 +1171,6 @@ rtk npx --prefix frontend playwright test frontend/e2e/workspace.spec.ts fronten
 3. SSE `route` / `message` / `end` payload。
 4. 会话定义字段：`title`、`title_auto_generated`、`agent_names`、`host`、`created_at`、`updated_at`。
 5. Skill stdout / MCP tool result 结构化契约。
-6. `host.name`、`agent_names`、`suggested_add_agent_names`、`orchestration_state.json.continuation` 等 name-based 字段。
+6. `host.name`、`agent_names`、`suggested_add_agent_names`、`orchestration_state.json.skill_sessions` 等 name-based 字段。
 
 如果只改代码不改本文，后续排查会重新陷入“跳转靠猜、字段靠记”的状态。

@@ -49,7 +49,6 @@ def _v2_stdout_payload(
 ):
     _ = (handoff, reason)
     return {
-        "schema_version": "expert_final_state.v2",
         "execution_status": execution_status,
         "message": {
             "content": instruction,

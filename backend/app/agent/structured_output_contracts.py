@@ -7,7 +7,6 @@ instead of normalizing them into the new protocol.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -26,19 +25,15 @@ class StructuredOutputProtocolError(ValueError):
 
 
 _T = TypeVar("_T", bound=BaseModel)
-_JSON_FENCE_RE = re.compile(r"\A```json\s*\n?(?P<body>.*?)\n?```\s*\Z", re.S | re.I)
 
 
 def strict_json_object_from_text(text: str, *, schema_name: str = "") -> dict[str, Any]:
-    """Parse exactly one JSON object, optionally wrapped in a single json fence."""
+    """Parse exactly one bare JSON object without Markdown or explanatory text."""
     raw = str(text or "")
     stripped = raw.strip()
     if not stripped:
         raise StructuredOutputProtocolError("empty structured output", schema_name=schema_name, raw_output=raw)
-    match = _JSON_FENCE_RE.match(stripped)
-    if match:
-        stripped = match.group("body").strip()
-    elif not (stripped.startswith("{") and stripped.endswith("}")):
+    if not (stripped.startswith("{") and stripped.endswith("}")):
         raise StructuredOutputProtocolError("structured output must be a single JSON object", schema_name=schema_name, raw_output=raw)
     try:
         payload = json.loads(stripped)
@@ -98,11 +93,6 @@ class ArtifactRef(StrictModel):
             raise ValueError(str(exc)) from exc
 
 
-class SkillNextAction(StrictModel):
-    agent_turn: Literal["continue", "respond"]
-    skill_session: Literal["keep", "release"]
-
-
 class WorkspaceAttachmentRef(StrictModel):
     type: Literal["workspace_file"]
     path: str = Field(min_length=1)
@@ -150,26 +140,6 @@ class HostSchedulerDecisionPayload(StrictModel):
         return self
 
 
-class ExpertFinalStatePayload(StrictModel):
-    schema_version: Literal["expert_final_state.v2"]
-    execution_status: Literal["succeeded", "blocked", "failed"]
-    message: ExpertFinalMessageBody
-    next_action: SkillNextAction
-
-    @model_validator(mode="after")
-    def _validate_message_for_action(self) -> "ExpertFinalStatePayload":
-        if self.next_action.agent_turn == "respond" and not self.message.content.strip():
-            raise ValueError("agent_turn=respond requires non-empty message.content")
-        return self
-
-
-class SkillScriptStdoutPayload(StrictModel):
-    schema_version: Literal["expert_final_state.v2"]
-    execution_status: Literal["succeeded", "blocked", "failed"]
-    message: ExpertFinalMessageBody
-    next_action: SkillNextAction
-
-
 class ToolExecutionLogToolCall(StrictModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -182,7 +152,7 @@ class ToolExecutionLogRecord(StrictModel):
     log_id: str = Field(min_length=1)
     message_id: str = Field(min_length=1)
     created_at: str = Field(min_length=1)
-    source: Literal["mcp", "script", "workspace", "api", "host"]
+    source: Literal["mcp", "script", "workspace", "api", "host", "runtime"]
     agent_name: str | None = Field(default=None, min_length=1)
     skill: str | None = Field(default=None, min_length=1)
     status: Literal["succeeded", "blocked", "failed"]

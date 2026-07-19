@@ -11,6 +11,28 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def test_prompt_editors_explain_the_four_user_owned_prompt_roles():
+    settings = read("frontend/src/features/settings/AppSettingsView.vue")
+    agent = read("frontend/src/features/resources/AgentView.vue")
+    main = read("frontend/src/views/MainView.vue")
+
+    assert "项目整体系统提示词" in settings
+    assert "工作区函数" in settings
+    assert "主持人长期提示词" in settings
+    assert "纯调度" in settings
+    assert "专家长期提示词" in agent
+    assert "长期职责、专业标准" in agent
+    assert "场景提示词（会话共享快照）" in main
+    assert "场景目标、适用范围、共同要求和完成标准" in main
+
+
+def function_block(src: str, name: str) -> str:
+    start = src.index(f"function {name}")
+    next_fn = re.search(r"\n  function \w+", src[start + 1 :])
+    end = start + 1 + next_fn.start() if next_fn else len(src)
+    return src[start:end]
+
+
 def test_router_exposes_canonical_business_routes():
     src = read("frontend/src/router/index.ts")
     assert "path: '/workspace'" in src
@@ -348,6 +370,34 @@ def test_frontend_stream_runner_does_not_auto_fallback_to_chat_once():
     assert "deps.setStreamingPhase('failed', sessionId)" in runner
 
 
+def test_frontend_stream_runner_keeps_server_errors_visible_after_failed_end():
+    runner = read("frontend/src/features/workspace/composables/useGroupChatStreamRunner.ts")
+    stream_events = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+
+    assert "sawPersistedFailureMessage: boolean" in runner
+    assert "message || payload?.detail || payload?.error" in runner
+    assert "const endFailed = String(data?.phase || '').trim().toLowerCase() === 'failed'" in runner
+    assert "shouldEmitMessageSent = !endFailed && !streamServerErrored" in runner
+    assert "!state.sawPersistedFailureMessage" in runner
+    assert "state.sawPersistedFailureMessage = true" in runner
+    assert "execution_status || '').trim().toLowerCase() === 'failed'" in stream_events
+
+
+def test_frontend_route_and_progress_do_not_append_streaming_status_bubbles():
+    stream_events = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+
+    route_handler = function_block(stream_events, "showStreamingRoutePlaceholder")
+    progress_handler = function_block(stream_events, "consumeStreamingStatusContent")
+    clear_handler = function_block(stream_events, "clearStreamingPlaceholders")
+
+    assert "patchGroupStreamState" in route_handler
+    assert "patchGroupStreamState" in progress_handler
+    assert "ensureStreamingStatusPlaceholder" not in route_handler
+    assert "ensureStreamingStatusPlaceholder" not in progress_handler
+    assert "_streamingStatus" in clear_handler
+    assert ".filter(" in clear_handler
+
+
 def test_frontend_chat_api_omits_empty_optional_request_fields():
     src = read("frontend/src/api/chat.ts")
 
@@ -589,6 +639,19 @@ def test_frontend_scenario_session_create_strips_display_only_host_skill_name():
     assert "host: p.host" not in src
 
 
+def test_frontend_scenario_session_create_snapshots_shared_prompt_and_labels_prompt_roles():
+    shortcut = read("frontend/src/features/workspace/composables/useShortcutPresets.ts")
+    settings = read("frontend/src/features/settings/AppSettingsView.vue")
+    main = read("frontend/src/views/MainView.vue")
+
+    assert "scenario_prompt: String(p.system_prompt || '').trim()" in shortcut
+    assert "项目整体系统提示词（所有角色共享）" in settings
+    assert "主持人长期提示词" in settings
+    assert "场景提示词（会话共享快照）" in main
+    assert "创建会话时保存快照，并持续提供给主持人和专家" in main
+    assert "主持人长期提示词" in main
+
+
 def test_frontend_stores_backend_phase_values_in_stream_state():
     files = [
         "frontend/src/features/workspace/composables/useGroupComposerActions.ts",
@@ -621,7 +684,7 @@ def test_frontend_names_timeout_or_budget_exceeded_phase_from_runtime_contract()
     events = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
 
     assert "timeout_or_budget_exceeded: '已达到自动执行上限，等待你确认…'" in runtime
-    assert "timeout_or_budget_exceeded') return '已达到自动执行上限，等待你确认...'" in events
+    assert "timeout_or_budget_exceeded') return '已达到自动执行上限，等待你确认...'" not in events
 
 
 def test_frontend_does_not_auto_route_from_end_suggested_next_speaker():

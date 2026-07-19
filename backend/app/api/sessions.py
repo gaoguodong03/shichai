@@ -74,6 +74,7 @@ async def create_session(body: SessionCreateRequest):
         title=body.title or "新对话",
         agent_names=body.agent_names,
         host=host,
+        scenario_prompt=body.scenario_prompt,
     )
     return {"status": "ok", "data": data}
 

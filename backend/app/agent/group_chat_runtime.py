@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
 from app.agent.group_chat_expert_turn import ExpertTurnOutcome, run_one_expert_turn
+from app.agent.group_chat_failure import persist_group_chat_failure
 from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
     _build_host_scheduler_message,
@@ -26,10 +27,12 @@ from app.agent.group_chat_streaming import end_event_payload, serialize_sse_even
 from app.agent.group_context import normalize_discussion_goal, scheduler_memory_prompt
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_host_decision import _apply_decision_to_ctx, finalize_host_scheduler_decision
-from app.agent.group_orchestration_fsm import resolve_group_entry_route
+from app.agent.group_entry_router import resolve_group_entry_route
+from app.agent.host_prompt import get_default_host_system_prompt
 from app.agent.platform_prompts import render_platform_prompt
+from app.agent.session_prompt import build_shared_session_prompt
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent
-from app.agent.session_runtime_logs import append_host_execution_log
+from app.agent.session_runtime_logs import append_host_execution_log, sanitize_runtime_failure_summary
 from app.agent.structured_output_contracts import StructuredOutputProtocolError
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
@@ -71,7 +74,7 @@ def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
         "name": str(host.get("name") or "四九").strip() or "四九",
         "description": "群聊主持人",
         "llm_name": str(host.get("llm_name") or "").strip(),
-        "system_prompt": str(host.get("system_prompt") or "").strip(),
+        "system_prompt": str(host.get("system_prompt") or get_default_host_system_prompt()).strip(),
         "skill_directory": skill_directory,
     }
 
@@ -159,8 +162,26 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield event
         except Exception as exc:  # noqa: BLE001
             logger.exception("group chat stream failed session=%s run_id=%s", group_session_id, run_id)
-            error = SseErrorEvent(type="error", run_id=run_id, code="runtime_error", message=str(exc) or exc.__class__.__name__)
+            error_code = "GROUP_CHAT_RUNTIME_FAILED"
+            raw_error_summary = str(exc) or exc.__class__.__name__
+            safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
+            error = SseErrorEvent(type="error", run_id=run_id, code=error_code, message=safe_error_summary)
             yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            host_agent = _host_snapshot_to_agent(session_item)
+            failure_message = persist_group_chat_failure(
+                group_session_id=group_session_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                messages=messages,
+                speaker_type="host",
+                agent_name=str(host_agent.get("name") or "四九"),
+                skill=str(host_agent.get("skill_directory") or ""),
+                error_code=error_code,
+                error_type=exc.__class__.__name__,
+                error_summary=raw_error_summary,
+                phase="group_chat_runtime",
+            )
+            yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
         finally:
@@ -244,11 +265,10 @@ async def _run_contract_events(
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
     next_action = user_text or render_platform_prompt("expert.turn.default_next_action.v1", {})
-    entry_route, route_state_changed = resolve_group_entry_route(
+    entry_route = resolve_group_entry_route(
         request=request,
         orchestration_state=orchestration_state,
         agent_names=agent_names,
-        host_name=host_name,
         default_next_action=next_action,
     )
     next_speaker = ""
@@ -257,8 +277,6 @@ async def _run_contract_events(
         next_speaker = str(entry_route["next_speaker"]).strip()
         next_action = str(entry_route["next_action"]).strip() or next_action
         route_source = str(entry_route.get("route_source") or "")
-    if route_state_changed:
-        write_group_orchestration_state(group_session_id, orchestration_state)
     suggested_add: list[str] = []
     if not next_speaker:
         decision = await _host_decide_by_agent(
@@ -268,7 +286,7 @@ async def _run_contract_events(
             discussion_goal,
             scheduler_memory_prompt(group_session_id, messages),
             None,
-            "",
+            build_shared_session_prompt(app_settings, session_item),
             available_to_add,
             group_session_id=group_session_id,
             messages=messages,
@@ -276,6 +294,7 @@ async def _run_contract_events(
             user_message=user_text,
             session_item=session_item,
             host_scheduler_state=host_scheduler,
+            skill_sessions_state=orchestration_state.get("skill_sessions"),
         )
         decision = finalize_host_scheduler_decision(
             decision,
@@ -294,7 +313,7 @@ async def _run_contract_events(
         save_session_definitions(session_definitions)
 
     turns = 0
-    suppress_host_message = route_source in {"target_agent", "continuation"}
+    suppress_host_message = route_source == "target_agent"
     while True:
         host_message_body = host_scheduler.get("message") if isinstance(host_scheduler.get("message"), dict) else {}
         if next_speaker in {"user", "end"}:
@@ -329,13 +348,29 @@ async def _run_contract_events(
             return
 
         if next_speaker not in agent_names:
+            error_code = "INVALID_NEXT_SPEAKER"
+            error_message = f"Host selected an agent outside current agent_names: {next_speaker}"
             error = SseErrorEvent(
                 type="error",
                 run_id=run_id,
-                code="invalid_next_speaker",
-                message=f"Host selected an agent outside current agent_names: {next_speaker}",
+                code=error_code,
+                message=error_message,
             )
             yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            failure_message = persist_group_chat_failure(
+                group_session_id=group_session_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                messages=messages,
+                speaker_type="host",
+                agent_name=host_name,
+                skill=str(host_agent.get("skill_directory") or ""),
+                error_code=error_code,
+                error_type="InvalidNextSpeaker",
+                error_summary=error_message,
+                phase="host_scheduler",
+            )
+            yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
             return
@@ -392,20 +427,96 @@ async def _run_contract_events(
             ):
                 yield event
         except StructuredOutputProtocolError as exc:
+            error_code = "EXPERT_FINAL_STATE_INVALID"
+            raw_error_summary = str(exc)
+            safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
             error = SseErrorEvent(
                 type="error",
                 run_id=run_id,
-                code="EXPERT_FINAL_STATE_INVALID",
-                message=str(exc),
+                code=error_code,
+                message=safe_error_summary,
             )
             yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            agent_profile = agent_map.get(next_speaker) if isinstance(agent_map.get(next_speaker), dict) else {}
+            failure_message = persist_group_chat_failure(
+                group_session_id=group_session_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                messages=messages,
+                speaker_type="expert",
+                agent_name=next_speaker,
+                skill=str(agent_profile.get("skill_directory") or ""),
+                error_code=error_code,
+                error_type=exc.__class__.__name__,
+                error_summary=raw_error_summary,
+                phase="expert_final_state",
+                tool_results=expert_outcome.tool_results,
+            )
+            yield serialize_sse_event("message", failure_message)
+            end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "group chat expert turn failed session=%s run_id=%s agent=%s",
+                group_session_id,
+                run_id,
+                next_speaker,
+            )
+            error_code = "EXPERT_TURN_RUNTIME_FAILED"
+            raw_error_summary = str(exc) or exc.__class__.__name__
+            safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
+            error = SseErrorEvent(
+                type="error",
+                run_id=run_id,
+                code=error_code,
+                message=safe_error_summary,
+            )
+            yield serialize_sse_event("error", error.model_dump(exclude_none=True))
+            agent_profile = agent_map.get(next_speaker) if isinstance(agent_map.get(next_speaker), dict) else {}
+            failure_message = persist_group_chat_failure(
+                group_session_id=group_session_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                messages=messages,
+                speaker_type="expert",
+                agent_name=next_speaker,
+                skill=expert_outcome.skill or str(agent_profile.get("skill_directory") or ""),
+                error_code=error_code,
+                error_type=exc.__class__.__name__,
+                error_summary=raw_error_summary,
+                phase="expert_turn",
+                tool_results=expert_outcome.tool_results,
+            )
+            yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
             return
         if expert_outcome.status != "succeeded":
+            agent_profile = agent_map.get(next_speaker) if isinstance(agent_map.get(next_speaker), dict) else {}
+            error_code = expert_outcome.error_code or "EXPERT_TURN_FAILED"
+            error_message = expert_outcome.error_message or "Expert turn failed"
+            failure_message = persist_group_chat_failure(
+                group_session_id=group_session_id,
+                session_definitions=session_definitions,
+                session_item=session_item,
+                messages=messages,
+                speaker_type="expert",
+                agent_name=next_speaker,
+                skill=expert_outcome.skill or str(agent_profile.get("skill_directory") or ""),
+                error_code=error_code,
+                error_type="ExpertTurnFailure",
+                error_summary=error_message,
+                phase="expert_turn",
+                tool_results=expert_outcome.tool_results,
+            )
+            yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
             return
+        if expert_outcome.agent_turn == "continue":
+            suppress_host_message = True
+            continue
         latest_state = load_group_orchestration_state(group_session_id)
         host_scheduler = (
             dict(latest_state.get("host_scheduler") or {})
@@ -419,7 +530,7 @@ async def _run_contract_events(
             discussion_goal,
             scheduler_memory_prompt(group_session_id, messages),
             next_speaker,
-            "",
+            build_shared_session_prompt(app_settings, session_item),
             available_to_add,
             group_session_id=group_session_id,
             messages=messages,
@@ -427,6 +538,7 @@ async def _run_contract_events(
             user_message=user_text,
             session_item=session_item,
             host_scheduler_state=host_scheduler,
+            skill_sessions_state=latest_state.get("skill_sessions"),
         )
         decision = finalize_host_scheduler_decision(
             decision,

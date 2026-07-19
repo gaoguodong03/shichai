@@ -16,7 +16,8 @@ from typing import Any, Optional
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT
 from app.agent.session_workspace_policy import sandbox_session_dir
-from app.agent.structured_output_contracts import SkillScriptStdoutPayload, strict_json_object_from_text
+from app.agent.expert_completion_contract import SkillScriptStdoutPayload
+from app.agent.structured_output_contracts import strict_json_object_from_text
 from app.agent.tool_spec import ToolSpec
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path

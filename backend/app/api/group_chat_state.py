@@ -68,23 +68,16 @@ def _orchestration_json_path(root: Path, session_id: str) -> Path:
 def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Keep only the current short-term orchestration contract groups."""
     out: Dict[str, Any] = {}
-    continuation = raw.get("continuation") if isinstance(raw.get("continuation"), dict) else None
-    if continuation:
-        owner = str(continuation.get("owner_agent_name") or "").strip()
-        skill_session = str(continuation.get("skill_session") or "").strip()
-        skill = str(continuation.get("skill") or "").strip()
-        try:
-            message = MessageBody.model_validate(continuation.get("message") or {}).model_dump(
-                exclude_none=True,
-                exclude_defaults=True,
-            )
-        except ValidationError:
-            message = None
-        if owner and skill_session == "keep" and isinstance(message, dict):
-            row: Dict[str, Any] = {"owner_agent_name": owner, "skill_session": "keep", "message": message}
-            if skill:
-                row["skill"] = skill
-            out["continuation"] = row
+    raw_skill_sessions = raw.get("skill_sessions") if isinstance(raw.get("skill_sessions"), dict) else {}
+    skill_sessions: Dict[str, Dict[str, str]] = {}
+    for raw_agent_name, raw_binding in raw_skill_sessions.items():
+        agent_name = str(raw_agent_name or "").strip()
+        binding = raw_binding if isinstance(raw_binding, dict) else {}
+        skill = str(binding.get("skill") or "").strip()
+        if agent_name and skill:
+            skill_sessions[agent_name] = {"skill": skill}
+    if skill_sessions:
+        out["skill_sessions"] = skill_sessions
     host_scheduler = raw.get("host_scheduler") if isinstance(raw.get("host_scheduler"), dict) else None
     if host_scheduler:
         current_phase = str(host_scheduler.get("current_phase") or "").strip()
@@ -98,11 +91,6 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
         if current_phase and isinstance(message, dict) and str(message.get("content") or "").strip():
             row = {"current_phase": current_phase, "message": message}
             out["host_scheduler"] = row
-            continuation = out.get("continuation") if isinstance(out.get("continuation"), dict) else None
-            owner = str((continuation or {}).get("owner_agent_name") or "").strip()
-            target = str(message.get("target_agent_name") or "").strip()
-            if owner and target and target != owner:
-                out.pop("continuation", None)
     return out
 
 
@@ -113,6 +101,7 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         "title_auto_generated",
         "agent_names",
         "host",
+        "scenario_prompt",
         "created_at",
         "updated_at",
     }
@@ -468,6 +457,7 @@ def build_session_payload(session_id: str, session_item: Dict[str, Any]) -> Dict
         "title_auto_generated": clean_item.get("title_auto_generated"),
         "agent_names": names,
         "host": dict(clean_item.get("host") or {}),
+        "scenario_prompt": str(clean_item.get("scenario_prompt") or ""),
         "created_at": clean_item.get("created_at", ""),
         "updated_at": clean_item.get("updated_at", ""),
         "runtime": runtime_for_session(session_id, clean_item),

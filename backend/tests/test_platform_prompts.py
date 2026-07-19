@@ -1,4 +1,5 @@
 import ast
+import importlib
 import pytest
 from pathlib import Path
 
@@ -14,6 +15,69 @@ def test_platform_prompts_are_registered_by_prompt_id():
     assert get_platform_prompt("host.select_next_speaker.v1").prompt_id == "host.select_next_speaker.v1"
 
 
+def test_shared_session_prompt_orders_project_before_scenario_once():
+    session_prompt = importlib.import_module("app.agent.session_prompt")
+
+    rendered = session_prompt.build_shared_session_prompt(
+        {"system_prompt": "项目整体规则"},
+        {"scenario_prompt": "场景共享任务契约"},
+    )
+
+    assert rendered == "项目整体规则\n\n场景共享任务契约"
+    assert rendered.count("项目整体规则") == 1
+    assert rendered.count("场景共享任务契约") == 1
+    assert session_prompt.build_shared_session_prompt({"system_prompt": "项目整体规则"}, {}) == "项目整体规则"
+
+
+def test_default_host_system_prompt_owns_pure_dispatch_table_and_json_contract():
+    rendered = render_platform_prompt("host.system.default.v1", {})
+
+    for required in [
+        "只负责调度",
+        "当前阶段",
+        "如果",
+        "主持人就",
+        "然后进入",
+        '"current_phase"',
+        '"message"',
+        '"target_agent_name"',
+        '"suggested_add_agent_names"',
+    ]:
+        assert required in rendered
+    for scene_specific in ["资料收集阶段", "写作专家", "图片生成专家"]:
+        assert scene_specific not in rendered
+    assert "host.system.boundary.v1" not in PLATFORM_PROMPTS
+
+
+def test_default_expert_system_prompt_owns_long_term_boundary_and_final_contract():
+    rendered = render_platform_prompt("expert.system.default.v1", {})
+
+    for required in [
+        "职责边界",
+        "专业标准",
+        "执行要求",
+        '"execution_status"',
+        '"message"',
+        '"next_action"',
+        "continue + keep",
+        "continue + release",
+        "respond + keep",
+        "respond + release",
+    ]:
+        assert required in rendered
+    for forbidden in ["资料收集阶段", "调度`写作专家`", "推进场景阶段"]:
+        assert forbidden not in rendered
+
+
+def test_expert_system_prompt_uses_default_only_when_profile_prompt_is_empty():
+    expert_prompt = importlib.import_module("app.agent.expert_prompt")
+    default_prompt = render_platform_prompt("expert.system.default.v1", {})
+
+    assert expert_prompt.get_expert_system_prompt({"system_prompt": "专业自定义规则"}) == "专业自定义规则"
+    assert expert_prompt.get_expert_system_prompt({"system_prompt": ""}) == default_prompt
+    assert expert_prompt.get_expert_system_prompt({}) == default_prompt
+
+
 def test_platform_prompt_templates_live_in_standalone_file():
     """Platform prompt text belongs in one template file, not in the Python registry."""
     assert PROMPT_TEMPLATE_FILE.exists()
@@ -21,7 +85,7 @@ def test_platform_prompt_templates_live_in_standalone_file():
     template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
 
     for phrase in [
-        "你是书童四九平台的会话主持人",
+        "你是会话主持人，只负责调度",
         "你是当前专家的 Skill 选择器",
         "请基于用户第一条有效输入生成一个简短会话标题",
     ]:
@@ -29,7 +93,7 @@ def test_platform_prompt_templates_live_in_standalone_file():
         assert phrase not in registry_text
 
 
-def test_host_prompt_requires_current_contract_fields():
+def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contract():
     rendered = render_platform_prompt(
         "host.select_next_speaker.v1",
         {
@@ -37,14 +101,44 @@ def test_host_prompt_requires_current_contract_fields():
             "current_phase": "资料收集",
             "user_message": "写一篇文章",
             "recent_history": "无",
+            "skill_sessions": '{"信息检索专家":{"skill":"research"}}',
         },
     )
 
-    assert '"message"' in rendered
-    assert '"target_agent_name"' in rendered
+    for runtime_value in ["写作专家", "资料收集", "写一篇文章", '{"信息检索专家":{"skill":"research"}}']:
+        assert runtime_value in rendered
+    assert '"message"' not in rendered
+    assert '"target_agent_name"' not in rendered
     assert '"next_speaker"' not in rendered
     assert '"next_action"' not in rendered
-    assert "只允许输出上述字段" in rendered
+    assert "只允许输出上述字段" not in rendered
+    assert "你是书童四九平台的会话主持人" not in rendered
+
+
+def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():
+    rendered = render_platform_prompt(
+        "host.select_next_speaker.v1",
+        {
+            "agent_names": "信息检索专家",
+            "current_phase": "等待用户确认",
+            "user_message": "用户可以用任意方式表达当前意图",
+            "recent_history": "信息检索专家已经整理过资料",
+            "skill_sessions": '{"信息检索专家":{"skill":"research"}}',
+        },
+    )
+
+    assert "当前 Skill Session" in rendered
+    assert '{"信息检索专家":{"skill":"research"}}' in rendered
+
+
+def test_collaboration_runtime_uses_shared_session_prompt_for_host_and_expert():
+    group_runtime = (ROOT / "backend/app/agent/group_chat_runtime.py").read_text(encoding="utf-8")
+    expert_turn = (ROOT / "backend/app/agent/group_chat_expert_turn.py").read_text(encoding="utf-8")
+
+    assert "from app.agent.session_prompt import build_shared_session_prompt" in group_runtime
+    assert group_runtime.count("build_shared_session_prompt(app_settings, session_item)") >= 2
+    assert "from app.agent.session_prompt import build_shared_session_prompt" in expert_turn
+    assert "extra_system_prompt=build_shared_session_prompt(app_settings, session_item)" in expert_turn
 
 
 def test_prompt_render_rejects_missing_variables():
@@ -65,7 +159,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         ROOT / "backend/app/agent/skill_agent_runtime.py",
         ROOT / "backend/app/agent/simple_agent.py",
         ROOT / "backend/app/agent/simple_agent_finalization.py",
-        ROOT / "backend/app/agent/skill_session_contract.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
     for phrase in [
@@ -91,7 +184,7 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
     ]:
         assert phrase not in combined
     for prompt_id in [
-        "host.system.boundary.v1",
+        "host.system.default.v1",
         "host.select_next_speaker.protocol_retry.v1",
         "expert.select_skill.user_prompt.v1",
         "expert.select_skill.protocol_retry.v1",
@@ -108,7 +201,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "expert.turn.default_task.v1",
         "expert.turn.user_content.v1",
         "presentation.rewrite.user_prompt.v1",
-        "skill.session.state_instruction.v1",
         "agent.text_tool_protocol.retry.v1",
         "agent.text_tool_protocol.failure.v1",
         "agent.repeated_tool_guard.v1",
@@ -395,10 +487,6 @@ def test_write_workspace_file_tool_messages_use_platform_prompt_registry():
         assert phrase not in tool_text
 
     for prompt_id in [
-        "workspace.artifact.create.missing_title.v1",
-        "workspace.artifact.create.missing_content.v1",
-        "workspace.artifact.create.failed.v1",
-        "workspace.artifact.create.success.v1",
         "workspace.write_file.json_wrapped_path_error.v1",
         "workspace.write_file.missing_path.v1",
         "workspace.write_file.missing_content.v1",
@@ -553,18 +641,12 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
 
     for prompt_id in [
         "tool.description.read_workspace_file.v1",
-        "tool.description.create_workspace_artifact.v1",
         "tool.description.write_workspace_file.v1",
         "tool.description.edit_workspace_file.v1",
         "tool.description.rename_workspace_file.v1",
         "tool.description.mkdir_workspace.v1",
         "tool.description.list_workspace_directory.v1",
         "tool.schema.read_workspace_file.path.v1",
-        "tool.schema.create_workspace_artifact.title.v1",
-        "tool.schema.create_workspace_artifact.content.v1",
-        "tool.schema.create_workspace_artifact.kind.v1",
-        "tool.schema.create_workspace_artifact.directory.v1",
-        "tool.schema.create_workspace_artifact.extension.v1",
         "tool.schema.write_workspace_file.path.v1",
         "tool.schema.write_workspace_file.content.v1",
         "tool.schema.write_workspace_file.overwrite.v1",

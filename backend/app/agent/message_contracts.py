@@ -13,7 +13,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.agent.structured_output_contracts import ArtifactRef, SkillNextAction
+from app.agent.structured_output_contracts import ArtifactRef
 from app.agent.workspace_visibility import WorkspacePathError, normalize_public_workspace_path
 
 
@@ -59,7 +59,6 @@ class MessageBody(StrictContractModel):
 
 class SkillResult(StrictContractModel):
     execution_status: Literal["succeeded", "blocked", "failed"]
-    next_action: SkillNextAction
 
 
 class ChatMessageRecord(StrictContractModel):

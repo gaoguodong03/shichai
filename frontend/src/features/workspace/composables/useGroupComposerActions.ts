@@ -16,7 +16,10 @@ type LastSentDraft = {
   files: AttachedFile[]
 }
 
-type StreamState = { sawExpertAssistantMessageThisRun: boolean }
+type StreamState = {
+  sawExpertAssistantMessageThisRun: boolean
+  sawPersistedFailureMessage: boolean
+}
 type StreamContent = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
 

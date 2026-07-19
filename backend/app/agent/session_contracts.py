@@ -29,6 +29,7 @@ class SessionCreateRequest(StrictApiModel):
     title: str = "新对话"
     agent_names: list[str] = Field(default_factory=list)
     host: HostSnapshot | None = None
+    scenario_prompt: str = ""
 
     @model_validator(mode="after")
     def _dedupe_agent_names(self) -> "SessionCreateRequest":
@@ -42,6 +43,7 @@ class SessionUpdateRequest(StrictApiModel):
     add_agent_names: list[str] = Field(default_factory=list)
     remove_agent_names: list[str] = Field(default_factory=list)
     host: HostSnapshot | None = None
+    scenario_prompt: str | None = None
 
     @model_validator(mode="after")
     def _dedupe_name_lists(self) -> "SessionUpdateRequest":

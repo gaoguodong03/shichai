@@ -1,7 +1,7 @@
 # 提示词与 Prompt 组装管理契约
 
 版本：v1.0 当前契约
-日期：2026-07-09
+日期：2026-07-18
 适用范围：书童四九平台内置提示词模板、LLM 调用 Prompt 组装、运行时输入边界和调试信息隔离。
 
 ## 1. 文档目的
@@ -38,9 +38,10 @@
 | 平台内置 Skill 执行约束模板 | 平台代码仓库 | 是 |
 | 标题生成模板 | 平台代码仓库 | 是 |
 | 展示重写模板 | 平台代码仓库 | 是 |
-| 系统提示词 | 设置页，平台级配置 | 否，运行时作为 `system_prompt` 注入 |
-| 场景初始化提示材料 | 场景资源 `system_prompt` | 否，不作为会话定义字段；是否进入运行时由创建会话逻辑显式决定 |
-| 主持人或专家提示词 | Agent 配置字段 | 否，运行时作为 `agent_prompt` 注入 |
+| 项目整体系统提示词 | 设置页，项目级配置 | 否，运行时作为 `system_prompt` 注入 |
+| 场景共享任务契约 | 场景资源 `system_prompt` | 否，创建会话时复制为 `session.json.scenario_prompt` 会话快照 |
+| 主持人长期提示词 | `host.system_prompt` | 默认正文进入统一模板文件；用户保存值作为会话主持人快照注入 |
+| 专家长期提示词 | Agent 配置字段 | 默认正文进入统一模板文件；用户保存值作为 `agent_prompt` 注入 |
 | Skill 正文 | `SKILL.md` | 否，运行时进入对应 Skill 调用 |
 
 ## 4. Prompt 块定义
@@ -49,8 +50,8 @@
 
 | Prompt 块 | 含义 | 来源 | 进入 LLM 规则 |
 |-----------|------|------|----------------|
-| `system_prompt` | 整个平台级别的提示词 | 设置页中的书童四九平台提示词 | 需要平台级规则的调用进入 |
-| `scenario_prompt` | 场景初始化提示材料 | 场景资源 `system_prompt`；不保存为会话定义字段 | 只有创建逻辑明确带入时进入 |
+| `system_prompt` | 项目整体业务上下文 | 设置页中的项目整体系统提示词 | 进入主持人调度、专家选择 Skill 和专家执行 Skill |
+| `scenario_prompt` | 场景共享任务契约的会话快照 | `session.json.scenario_prompt`；创建时来自场景资源 `system_prompt` | 进入主持人调度、专家选择 Skill 和专家执行 Skill |
 | `memory_prompt` | 会话记忆、事实和文件索引摘要 | 平台运行时生成 | 只进入摘要或索引，不进入调试信息 |
 | `agent_prompt` | 当前主持人或专家的提示词 | 主持人或专家配置字段 | 当前调用者为主持人或专家时进入 |
 | `host_select_agent_prompt` | 主持人选择专家的调用模板 | 平台内置模板 | 仅主持人选择专家时进入 |
@@ -62,54 +63,54 @@
 
 ## 5. 核心 LLM 调用场景
 
-### 5.1 主持人选择专家
+### 5.1 主持人调度
 
-主持人选择专家时，只组装主持人调度需要的 Prompt 块：
+主持人调度的系统消息按以下顺序组装：
 
 ```text
 system_prompt
 scenario_prompt
-memory_prompt
 agent_prompt
-host_select_agent_prompt
-user_prompt
+host_skill_prompt
 ```
 
-其中 `agent_prompt` 是当前主持人的提示词，`host_select_agent_prompt` 包含可选专家列表、调度规则和主持人输出字段要求。
+即：项目整体系统提示词 → 场景提示词快照 → 主持人长期提示词 → 主持人 Skill。
+
+`agent_prompt` 是当前主持人的长期提示词，负责纯调度边界、四列表读取方式和主持人 JSON 输出合同；`host_skill_prompt` 只保留当前场景的四列表。可选专家、当前阶段、本轮用户输入、最近可见消息和 Skill Session 由 `host_select_agent_prompt` 放入该次调用的用户消息，该运行时数据模板不再复制主持人职责或 JSON Schema。
 
 主持人选择专家属于机器可读 LLM 控制结构。运行时必须通过统一结构化输出入口把模型返回值解析为 Pydantic 主持人调度模型，再交给主持人决策后处理；不得在调用点手写 JSON 解析或从自然语言中抽取字段。
 
 ### 5.2 专家选择 Skill
 
-专家选择 Skill 时，只组装专家选择 Skill 需要的 Prompt 块：
+专家选择 Skill 的系统消息按以下顺序组装：
 
 ```text
 system_prompt
 scenario_prompt
-memory_prompt
-agent_prompt
 expert_select_skill_prompt
-user_prompt
 ```
 
-其中 `agent_prompt` 是当前专家的提示词，`expert_select_skill_prompt` 包含可选 Skill 列表和选择结果字段要求。
+即：项目整体系统提示词 → 场景提示词快照 → 专家 Skill 选择模板。
+
+`expert_select_skill_prompt` 由平台模板生成，其中包含当前专家名称、职责、专家提示词、讨论目标、本轮用户输入、候选 Skill 和本轮指派。项目整体系统提示词和场景提示词快照必须位于该平台模板之前，不能在模板变量中重复注入。
 
 专家选择 Skill 属于机器可读 LLM 控制结构。运行时必须通过统一结构化输出入口把模型返回值解析为 Pydantic Skill 选择模型，再校验 `selected_skill` 是否属于候选 Skill；不得在调用点手写 JSON 解析或从自然语言中抽取 Skill 名称。
 
 ### 5.3 专家通过 Skill 执行能力
 
-专家已经选定 Skill 后，真正执行能力时组装：
+专家已经选定 Skill 后，系统消息按以下顺序组装：
 
 ```text
 system_prompt
 scenario_prompt
-memory_prompt
 agent_prompt
-skill_execution_prompt
-user_prompt
+expert_skill_prompt
+dynamic_tool_prompt
 ```
 
-其中 `skill_execution_prompt` 包含 Skill 正文、当前可用工具列表、工具使用规则和输出约束。
+即：项目整体系统提示词 → 场景提示词快照 → 专家长期提示词 → 普通 Skill，再附加本轮动态工具说明。
+
+其中 `agent_prompt` 包含当前专家长期提示词和职责，`expert_skill_prompt` 是 Skill 正文，`dynamic_tool_prompt` 只根据本轮真实可用工具生成工具清单和调用说明。专家最终 JSON 输出合同只属于专家长期提示词，不在普通 Skill 或动态工具说明中重复。会话目标、主持人指派、本轮用户输入、附件和最近可见消息进入该次调用的用户消息。
 
 ### 5.4 简单 LLM 调用
 
@@ -122,22 +123,71 @@ title_generation_prompt
 recent_user_text
 ```
 
-这类调用也必须使用平台内置模板文件中的 `prompt_id`，但不强制注入 `system_prompt`、`scenario_prompt`、`memory_prompt` 或 `agent_prompt`。
+这类调用也必须使用平台内置模板文件中的 `prompt_id`，但不注入项目整体系统提示词、场景初始化材料或 Agent 提示词。
 
-## 6. Prompt 组装顺序
+## 6. 项目整体系统提示词
 
-完整任务型 LLM 调用使用以下顺序：
+`app_settings.system_prompt` 是用户可编辑的项目级业务上下文，不是平台协议扩展点。它可以统一项目范围、术语、安全要求、语言和交付风格，但不能改变：
 
-1. `system_prompt`
-2. `scenario_prompt`
-3. `memory_prompt`
-4. `agent_prompt`
-5. 当前调用专属 Prompt：`host_select_agent_prompt`、`expert_select_skill_prompt` 或 `skill_execution_prompt`
-6. `user_prompt`
+- 平台结构化输出 schema 和字段取值；
+- 主持人或专家路由的代码校验；
+- Skill 声明的工具权限；
+- 会话持久化和流程控制语义；
+- 平台固定的协议失败处理。
 
-同一次 LLM 调用中，`host_select_agent_prompt`、`expert_select_skill_prompt`、`skill_execution_prompt` 三者只能出现一个。
+`system_prompt` 字段缺失时，后端使用平台 Prompt 注册表中的 `project.system.default.v1` 作为真实初始值，设置页直接展示这份完整正文。用户在该正文基础上修改并保存；已经保存的字段值保持原样，用户显式保存的空字符串也不被默认值覆盖。
 
-## 7. 用户输入与文件边界
+默认模板如下，用户应替换或删除方括号内容：
+
+```text
+本项目面向【适用对象或业务场景】，目标是【项目总体目标】。
+
+所有角色共同遵守：
+- 【统一业务范围、术语或判断口径】。
+- 【统一数据、安全或合规要求】。
+- 【统一语言、表达或交付要求】。
+
+工作区文件：
+- 工作区是所有角色共享项目材料、中间结果和最终交付物的统一空间。
+- 不知道工作区内有哪些文件或无法确认真实路径时，先调用 `list_workspace_directory`，不得猜测文件名。
+- 当前任务依赖已有文件内容时，调用 `read_workspace_file` 读取真实内容，不根据文件名、历史摘要或推测代替文件内容。
+- 新建文本文件时，调用 `write_workspace_file`，同时提供明确的工作区相对路径和完整正文。
+- 修改已有文本文件时，先读取当前内容，再调用 `edit_workspace_file` 做定向修改；不要通过新建同名文件代替修改。
+- 需要移动或重命名文件时，调用 `rename_workspace_file`。
+- 需要建立目录结构时，调用 `mkdir_workspace`。
+- 不得猜测工具已经成功。只有收到成功结果后，才能声称文件已经读取、创建、修改、移动或保存。
+- 工具执行失败时，根据真实错误调整操作；路径不存在时先检查目录，不得连续猜测路径。
+- 回复用户时使用工作区相对路径，不暴露平台内部目录或宿主机绝对路径。
+- 产生需要其他角色继续处理、后续复用或作为正式交付物的内容时，必须写入工作区，不得只放在聊天正文中。
+- 各角色只能在自身职责范围内使用工作区工具，不得借助工作区能力代替其他角色完成其专业任务。
+```
+
+项目提示词只在每次适用的 LLM 调用中注入一次。标题生成、展示重写和不调用 LLM 的启发式流程不注入该字段。
+
+## 7. 场景提示词与主持人提示词
+
+`scenario.json.system_prompt` 是场景共享任务契约。通过场景创建或复用空白会话时，前端把它作为 `scenario_prompt` 发送，会话服务保存为 `session.json.scenario_prompt`。会话创建后不再回读场景资源；场景资源后续修改不影响既有会话。
+
+场景提示词快照持续进入该会话的主持人调度、专家 Skill 选择和专家执行。它只描述场景目标、适用范围、共同要求、完成标准和场景特有工作区约定，不描述阶段流转、专家长期职责或普通 Skill 步骤。
+
+`host.system_prompt` 是主持人长期提示词。默认正文由 `host.system.default.v1` 提供，用户可以在设置页或场景主持人配置中修改。它负责所有场景通用的纯调度职责、任务单要求、工作区调度边界、四列表读取方式和当前主持人 JSON 输出合同。
+
+主持人 Skill 正文只保留一张四列表：`当前阶段`、`如果`、`主持人就`、`然后进入`。表格顺序就是同一阶段内的判断顺序，每行只表达一次调度、询问用户或结束决策。主持人 Skill 不复制长期提示词和输出结构。
+
+## 8. 专家长期提示词与普通 Skill
+
+`agent.system_prompt` 是专家长期提示词。字段为空或缺失时，运行时使用 `expert.system.default.v1`；用户保存非空值时，按原值注入，不再叠加默认正文。
+
+专家长期提示词负责所有场景和所有 Skill 通用的职责边界、专业质量标准、执行原则、工作区使用边界，以及当前专家最终 JSON 输出合同。它必须明确专家不能选择下一位专家、不能宣布场景阶段，也不能填写 `message.target_agent_name`。
+
+普通专家 Skill 只保留两个固定章节：
+
+1. `执行规则`：描述完成该项专业能力所需的业务步骤、判断和确认门禁。
+2. `结束条件`：用自然业务事实说明何时等待用户、何时完成，以及适用时何时失败。
+
+普通 Skill 不复制专家长期职责、工作区通用规则、JSON 字段、流程控制枚举或场景阶段。`next_action.agent_turn` 与 `next_action.skill_session` 由专家根据长期提示词和 Skill 的自然结束条件填写。
+
+## 9. 用户输入与文件边界
 
 `user_prompt` 可以包含：
 
@@ -147,7 +197,7 @@ recent_user_text
 
 `user_prompt` 不能无条件塞入完整工作区文件、内部运行日志、工具 stdout/stderr、环境变量真实值、绝对路径或其他用户不可见系统数据。
 
-## 8. 调试信息边界
+## 10. 调试信息边界
 
 以下内容不得进入 LLM：
 
@@ -164,7 +214,7 @@ recent_user_text
 
 这些内容只能用于日志、测试断言、开发者调试面板或问题定位。
 
-## 9. 变更规则
+## 11. 变更规则
 
 新增或修改平台内置 LLM 调用时，必须同步确认：
 

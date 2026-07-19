@@ -31,6 +31,58 @@ def test_skill_authoring_docs_use_current_message_and_final_state_contracts():
         assert "[[SKILL_SESSION_STATE]]" not in text, path
 
 
+def test_skill_standard_uses_minimal_two_section_ordinary_skill_template():
+    """Ordinary Skill templates keep only business execution and exit decisions."""
+    text = (PROJECT_ROOT / "docs" / "skills" / "skill-standard.md").read_text(encoding="utf-8")
+
+    assert "普通 Skill 正文只要求两个部分" in text
+    assert "## 执行规则" in text
+    assert "## 结束条件" in text
+    assert "以下内容由专家长期提示词或运行时统一提供，不写入普通 Skill 正文" in text
+    assert "## 5. 专家最终输出" not in text
+    assert "## 6. 工具后决策与 finalizer" not in text
+    assert '"next_action"' not in text
+    assert "expert_final_state.v2" not in text
+
+
+def test_host_skill_standard_uses_only_four_column_transition_table():
+    text = (PROJECT_ROOT / "docs" / "skills" / "host-skill.md").read_text(encoding="utf-8")
+
+    assert "正文只保留一张四列表" in text
+    assert "| 当前阶段 | 如果 | 主持人就 | 然后进入 |" in text
+    assert "表格顺序就是同一阶段内的判断顺序" in text
+    assert "一次只执行一行" in text
+    for legacy_section in ["## 场内专家", "## 场景阶段", "## 场景流程", "## 专家任务单", "## 场景约束"]:
+        assert legacy_section not in text
+    assert "| 阶段 | 负责专家 | 进入条件 | 退出条件 |" not in text
+
+
+def test_expert_skill_standard_has_no_fixed_optional_section_system():
+    text = (PROJECT_ROOT / "docs" / "skills" / "skill-standard.md").read_text(encoding="utf-8")
+
+    assert "等待用户：" in text
+    assert "完成：" in text
+    assert "失败：" in text
+    assert "## 5. 按需章节" not in text
+    assert "`agent_turn`" not in text
+    assert "`skill_session`" not in text
+
+
+def test_prompt_and_session_contracts_define_scenario_snapshot_and_host_long_term_split():
+    prompt_contract = (PROJECT_ROOT / "docs" / "contracts" / "prompt-assembly-contract.md").read_text(encoding="utf-8")
+    runtime_contract = (PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md").read_text(encoding="utf-8")
+    data_contract = (PROJECT_ROOT / "docs" / "contracts" / "data-structure-and-field-logic.md").read_text(encoding="utf-8")
+
+    for text in (prompt_contract, runtime_contract, data_contract):
+        assert "scenario_prompt" in text
+        assert "会话快照" in text
+    assert "项目整体系统提示词 → 场景提示词快照 → 主持人长期提示词 → 主持人 Skill" in prompt_contract
+    assert "项目整体系统提示词 → 场景提示词快照 → 专家长期提示词 → 普通 Skill" in prompt_contract
+    assert "主持人 Skill 正文只保留一张四列表" in prompt_contract
+    assert "`scenario_prompt` | 场景共享任务契约的会话快照" in runtime_contract
+    assert '"scenario_prompt": "场景共享任务契约快照"' in data_contract
+
+
 def test_backend_readme_uses_current_runtime_contract_fields():
     """Backend README must not advertise legacy runtime or Skill stdout fields."""
     text = (PROJECT_ROOT / "backend" / "README.md").read_text(encoding="utf-8")
@@ -762,8 +814,10 @@ def test_skill_contract_test_index_exists_with_required_sections():
         assert column in text
     for section in [
         "skill-standard.md §2",
-        "skill-standard.md §4.2",
+        "skill-standard.md §4",
+        "skill-standard.md §6",
         "sandbox-tool-interface.md 总体规则",
+        "sandbox-tool-interface.md 工作区工具",
         "sandbox-tool-interface.md 技能脚本工具",
         "sandbox-tool-interface.md 保存型 HTTP API 工具",
     ]:
@@ -964,7 +1018,8 @@ def test_group_chat_runtime_delegates_expert_turn_execution():
     expert_turn_text = (PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_expert_turn.py").read_text(encoding="utf-8")
     boundary_text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
 
-    assert "`group_chat_expert_turn.py` | 专家单回合流式执行、进度事件、工具结果汇总、消息落盘和工具 trace 写入。" in boundary_text
+    assert "`group_chat_expert_turn.py` | 专家单回合流式执行、进度事件和工具结果汇总；完成副作用委托给协调器。" in boundary_text
+    assert "`expert_completion_coordinator.py` | 固定执行“输出、Skill Session、Agent Turn”的协调顺序。" in boundary_text
     assert "from app.agent.group_chat_expert_turn import ExpertTurnOutcome, run_one_expert_turn" in runtime_text
     assert "async def _run_one_expert_turn" not in runtime_text
     assert "runtime.agent.astream" not in runtime_text

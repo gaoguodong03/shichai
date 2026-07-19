@@ -3,6 +3,7 @@ import type { GroupMessage } from './useGroupMessageList'
 
 type StreamEventState = {
   sawExpertAssistantMessageThisRun: boolean
+  sawPersistedFailureMessage: boolean
 }
 
 type StreamStatusPayload = {
@@ -16,8 +17,6 @@ type StreamRoutePayload = {
   agent_name?: string
   skill?: string
 }
-
-const STREAMING_STATUS_DEFAULT = '正在运行中...'
 
 function speakerType(data: Record<string, unknown> | GroupMessage | null | undefined): string {
   const speaker = data?.speaker && typeof data.speaker === 'object' ? data.speaker as { type?: unknown } : null
@@ -34,6 +33,13 @@ function messageContent(data: Record<string, unknown> | GroupMessage | null | un
   return String(body?.content ?? '')
 }
 
+function isPersistedFailureMessage(data: Record<string, unknown>): boolean {
+  const skillResult = data?.skill_result && typeof data.skill_result === 'object'
+    ? data.skill_result as { execution_status?: unknown }
+    : null
+  return String(skillResult?.execution_status || '').trim().toLowerCase() === 'failed'
+}
+
 function toDisplayMessage(data: Record<string, unknown>): GroupMessage {
   return {
     ...data,
@@ -42,16 +48,6 @@ function toDisplayMessage(data: Record<string, unknown>): GroupMessage {
       content: messageContent(data),
     },
   } as GroupMessage
-}
-
-function withMessageContent(msg: GroupMessage, content: string): GroupMessage {
-  return {
-    ...msg,
-    message: {
-      ...(msg.message || {}),
-      content,
-    },
-  }
 }
 
 export function useGroupStreamEvents(args: {
@@ -93,52 +89,6 @@ export function useGroupStreamEvents(args: {
     return sessionId || selectedGroupSessionId() || ''
   }
 
-  function streamingStatusTextForPhase(phase: string): string {
-    const key = String(phase || '').trim().toLowerCase()
-    if (!key) return STREAMING_STATUS_DEFAULT
-    if (key === 'file_resolving') return '正在处理文件...'
-    if (key === 'file_resolved') return '文件已处理，正在继续...'
-    if (key === 'tool_running') return '正在运行中...'
-    if (key === 'planning') return '正在规划...'
-    if (key === 'executing') return '正在执行...'
-    if (key === 'assistant_generating') return '正在生成回复...'
-    if (key === 'finalizing') return '正在收尾...'
-    if (key === 'timeout_or_budget_exceeded') return '已达到自动执行上限，等待你确认...'
-    return STREAMING_STATUS_DEFAULT
-  }
-
-  function ensureStreamingStatusPlaceholder(agentName: string, content = STREAMING_STATUS_DEFAULT, extra: Record<string, unknown> = {}) {
-    const id = String(agentName || '').trim()
-    if (!id) return
-    const statusContent = String(content || STREAMING_STATUS_DEFAULT)
-    const list = [...groupDisplayMessages.value]
-    const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
-    const isSameStreaming =
-      speakerType(last) === 'expert' && speakerAgentName(last) === id && (last as { _streaming?: boolean })._streaming
-    if (isSameStreaming) {
-      if ((last as { _streamingStatus?: boolean })._streamingStatus || !messageContent(last).trim()) {
-        groupDisplayMessages.value = [
-          ...list.slice(0, -1),
-          withMessageContent({ ...last, ...extra, _streaming: true, _streamingStatus: true } as GroupMessage, statusContent),
-        ]
-      }
-      return
-    }
-    const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-    groupDisplayMessages.value = [
-      ...cleared,
-      {
-        speaker: { type: 'expert', agent_name: id },
-        message: { content: statusContent },
-        _streaming: true,
-        _streamingStatus: true,
-        ...extra,
-      } as unknown as GroupMessage,
-    ]
-    scrollLatestAssistantRowToLowerMiddle()
-    nextTick(() => scheduleHydrateAuthImages())
-  }
-
   function showStreamingRoutePlaceholder(data: StreamRoutePayload, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
     const agentName = String(data?.agent_name || '').trim()
@@ -147,9 +97,6 @@ export function useGroupStreamEvents(args: {
     patchGroupStreamState(id, {
       agentName,
       skill: String(data?.skill || '').trim(),
-    })
-    ensureStreamingStatusPlaceholder(agentName, STREAMING_STATUS_DEFAULT, {
-      speaker: { type: 'expert', agent_name: agentName, skill: String(data?.skill || '').trim() },
     })
   }
 
@@ -183,7 +130,13 @@ export function useGroupStreamEvents(args: {
     const list = groupDisplayMessages.value || []
     if (!list.length) return
     let changed = false
-    const next = list.map((m) => {
+    const next = list.filter((m) => {
+      if ((m as GroupMessage)._streamingStatus) {
+        changed = true
+        return false
+      }
+      return true
+    }).map((m) => {
       if ((m as GroupMessage)._streaming) {
         changed = true
         return { ...(m as GroupMessage), _streaming: false } as GroupMessage
@@ -198,9 +151,13 @@ export function useGroupStreamEvents(args: {
     if (!phase) return false
     const id = activeSessionId(sessionId)
     const agentName = String(data?.agent_name || '').trim()
-    if (agentName) ensureStreamingStatusPlaceholder(agentName, streamingStatusTextForPhase(phase))
     if (['file_resolving', 'file_resolved', 'tool_running', 'planning', 'executing', 'assistant_generating', 'finalizing'].includes(phase)) {
-      patchGroupStreamState(id, { phase })
+      const skill = String(data?.skill || '').trim()
+      patchGroupStreamState(id, {
+        phase,
+        ...(agentName ? { agentName } : {}),
+        ...(skill ? { skill } : {}),
+      })
       return true
     }
     return false
@@ -210,6 +167,9 @@ export function useGroupStreamEvents(args: {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
     const type = speakerType(data)
     if (data && (type === 'expert' || type === 'user' || type === 'host')) {
+      if (isPersistedFailureMessage(data)) {
+        state.sawPersistedFailureMessage = true
+      }
       if (type === 'expert') {
         replaceOrPushAssistantMessage(data)
         if (isExpertAssistantMessagePayload(data)) {

@@ -164,6 +164,49 @@ def test_app_settings_preserves_top_level_system_prompt(monkeypatch, tmp_path):
         reset_current_user_identity(token)
 
 
+def test_app_settings_initializes_project_system_prompt_with_workspace_tool_rules(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.api.settings_app import load_app_settings
+
+    token = set_current_user_identity(user_id="u-settings-default", username="u-settings-default")
+    try:
+        prompt = load_app_settings()["system_prompt"]
+
+        assert prompt.startswith("本项目面向【服务对象】，用于【项目总体目标】。")
+        assert "所有角色共同遵守：" in prompt
+        assert "工作区文件：" in prompt
+        for tool_name in (
+            "list_workspace_directory",
+            "read_workspace_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+        ):
+            assert f"`{tool_name}`" in prompt
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_app_settings_preserves_explicit_empty_system_prompt(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.api.settings_app import load_app_settings, save_app_settings
+
+    token = set_current_user_identity(user_id="u-settings-empty", username="u-settings-empty")
+    try:
+        save_app_settings({"system_prompt": ""})
+
+        assert load_app_settings()["system_prompt"] == ""
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_llm_bundle_zip_roundtrip_keeps_env_reference_without_plaintext_api_key():
     """模型包使用资源包镜像结构，保留环境变量引用但不导出 API Key 明文。"""
     from app.core.llm_bundle import (
@@ -705,6 +748,23 @@ def test_get_client_qwen_thinking_disabled_keeps_required_tools(monkeypatch):
 
     assert captured["extra_body"] == {"enable_thinking": False}
     assert _bound_tool_choice(bind_tools_compat(client, [object()])) == "required"
+
+
+def test_bind_tools_compat_allows_one_agent_turn_to_choose_tools_or_finish(monkeypatch):
+    from app.agent.llm_client import QwenLLM, bind_tools_compat
+
+    _, client = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://example.com/v1",
+            model="gpt-4o",
+        ),
+    )
+
+    bound = bind_tools_compat(client, [object()], tool_choice_strategy="auto")
+
+    assert _bound_tool_choice(bound) is None
 
 
 def test_get_client_gemini_params(monkeypatch):

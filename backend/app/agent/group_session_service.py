@@ -89,6 +89,7 @@ def create_session_internal(
     title: str = "新对话",
     agent_names: Optional[List[str]] = None,
     host: Optional[Dict[str, Any]] = None,
+    scenario_prompt: str = "",
 ) -> Dict[str, Any]:
     """Create session.json without legacy controls and leave workspace creation lazy."""
     instances = load_agent_instances()
@@ -106,6 +107,7 @@ def create_session_internal(
         "title_auto_generated": True,
         "agent_names": names,
         "host": host_snapshot,
+        "scenario_prompt": str(scenario_prompt or "").strip(),
         "created_at": now,
         "updated_at": now,
     }
@@ -252,6 +254,9 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         session_definitions[group_session_id]["title_auto_generated"] = False
     if body.host is not None:
         session_definitions[group_session_id]["host"] = body.host.model_dump()
+        _clear_host_scheduler_state(group_session_id)
+    if body.scenario_prompt is not None:
+        session_definitions[group_session_id]["scenario_prompt"] = str(body.scenario_prompt or "").strip()
         _clear_host_scheduler_state(group_session_id)
     direct_names = body.agent_names
     if direct_names is not None:

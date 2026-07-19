@@ -26,8 +26,12 @@ def test_backend_core_files_stay_bounded_after_extraction():
 def test_backend_extraction_modules_exist_without_legacy_smells():
     modules = (
         "app/agent/group_chat_memory_prompt.py",
-        "app/agent/group_orchestration_fsm.py",
-        "app/agent/group_chat_skill_session.py",
+        "app/agent/group_entry_router.py",
+        "app/agent/expert_completion_contract.py",
+        "app/agent/expert_output_publisher.py",
+        "app/agent/agent_turn_controller.py",
+        "app/agent/skill_session_manager.py",
+        "app/agent/expert_completion_coordinator.py",
         "app/agent/group_chat_host_runtime.py",
         "app/agent/group_chat_host_messages.py",
         "app/agent/simple_agent_finalization.py",
@@ -73,6 +77,9 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "app/agent/group_chat_hooks.py",
         "app/core/scene_scheduler.py",
         "app/core/recruitment_helpers.py",
+        "app/agent/group_orchestration_fsm.py",
+        "app/agent/group_chat_skill_session.py",
+        "app/agent/skill_session_locks.py",
     ):
         assert not (ROOT / deleted_path).exists()
 
@@ -145,7 +152,7 @@ def test_group_chat_runtime_does_not_route_from_message_text():
 
 
 def test_runtime_code_removes_legacy_skill_and_host_control_fields():
-    skill_session = _read("app/agent/skill_session_contract.py")
+    expert_runtime = _read("app/agent/expert_runtime.py")
     host_messages = _read("app/agent/group_chat_host_messages.py")
     host_decision = _read("app/agent/group_host_decision.py")
     tool_records = _read("app/agent/skill_tool_result_records.py")
@@ -153,9 +160,8 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     skill_runtime = _read("app/agent/skill_agent_runtime.py")
     default_app_settings = _read("config/app_settings.json")
 
-    assert "resolve_skill_session_state" not in skill_session
-    assert 'render_platform_prompt("skill.session.state_instruction.v1", {})' in skill_session
-    assert "SKILL_SESSION_STATE_START" not in skill_session
+    assert "GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION" not in expert_runtime
+    assert "get_expert_system_prompt" in expert_runtime
     assert "announcement:" not in host_messages
     assert "reason:" not in host_messages
     assert "suggested_order:" not in host_messages

@@ -58,7 +58,6 @@ class _FakeScriptGateway:
                 "exit_code": 0,
                 "stdout": json.dumps(
                     {
-                        "schema_version": "expert_final_state.v2",
                         "execution_status": "succeeded",
                         "message": {"content": "pendulum 版本检查通过。"},
                         "next_action": {
@@ -123,7 +122,6 @@ parser.add_argument('--package', required=True)
 args = parser.parse_args()
 import json
 print(json.dumps({
-    "schema_version": "expert_final_state.v2",
     "execution_status": "succeeded",
     "message": {"content": f"{args.package} 版本检查通过。"},
     "next_action": {
@@ -173,7 +171,6 @@ def test_frontend_at_mention_runs_manifest_skill_script(_frontend_flow_env, monk
                 ],
             ),
             AIMessage(content=json.dumps({
-                "schema_version": "expert_final_state.v2",
                 "execution_status": "succeeded",
                 "message": {"content": "pendulum 版本检查通过。"},
                 "next_action": {"agent_turn": "respond", "skill_session": "release"},
@@ -254,7 +251,6 @@ def test_skill_script_workspace_write_creates_workspace_changed_checkpoint(_fron
                 ],
             ),
             AIMessage(content=json.dumps({
-                "schema_version": "expert_final_state.v2",
                 "execution_status": "succeeded",
                 "message": {"content": "pendulum 版本检查通过。"},
                 "next_action": {"agent_turn": "respond", "skill_session": "release"},

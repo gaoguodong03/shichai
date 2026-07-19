@@ -1,36 +1,33 @@
 """Expert single-turn execution for strict group-chat streams.
 
-This module owns the expert astream loop, progress events, tool-result collection,
-history persistence, orchestration-state updates, and group-chat tool trace
-writing for one selected expert turn.
+This module owns the expert astream loop, progress events, and tool-result
+collection for one selected expert turn. Completion side effects are delegated
+to the completion coordinator.
 """
 from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Literal
 
 from app.agent.messages import AIMessage, HumanMessage  # type: ignore
+from app.agent.expert_completion_contract import (
+    ExpertFinalStateProtocolError,
+    select_expert_completion,
+)
+from app.agent.expert_completion_coordinator import coordinate_expert_completion
 from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
-from app.agent.group_chat_skill_session import (
-    ExpertFinalStateProtocolError,
-    apply_skill_result_to_orchestration_state,
-    message_from_expert_final_state,
-    select_expert_final_state,
-    skill_result_from_expert_final_state,
-)
 from app.agent.group_chat_streaming import iter_with_keepalive, serialize_sse_event
-from app.agent.group_chat_tool_trace import record_group_chat_tool_trace
 from app.agent.group_context import messages_to_expert_context
+from app.agent.session_prompt import build_shared_session_prompt
 from app.agent.session_contracts import SseErrorEvent, SseProgressEvent, SseRouteEvent
+from app.agent.session_runtime_logs import sanitize_runtime_failure_summary
 from app.api.group_chat_state import (
     format_storage_timestamp,
-    frontend_history_message,
     load_group_orchestration_state,
-    save_group_history,
-    save_session_definitions,
     update_group_run,
     write_group_orchestration_state,
 )
@@ -44,11 +41,22 @@ class ExpertTurnOutcome:
     status: Literal["pending", "succeeded", "failed"] = "pending"
     error_code: str = ""
     error_message: str = ""
+    agent_turn: Literal["continue", "respond"] = "respond"
+    skill_session: Literal["keep", "release"] = "release"
+    skill: str = ""
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
 
-    def succeed(self) -> None:
+    def succeed(
+        self,
+        *,
+        agent_turn: Literal["continue", "respond"] = "respond",
+        skill_session: Literal["keep", "release"] = "release",
+    ) -> None:
         self.status = "succeeded"
         self.error_code = ""
         self.error_message = ""
+        self.agent_turn = agent_turn
+        self.skill_session = skill_session
 
     def fail(self, *, code: str, message: str) -> None:
         self.status = "failed"
@@ -84,6 +92,8 @@ async def run_one_expert_turn(
         from app.agent.group_chat_expert_resolution import _get_llm_for_agent
 
         llm_resolver = lambda profile: _get_llm_for_agent(profile, app_settings)
+    orchestration_state = load_group_orchestration_state(group_session_id)
+    orchestration_state_before_build = deepcopy(orchestration_state)
     runtime = await build_expert_turn_runtime(
         agent_profile=agent_profile,
         agent_name=agent_name,
@@ -91,13 +101,16 @@ async def run_one_expert_turn(
         discussion_goal=discussion_goal,
         messages=messages,
         session_item=session_item,
-        orchestration_state=load_group_orchestration_state(group_session_id),
+        orchestration_state=orchestration_state,
         app_settings=app_settings,
         round_user_text=user_text,
-        extra_system_prompt="",
+        extra_system_prompt=build_shared_session_prompt(app_settings, session_item),
         skills_loader=skills_loader,
         llm_resolver=llm_resolver,
     )
+    if orchestration_state != orchestration_state_before_build:
+        write_group_orchestration_state(group_session_id, orchestration_state)
+    outcome.skill = str(runtime.skill or "").strip()
     if runtime.blocked:
         error_code = str((runtime.skill_route_diagnostics or {}).get("blocking_error") or "expert_runtime_blocked")
         error_message = f"Expert runtime blocked for {agent_name}"
@@ -131,7 +144,7 @@ async def run_one_expert_turn(
     }
     run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{agent_name}:{uuid.uuid4().hex}"}}
     final_content = ""
-    tool_results: list[dict[str, Any]] = []
+    tool_results = outcome.tool_results
     current_phase = "executing"
     await update_group_run(group_session_id, run_id, phase=current_phase)
     yield serialize_sse_event(
@@ -172,7 +185,7 @@ async def run_one_expert_turn(
             continue
 
     try:
-        final_state = select_expert_final_state(final_content=final_content, tool_results=tool_results)
+        completion = select_expert_completion(final_content=final_content, tool_results=tool_results)
     except ExpertFinalStateProtocolError as exc:
         logger.warning(
             "expert_final_state_invalid session=%s agent=%s skill=%s final_content=%r tool_results=%s",
@@ -183,46 +196,43 @@ async def run_one_expert_turn(
             len(tool_results),
         )
         await update_group_run(group_session_id, run_id, phase="failed")
-        outcome.fail(code="EXPERT_FINAL_STATE_INVALID", message=str(exc))
+        safe_error_message = sanitize_runtime_failure_summary(str(exc))
+        outcome.fail(code="EXPERT_FINAL_STATE_INVALID", message=safe_error_message)
         error = SseErrorEvent(
             type="error",
             run_id=run_id,
             code="EXPERT_FINAL_STATE_INVALID",
-            message=str(exc),
+            message=safe_error_message,
         )
         yield serialize_sse_event("error", error.model_dump(exclude_none=True))
         return
 
-    message_body = message_from_expert_final_state(final_state)
-    skill_result = skill_result_from_expert_final_state(final_state)
-    orchestration_state = load_group_orchestration_state(group_session_id)
-    if apply_skill_result_to_orchestration_state(
-        orchestration_state,
-        agent_name=agent_name,
-        skill=runtime.skill,
-        skill_result=skill_result,
-        message=message_body,
-    ):
-        write_group_orchestration_state(group_session_id, orchestration_state)
-    assistant_msg = {
-        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-        "speaker": {"type": "expert", "agent_name": agent_name, "skill": runtime.skill},
-        "message": message_body,
-        "created_at": format_storage_timestamp(),
-        "skill_result": skill_result,
-    }
-    assistant_msg = frontend_history_message(assistant_msg)
-    record_group_chat_tool_trace(
-        group_session_id,
-        message_id=str(assistant_msg.get("message_id") or ""),
+    skill_session = completion.skill_session.action
+    created_at = format_storage_timestamp()
+    applied = coordinate_expert_completion(
+        completion=completion,
+        orchestration_state=load_group_orchestration_state(group_session_id),
         agent_name=agent_name,
         skill=str(runtime.skill or ""),
+        message_id=f"msg-{uuid.uuid4().hex[:8]}",
+        created_at=created_at,
+        group_session_id=group_session_id,
+        messages=messages,
+        session_definitions=session_definitions,
+        session_item=session_item,
         tool_results=tool_results,
     )
-    messages.append(assistant_msg)
-    save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
-    session_item["updated_at"] = format_storage_timestamp()
-    save_session_definitions(session_definitions)
+    if applied.published is not None:
+        yield serialize_sse_event("message", applied.published.record)
+    if applied.agent_turn.value == "continue_expert":
+        await update_group_run(group_session_id, run_id, phase="finalizing")
+        outcome.succeed(
+            agent_turn="continue",
+            skill_session="keep" if skill_session == "keep" else "release",
+        )
+        return
     await update_group_run(group_session_id, run_id, phase="finalizing")
-    outcome.succeed()
-    yield serialize_sse_event("message", assistant_msg)
+    outcome.succeed(
+        agent_turn="respond",
+        skill_session="keep" if skill_session == "keep" else "release",
+    )

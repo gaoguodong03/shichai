@@ -51,7 +51,7 @@ def test_collaboration_scenario_has_three_current_protocol_experts():
         assert legacy_field not in host_body
 
 
-def test_collaboration_web_and_image_experts_are_rewritten_for_current_state_contract():
+def test_collaboration_web_and_image_skills_use_the_business_template():
     web_agent = _read_json(USER_RESOURCE_ROOT / "agents" / "信息检索专家" / "agent.json")
     image_agent = _read_json(USER_RESOURCE_ROOT / "agents" / "图片生成专家" / "agent.json")
 
@@ -71,20 +71,58 @@ def test_collaboration_web_and_image_experts_are_rewritten_for_current_state_con
     assert image_fm["allowed-tools"]["mcp"] == ["图片生成 MCP"]
 
     for body in (web_body, image_body):
-        assert "schema_version" in body
-        assert "expert_final_state.v2" in body
-        assert '"agent_turn": "respond"' in body
-        assert '"skill_session": "keep"' in body
-        assert '"skill_session": "release"' in body
-        assert '"handoff"' not in body
-        assert '"resume"' not in body
-        assert '"reason"' not in body
-        assert '"instruction"' not in body
-        assert "workflow_state" not in body
-        assert "result_code" not in body
+        assert body.count("## 执行规则") == 1
+        assert body.count("## 结束条件") == 1
+        assert body.count("\n## ") == 2
+        for platform_fragment in (
+            "schema_version",
+            "expert_final_state",
+            '"next_action"',
+            "agent_turn",
+            "skill_session",
+            '"handoff"',
+            '"resume"',
+            "workflow_state",
+            "result_code",
+        ):
+            assert platform_fragment not in body
 
 
-def test_collaboration_host_and_coauthor_use_message_based_vnext_contract():
+def test_collaboration_experts_follow_cross_scenario_prompt_template():
+    agents = [
+        _read_json(USER_RESOURCE_ROOT / "agents" / agent_name / "agent.json")
+        for agent_name in ("信息检索专家", "文档合著专家", "图片生成专家")
+    ]
+    common_principles = (
+        "只根据明确输入和本轮实际获得的结果作出结论，不虚构事实、产物或完成状态。",
+        "信息不足以完成职责内任务时，只提出当前任务所需的最小补充问题。",
+    )
+    platform_owned_fragments = (
+        "协同写作场景",
+        "主持人",
+        "Skill",
+        "工作区",
+        "最终状态",
+        "next_action",
+        "expert_final_state",
+    )
+
+    for agent in agents:
+        description = str(agent.get("description") or "").strip()
+        prompt = str(agent.get("system_prompt") or "").strip()
+
+        assert description
+        assert "交付" in description
+        assert agent["name"] not in prompt
+        for heading in ("职责边界：", "专业标准：", "判断原则："):
+            assert heading in prompt
+        for principle in common_principles:
+            assert principle in prompt
+        for fragment in platform_owned_fragments:
+            assert fragment not in prompt
+
+
+def test_collaboration_host_owns_dispatch_output_while_coauthor_uses_business_template():
     _, host_body = _read_skill(USER_RESOURCE_ROOT / "skills" / "skill-0909791c1d74" / "SKILL.md")
     _, coauthor_body = _read_skill(USER_RESOURCE_ROOT / "skills" / "skill-b604cfa284ca" / "SKILL.md")
 
@@ -92,8 +130,16 @@ def test_collaboration_host_and_coauthor_use_message_based_vnext_contract():
     assert '"target_agent_name"' in host_body
     assert '"next_speaker"' not in host_body
     assert '"next_action": "' not in host_body
-    assert "expert_final_state.v2" in coauthor_body
-    assert '"skill_session": "keep"' in coauthor_body
-    assert '"skill_session": "release"' in coauthor_body
-    for legacy in ('"handoff"', '"resume"', '"reason"', '"instruction"', "[[SKILL_SESSION_STATE]]"):
-        assert legacy not in coauthor_body
+    assert coauthor_body.count("## 执行规则") == 1
+    assert coauthor_body.count("## 结束条件") == 1
+    for platform_fragment in (
+        "expert_final_state",
+        "schema_version",
+        '"next_action"',
+        "agent_turn",
+        "skill_session",
+        '"handoff"',
+        '"resume"',
+        "[[SKILL_SESSION_STATE]]",
+    ):
+        assert platform_fragment not in coauthor_body

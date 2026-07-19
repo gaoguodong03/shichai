@@ -79,12 +79,11 @@ def _tool_budget_finalization_instruction(*, tool_results: list[dict[str, Any]] 
 
 def _tool_budget_structured_finalization_instruction(
     *,
-    tool_name: str,
     tool_results: list[dict[str, Any]] | None = None,
 ) -> HumanMessage:
     return HumanMessage(
         content=render_platform_prompt(
             "agent.tool_budget.structured_finalize.v1",
-            {"tool_name": tool_name, "summary_block": _tool_facts_summary_block(tool_results)},
+            {"summary_block": _tool_facts_summary_block(tool_results)},
         )
     )

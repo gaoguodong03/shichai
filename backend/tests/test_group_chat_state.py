@@ -20,7 +20,15 @@ def _body(content: str) -> dict:
 
 def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    sessions = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": TS1, "updated_at": TS1}}
+    sessions = {
+        "s1": {
+            "title": "会话",
+            "agent_names": ["专家A"],
+            "scenario_prompt": "场景共享任务契约",
+            "created_at": TS1,
+            "updated_at": TS1,
+        }
+    }
 
     state.save_session_definitions(sessions)
     state.save_group_history(
@@ -35,7 +43,10 @@ def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
         ],
     )
 
-    assert state.load_session_definitions()["s1"]["title"] == "会话"
+    loaded = state.load_session_definitions()["s1"]
+    assert loaded["title"] == "会话"
+    assert loaded["scenario_prompt"] == "场景共享任务契约"
+    assert json.loads((tmp_path / "s1" / "session.json").read_text(encoding="utf-8"))["scenario_prompt"] == "场景共享任务契约"
     assert (tmp_path / "s1" / "session.json").exists()
     assert not (tmp_path / "s1" / "meta.json").exists()
     assert state.load_group_history("s1")[0]["message"]["content"] == "你好"
@@ -75,6 +86,7 @@ def test_session_definitions_load_filters_legacy_fields(tmp_path, monkeypatch):
                 "title": "会话",
                 "title_auto_generated": True,
                 "agent_names": ["专家A"],
+                "scenario_prompt": "场景共享任务契约",
                 "host": {
                     "name": "四九",
                     "skill_directory": "group-host",
@@ -98,6 +110,7 @@ def test_session_definitions_load_filters_legacy_fields(tmp_path, monkeypatch):
         "title": "会话",
         "title_auto_generated": True,
         "agent_names": ["专家A"],
+        "scenario_prompt": "场景共享任务契约",
         "host": {
             "name": "四九",
             "skill_directory": "group-host",
@@ -293,24 +306,14 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
                 "current_phase": "阶段2",
                 "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
             },
-            "continuation": {
-                "owner_agent_name": "写作专家",
-                "skill_session": "keep",
-                "skill": "article-writer",
-                "message": {"content": "继续补全正文"},
-            },
+            "skill_sessions": {"写作专家": {"skill": "article-writer"}},
             "speaker_task": "旧字段",
         },
     )
 
     loaded = state.load_group_orchestration_state("s1")
     assert loaded == {
-        "continuation": {
-            "owner_agent_name": "写作专家",
-            "skill_session": "keep",
-            "skill": "article-writer",
-            "message": {"content": "继续补全正文"},
-        },
+        "skill_sessions": {"写作专家": {"skill": "article-writer"}},
         "host_scheduler": {
             "current_phase": "阶段2",
             "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
@@ -320,7 +323,7 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
     assert "scheduler_state" not in state.load_session_definitions()["s1"]
 
 
-def test_orchestration_state_clears_continuation_when_host_scheduler_conflicts(tmp_path, monkeypatch):
+def test_orchestration_state_keeps_skill_sessions_independent_from_host_target(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})
 
@@ -331,16 +334,12 @@ def test_orchestration_state_clears_continuation_when_host_scheduler_conflicts(t
                 "current_phase": "阶段2",
                 "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
             },
-            "continuation": {
-                "owner_agent_name": "资料专家",
-                "skill_session": "keep",
-                "skill": "research",
-                "message": {"content": "继续补资料"},
-            },
+            "skill_sessions": {"资料专家": {"skill": "research"}},
         },
     )
 
     assert state.load_group_orchestration_state("s1") == {
+        "skill_sessions": {"资料专家": {"skill": "research"}},
         "host_scheduler": {
             "current_phase": "阶段2",
             "message": {"content": "请写大纲", "target_agent_name": "写作专家"},
@@ -448,10 +447,6 @@ def test_group_history_loads_canonical_messages_without_runtime_compat(tmp_path,
                     "created_at": "2026062908104900",
                     "skill_result": {
                         "execution_status": "succeeded",
-                        "next_action": {
-                            "agent_turn": "respond",
-                            "skill_session": "keep",
-                        },
                     },
                 }
             ],

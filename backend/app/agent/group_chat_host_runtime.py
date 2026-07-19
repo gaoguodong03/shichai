@@ -11,6 +11,7 @@ from app.agent.group_host_decision import (
     host_protocol_error_decision,
     host_scheduler_decision_from_payload,
 )
+from app.agent.group_context import skill_sessions_to_host_context
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
 from app.agent.structured_output_contracts import HostSchedulerDecisionPayload, StructuredOutputProtocolError
@@ -97,6 +98,7 @@ async def _host_decide_by_agent(
     host_mode: str = "recruitment",
     session_item: Optional[Dict[str, Any]] = None,
     host_scheduler_state: Optional[Dict[str, Any]] = None,
+    skill_sessions_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Ask the host LLM for the next scheduler decision and validate it strictly."""
     _ = (
@@ -116,12 +118,10 @@ async def _host_decide_by_agent(
     host_system = str(host_agent.get("system_prompt") or "").strip()
     host_skill_content = _load_host_skill_content(host_agent)
     system_parts = [
+        str(extra_system_prompt or "").strip(),
         host_system,
         host_skill_content,
-        render_platform_prompt("host.system.boundary.v1", {}),
     ]
-    if extra_system_prompt:
-        system_parts.append(str(extra_system_prompt).strip())
     system_content = "\n\n".join(part for part in system_parts if part)
 
     current_phase = ""
@@ -134,6 +134,7 @@ async def _host_decide_by_agent(
             "current_phase": current_phase or "（无）",
             "user_message": user_message or discussion_goal or "（无）",
             "recent_history": recent_messages or "（无）",
+            "skill_sessions": skill_sessions_to_host_context(skill_sessions_state),
         },
     )
     if last_speaker_agent_name:

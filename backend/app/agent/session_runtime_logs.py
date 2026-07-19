@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any
 
@@ -11,9 +12,15 @@ from app.agent.structured_output_contracts import ArtifactRef, ToolExecutionLogR
 from app.api.group_chat_state import ensure_sessions_dir, format_storage_timestamp
 
 
-_ALLOWED_SOURCES = {"mcp", "script", "workspace", "api", "host"}
+_ALLOWED_SOURCES = {"mcp", "script", "workspace", "api", "host", "runtime"}
 _TOOL_EXECUTION_LOG = "tool-execution.jsonl"
 _SUMMARY_LIMIT = 180
+_FAILURE_SUMMARY_LIMIT = 500
+_BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[^\s;,]+")
+_SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(authorization|api[_-]?key|access[_-]?token|token|secret|password)"
+    r"\s*[:=]\s*([^\s;,]+|\"[^\"]*\"|'[^']*')"
+)
 
 
 def _clean_dict(data: dict[str, Any]) -> dict[str, Any]:
@@ -165,6 +172,85 @@ def append_host_execution_log(
                     "message": dict(message or {}),
                 },
                 "artifacts": list((message or {}).get("artifacts") or []),
+                "stdout": "",
+                "stderr": "",
+            },
+        }
+    )
+    try:
+        validated = ToolExecutionLogRecord.model_validate(record).model_dump(exclude_none=True)
+    except ValidationError:
+        return
+    path = _log_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(validated, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def sanitize_runtime_failure_summary(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "未提供异常摘要"
+    safe_lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("Traceback")
+        and not line.lstrip().startswith("File \"")
+    ]
+    sanitized = " ".join(safe_lines)
+    sanitized = _BEARER_PATTERN.sub("Bearer [REDACTED]", sanitized)
+    sanitized = _SENSITIVE_ASSIGNMENT_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", sanitized)
+    if len(sanitized) > _FAILURE_SUMMARY_LIMIT:
+        sanitized = sanitized[:_FAILURE_SUMMARY_LIMIT].rstrip() + "..."
+    return sanitized or "未提供异常摘要"
+
+
+def append_runtime_failure_log(
+    session_id: str,
+    *,
+    message_id: str,
+    agent_name: str,
+    skill: str,
+    error_code: str,
+    error_type: str,
+    phase: str,
+    error_summary: str,
+) -> None:
+    """Append one sanitized group-chat runtime failure linked to a history message."""
+    clean_error_code = str(error_code or "GROUP_CHAT_RUNTIME_FAILED").strip() or "GROUP_CHAT_RUNTIME_FAILED"
+    clean_error_type = str(error_type or "RuntimeError").strip() or "RuntimeError"
+    clean_phase = str(phase or "group_chat_runtime").strip() or "group_chat_runtime"
+    clean_summary = sanitize_runtime_failure_summary(error_summary)
+    record = _clean_dict(
+        {
+            "log_id": f"log-{uuid.uuid4().hex[:12]}",
+            "message_id": str(message_id or "").strip() or None,
+            "created_at": format_storage_timestamp(),
+            "source": "runtime",
+            "agent_name": str(agent_name or "").strip() or None,
+            "skill": str(skill or "").strip() or None,
+            "status": "failed",
+            "tool_call": {
+                "id": f"runtime-{uuid.uuid4().hex[:12]}",
+                "name": "group_chat_failure",
+                "provider": "runtime",
+                "provider_tool": clean_phase,
+                "arguments": {
+                    "error_code": clean_error_code,
+                    "error_type": clean_error_type,
+                    "phase": clean_phase,
+                },
+            },
+            "output": {
+                "content": clean_summary,
+                "json_data": {
+                    "error_code": clean_error_code,
+                    "error_type": clean_error_type,
+                    "phase": clean_phase,
+                    "error_summary": clean_summary,
+                },
+                "artifacts": [],
                 "stdout": "",
                 "stderr": "",
             },

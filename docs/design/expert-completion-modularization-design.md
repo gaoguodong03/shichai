@@ -149,7 +149,7 @@ ParsedExpertCompletion
 
 - 构建专家运行时；
 - 发送 route/progress；
-- 收集 finalizer 输出与工具结果；
+- 收集模型终态、无工具 finalizer 输出与完整工具结果；
 - 调用 `expert_completion_contract` 得到 `ParsedExpertCompletion`。
 
 它不直接解释 `agent_turn` 或 `skill_session`，也不直接操作历史和跨轮状态。

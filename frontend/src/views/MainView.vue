@@ -543,12 +543,12 @@
                   />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-primary mb-1">场景系统提示词（可选）</label>
+                  <label class="block text-sm font-medium text-primary mb-1">场景提示词（会话共享快照）</label>
                   <textarea
                     v-model="scenarioDraft.system_prompt"
                     rows="6"
                     class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                    placeholder="写入仅适用于该场景的项目规则，会同时提供给主持人和场景内专家。"
+                    placeholder="写入场景目标、适用范围、共同要求和完成标准。创建会话时保存快照，并持续提供给主持人和专家。"
                   />
                 </div>
                 <div class="border border-border-light rounded-lg px-5 py-6 space-y-6">
@@ -583,12 +583,12 @@
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-primary mb-1">主持人系统提示词（可选）</label>
+                    <label class="block text-sm font-medium text-primary mb-1">主持人长期提示词</label>
                     <textarea
                       v-model="scenarioLeaderSystemPrompt"
                       rows="6"
                       class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                      placeholder="例如：你是群聊主持人，只通过 message.target_agent_name 指定下一位专家，并在 message.content 中给出任务。"
+                      placeholder="定义主持人在所有场景中通用的纯调度职责、阶段表读取方式和输出结构。"
                     />
                   </div>
                   <div>

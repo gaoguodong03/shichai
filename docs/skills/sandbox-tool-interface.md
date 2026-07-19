@@ -39,29 +39,27 @@
 - 用户说“查看/读取/打开某文件”时，优先使用 `read_workspace_file`。
 - 如果用户只给文件名且不确定位置，先调用 `list_workspace_directory`。
 
-### `create_workspace_artifact`
-
-用于新建大纲、正文、资料包、报告、阶段产物和最终产物。模型只传 `title`、`content`、可选 `kind` / `directory` / `extension`；平台负责生成工作区相对路径、当前时间戳和同名版本后缀。
-
 ### `write_workspace_file`
 
-写入或覆盖当前会话工作区文本文件。
+新建当前会话工作区文本文件。
 
 参数：
 
 ```json
 {
-  "path": "notes/result-2026070422145700.md",
-  "content": "完整文件内容"
+  "path": "notes/result.md",
+  "content": "完整文件内容",
+  "overwrite": false
 }
 ```
 
 约束与返回：
 
+- `path` 与 `content` 都是必填字段，必须在同一次工具调用中传入。
 - `content` 不能为空。
 - `path` 是工作区相对路径；必要的父目录由沙箱侧处理。
-- 除非用户明确指定已有路径或固定文件名，所有新建工作区产物都使用 `create_workspace_artifact`，由平台生成时间戳文件名和同名版本后缀。
-- 用户要求“保存/写入/生成文件”时，应调用此工具，而不是只在自然语言里说“已保存”。
+- `overwrite` 默认 `false`；已有文件的局部修改使用 `edit_workspace_file`，重命名或移动使用 `rename_workspace_file`。
+- 用户要求“保存/写入/生成文件”时，必须调用此工具，而不是只在自然语言里说“已保存”。
 
 ### `edit_workspace_file`
 
@@ -176,9 +174,9 @@ manifest 示例：
 - 没有 `scripts/manifest.json` 时，平台不注入脚本工具；不要回退到默认 `cli_args` 或让模型指定脚本路径。
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
-- 脚本 stdout 应输出完整 `expert_final_state.v2` JSON：`schema_version`、`execution_status`、`message`、`next_action`。用户可见产物写入 `message.artifacts`；`next_action` 只含 `agent_turn` 和 `skill_session`。
+- 脚本 stdout 应输出完整 `expert_final_state.v2` JSON：`execution_status`、`message`、`next_action`。不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。用户可见产物写入 `message.artifacts`；`next_action` 只含 `agent_turn` 和 `skill_session`。
 - 脚本 stdout 缺字段、枚举非法、含旧字段或 JSON 结构不合法时，按协议失败处理；保留执行日志，不生成兼容回复。
-- MCP / HTTP / workspace 工具本身不返回 `next_action`；工具执行后回到 LLM，继续调用工具或由 finalizer 生成 `expert_final_state.v2`。
+- MCP / HTTP / workspace 工具本身不返回 `next_action`；每次 `agent_turn` 内可以连续执行多个依赖工具步骤，每批结果都留在同一模型上下文。模型停止调用工具后输出 `expert_final_state.v2`；`next_action.agent_turn` 只决定是否进入下一次独立业务阶段。
 - 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/skills/skill-standard.md` 的“给 Skill 作者的脚本函数调用建议”。
 
 何时使用：

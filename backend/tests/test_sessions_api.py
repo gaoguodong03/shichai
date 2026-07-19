@@ -239,6 +239,8 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
 
 
 def test_session_created_from_default_host_omits_display_only_skill_name(client: TestClient):
+    from app.agent.platform_prompts import render_platform_prompt
+
     host_resp = client.put(
         "/api/settings/host-profile",
         json={
@@ -257,7 +259,7 @@ def test_session_created_from_default_host_omits_display_only_skill_name(client:
     assert created["host"] == {
         "name": "默认主持人",
         "llm_name": "qwen3-max",
-        "system_prompt": "",
+        "system_prompt": render_platform_prompt("host.system.default.v1", {}),
         "skill_directory": "group-host",
     }
     assert "skill_name" not in created["host"]
@@ -265,6 +267,18 @@ def test_session_created_from_default_host_omits_display_only_skill_name(client:
     detail_resp = client.get(f"/api/sessions/{created['id']}")
     assert detail_resp.status_code == 200
     assert "skill_name" not in detail_resp.json()["data"]["host"]
+
+
+def test_default_host_profile_exposes_editable_long_term_prompt(client: TestClient):
+    from app.agent.platform_prompts import render_platform_prompt
+
+    defaults_resp = client.get("/api/settings/host-profile/defaults")
+
+    assert defaults_resp.status_code == 200
+    defaults = defaults_resp.json()["data"]
+    assert defaults["system_prompt"] == render_platform_prompt("host.system.default.v1", {})
+    assert "只负责调度" in defaults["system_prompt"]
+    assert '"current_phase"' in defaults["system_prompt"]
 
 
 def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):
@@ -445,6 +459,7 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
         json={
             "title": "问答验收场景",
             "agent_names": ["场景专家"],
+            "scenario_prompt": "这是会话内所有角色共享的问答任务契约。",
         },
     )
     assert update_resp.status_code == 200
@@ -452,11 +467,30 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
     assert updated["id"] == session_id
     assert updated["title"] == "问答验收场景"
     assert updated["agent_names"] == ["场景专家"]
-    assert updated["agent_names"] == ["场景专家"]
+    assert updated["scenario_prompt"] == "这是会话内所有角色共享的问答任务契约。"
 
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["data"]["messages"] == []
+
+
+def test_create_session_persists_scenario_prompt_snapshot(client: TestClient):
+    create_resp = client.post(
+        "/api/sessions",
+        json={
+            "title": "场景快照会话",
+            "agent_names": [],
+            "scenario_prompt": "创建会话时保存，之后不回读场景资源。",
+        },
+    )
+
+    assert create_resp.status_code == 200
+    created = create_resp.json()["data"]
+    assert created["scenario_prompt"] == "创建会话时保存，之后不回读场景资源。"
+
+    detail_resp = client.get(f"/api/sessions/{created['id']}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["data"]["scenario_prompt"] == "创建会话时保存，之后不回读场景资源。"
 
 
 def test_update_session_title_is_always_manual_contract(client: TestClient):

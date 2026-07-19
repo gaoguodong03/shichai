@@ -7,18 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.messages import AIMessage, BaseMessage
-from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent_messages import _extract_text_content
-from app.agent.simple_agent_tool_flow import (
-    has_successful_workspace_write_output as _has_successful_workspace_write_output,
-    has_workspace_mutating_tool_call as _has_workspace_mutating_tool_call,
-    remember_successful_workspace_writes as _remember_successful_workspace_writes,
-)
-from app.agent.simple_agent_tool_ids import (
-    _missing_tool_response_messages,
-    _normalize_ai_tool_call_ids,
-    _normalize_tool_message_ids,
-)
 from app.agent.tool_spec import ToolSpec
 from app.agent.simple_agent_streaming import stream_simple_agent
 from app.agent.simple_agent_invocation import invoke_simple_agent
@@ -40,124 +29,8 @@ class SimpleAgent:
     tool_runner: Any  # async (state, tools) -> dict
     timeout_s: float = 180.0
     max_steps: int = 12
-    max_repeated_tool_rounds: int = 3
     synthesize_after_read_file_paths: tuple[str, ...] = ()
     final_output_model: Any = None
-    final_output_tool_name: str = "submit_final_output"
-
-    async def _execute_tool_response(
-        self,
-        response: BaseMessage,
-        *,
-        messages: list[BaseMessage],
-        tools: list[ToolSpec],
-        tool_result_cache: dict[str, dict[str, Any]],
-        tool_attempt_debug: list[dict[str, Any]],
-        tool_raw_outputs: list[str],
-        initial_state: dict[str, Any],
-        tool_calls_trace: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        tool_call_id_map = _normalize_ai_tool_call_ids(response)
-        state = {
-            "messages": messages,
-            "tools": tools,
-            "tool_result_cache": tool_result_cache,
-            "workspace_id": initial_state.get("workspace_id", ""),
-        }
-        tool_out = await self.tool_runner(state, tools)
-        out_msgs = tool_out.get("messages") or []
-        tad = tool_out.get("tool_attempt_debug")
-        if isinstance(tad, list):
-            tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
-        tc = tool_out.get("tool_calls")
-        if isinstance(tc, list) and tool_calls_trace is not None:
-            tool_calls_trace.extend(tc)
-        tro = tool_out.get("tool_raw_outputs")
-        if isinstance(tro, list):
-            tool_raw_outputs.extend([str(x) for x in tro])
-        if isinstance(out_msgs, list) and out_msgs:
-            _normalize_tool_message_ids(out_msgs, tool_call_id_map)
-            messages.extend(out_msgs)
-        missing_tool_msgs = _missing_tool_response_messages(
-            getattr(response, "tool_calls", None) or [],
-            out_msgs if isinstance(out_msgs, list) else [],
-            render_platform_prompt("agent.tool_call.missing_response.default_reason.v1", {}),
-        )
-        if missing_tool_msgs:
-            logger.warning(
-                "SimpleAgent: tool_runner returned incomplete synthesized tool messages; filled_missing=%s",
-                len(missing_tool_msgs),
-            )
-            messages.extend(missing_tool_msgs)
-        return tool_out
-
-    async def _execute_post_tool_decision_tool_calls(
-        self,
-        synthesis_response: BaseMessage,
-        *,
-        messages: list[BaseMessage],
-        tools: list[ToolSpec],
-        tool_result_cache: dict[str, dict[str, Any]],
-        tool_attempt_debug: list[dict[str, Any]],
-        tool_raw_outputs: list[str],
-        initial_state: dict[str, Any],
-        step: int,
-        tool_calls_trace: list[dict[str, Any]] | None = None,
-        previous_tool_signature: str = "",
-        successful_workspace_write_keys: set[str] | None = None,
-    ) -> tuple[BaseMessage | None, dict[str, Any] | None]:
-        tool_calls = getattr(synthesis_response, "tool_calls", None) or []
-        if not tool_calls:
-            return None, None
-        synthesis_signature = " | ".join(
-            f"{str(tc.get('name') or '')}:{tc.get('args')}"
-            for tc in tool_calls
-            if isinstance(tc, dict)
-        )
-        if previous_tool_signature and synthesis_signature == previous_tool_signature:
-            tool_attempt_debug.append(
-                {
-                    "source": "post_tool_decision_repeated_tool_calls_ignored",
-                    "matched": True,
-                    "signature_preview": synthesis_signature[:240],
-                }
-            )
-            return None, None
-        if _has_successful_workspace_write_output(tool_raw_outputs) and _has_workspace_mutating_tool_call(tool_calls):
-            tool_attempt_debug.append(
-                {
-                    "source": "post_tool_decision_repeated_write_ignored",
-                    "matched": True,
-                    "signature_preview": synthesis_signature[:240],
-                }
-            )
-            return None, None
-        debug = {
-            "source": "post_tool_decision_tool_calls",
-            "matched": True,
-            "count": len(tool_calls),
-            "content_preview": _extract_text_content(synthesis_response)[:240],
-        }
-        tool_attempt_debug.append(debug)
-        messages.append(synthesis_response)
-        tool_out = await self._execute_tool_response(
-            synthesis_response,
-            messages=messages,
-            tools=tools,
-            tool_result_cache=tool_result_cache,
-            tool_attempt_debug=tool_attempt_debug,
-            tool_raw_outputs=tool_raw_outputs,
-            initial_state=initial_state,
-            tool_calls_trace=tool_calls_trace,
-        )
-        if successful_workspace_write_keys is not None:
-            _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
-        logger.info(
-            "SimpleAgent: executed synthesized tool calls step=%s count=%s",
-            step,
-            len(tool_calls),
-        )
-        return synthesis_response, tool_out
 
     async def _call_model(self, client: Any, messages: list[BaseMessage], *, step: int | None = None) -> AIMessage:
         chars = sum(len(_extract_text_content(msg)) for msg in messages)

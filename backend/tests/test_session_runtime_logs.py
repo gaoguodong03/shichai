@@ -3,6 +3,7 @@ import json
 from app.api import group_chat_state as state
 from app.agent.session_runtime_logs import (
     append_host_execution_log,
+    append_runtime_failure_log,
     append_tool_execution_logs,
     load_tool_execution_logs,
     message_execution_log_summaries,
@@ -138,6 +139,48 @@ def test_append_host_execution_log_records_scheduler_fact(tmp_path, monkeypatch)
     assert summary["source"] == "host"
     assert summary["tool_name"] == "host_scheduler"
     assert summary["output_summary"] == "请生成工作区文档。"
+
+
+def test_append_runtime_failure_log_records_sanitized_failure_fact(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
+
+    append_runtime_failure_log(
+        "s1",
+        message_id="failed-1",
+        agent_name="信息检索专家",
+        skill="web-search",
+        error_code="EXPERT_RUNTIME_FAILED",
+        error_type="RuntimeError",
+        phase="expert_turn",
+        error_summary="Authorization: Bearer super-secret-token; api_key=sk-private-value; upstream timeout",
+    )
+
+    rows = load_tool_execution_logs("s1")
+
+    assert len(rows) == 1
+    assert rows[0]["message_id"] == "failed-1"
+    assert rows[0]["source"] == "runtime"
+    assert rows[0]["status"] == "failed"
+    assert rows[0]["agent_name"] == "信息检索专家"
+    assert rows[0]["skill"] == "web-search"
+    assert rows[0]["tool_call"]["name"] == "group_chat_failure"
+    assert rows[0]["tool_call"]["provider"] == "runtime"
+    assert rows[0]["tool_call"]["provider_tool"] == "expert_turn"
+    assert rows[0]["tool_call"]["arguments"] == {
+        "error_code": "EXPERT_RUNTIME_FAILED",
+        "error_type": "RuntimeError",
+        "phase": "expert_turn",
+    }
+    serialized = json.dumps(rows[0], ensure_ascii=False)
+    assert "upstream timeout" in serialized
+    assert "super-secret-token" not in serialized
+    assert "sk-private-value" not in serialized
+    assert "traceback" not in serialized.lower()
+
+    summary = message_execution_log_summaries("s1", message_id="failed-1")[0]
+    assert summary["source"] == "runtime"
+    assert summary["output_summary"].endswith("upstream timeout")
 
 
 def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):

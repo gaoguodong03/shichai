@@ -318,6 +318,110 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
+@pytest.mark.asyncio
+async def test_one_agent_turn_can_search_then_write_a_real_workspace_file(temp_user_data_root, monkeypatch):
+    import json
+
+    from app.agent.expert_completion_contract import ExpertFinalStatePayload
+    from app.agent.messages import AIMessage, HumanMessage
+    from app.agent.simple_agent import SimpleAgent
+    from app.agent.skill_agent_runtime import _call_tool_impl
+    from app.agent.tool_spec import ToolSpec
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "web_search_exa", "args": {"query": "沈腾"}}],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "materials/shenteng.md",
+                    "content": "# 沈腾资料\n\n检索摘要。",
+                },
+            }
+        ],
+    )
+    final_state = AIMessage(
+        content=json.dumps(
+            {
+                "execution_status": "succeeded",
+                "message": {
+                    "content": "资料已保存至 materials/shenteng.md。",
+                    "attachments": [],
+                    "artifacts": [{"type": "file", "name": "沈腾资料", "path": "materials/shenteng.md"}],
+                },
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    class _Client:
+        def __init__(self):
+            self.responses = iter([search_call, write_call, final_state])
+
+        def bind_tools(self, tools, *args, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            return next(self.responses)
+
+    class _LLM:
+        def __init__(self):
+            self.client = _Client()
+
+        def get_client(self):
+            return self.client
+
+    async def _search(query: str) -> str:
+        return "检索摘要。"
+
+    workspace_id = "sess-search-write"
+    search_tool = ToolSpec.from_function(name="web_search_exa", description="search", coroutine=_search)
+    search_tool.metadata = {
+        "source": "mcp",
+        "provider": "Exa",
+        "provider_tool": "web_search_exa",
+    }
+    tools = [search_tool, create_write_workspace_file_tool(workspace_id)]
+    agent = SimpleAgent(
+        llm=_LLM(),
+        tools=tools,
+        system_prompt="完成检索、写入并输出 expert_final_state.v2。",
+        tool_runner=_call_tool_impl,
+        max_steps=4,
+        final_output_model=ExpertFinalStatePayload,
+    )
+
+    out = await agent.ainvoke(
+        {
+            "messages": [HumanMessage(content="检索沈腾资料并保存")],
+            "workspace_id": workspace_id,
+        }
+    )
+
+    assert [item["tool"] for item in out["tool_calls"]] == ["web_search_exa", "write_workspace_file"]
+    assert (get_workspace_root(workspace_id) / "materials/shenteng.md").read_text(encoding="utf-8") == (
+        "# 沈腾资料\n\n检索摘要。"
+    )
+    assert json.loads(str(out["messages"][-1].content))["execution_status"] == "succeeded"
+
+
 def test_write_workspace_file_tool_creates_workspace_changed_checkpoint(client, monkeypatch):
     """工具写入工作区产物后也必须形成 workspace_changed 检查点。"""
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
@@ -508,16 +612,21 @@ def test_write_workspace_file_tool_keeps_timestamp_placeholder_path(temp_user_da
     assert (ws / "image/配图方案-<时间戳>.md").read_text(encoding="utf-8") == "image plan"
 
 
-def test_write_workspace_file_tool_advertises_project_filename_contract():
+def test_write_workspace_file_tool_requires_path_and_content_without_artifact_writer_fallback():
     from app.tools.write_workspace_file import WriteWorkspaceFileInput, create_write_workspace_file_tool
 
     tool = create_write_workspace_file_tool("sess-contract")
     path_description = WriteWorkspaceFileInput.model_fields["path"].description or ""
+    schema = tool.to_openai_tool()["function"]["parameters"]
 
     assert "明确相对路径" in path_description
     assert "不生成时间戳" in path_description
-    assert "create_workspace_artifact" in path_description
-    assert "create_workspace_artifact" in tool.description
+    assert "create_workspace_artifact" not in path_description
+    assert "create_workspace_artifact" not in tool.description
+    assert set(schema["required"]) == {"path", "content"}
+    missing_content = asyncio.run(tool.ainvoke({"path": "notes/report.md"}))
+    assert "同一次调用显式传入非空 content" in missing_content
+    assert "系统会用本条回复的正文" not in missing_content
 
 
 def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, monkeypatch):
@@ -551,90 +660,6 @@ def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, mo
     assert "错误：文件已存在" in overwrite_out
     ws = get_workspace_root("sess-no-overwrite")
     assert (ws / "article.md").read_text(encoding="utf-8") == "full article"
-
-
-def test_create_workspace_artifact_versions_same_title_without_model_path_retry(temp_user_data_root, monkeypatch):
-    """create_workspace_artifact 应由平台负责同标题产物的唯一命名和版本化。"""
-    from app.api.files import get_workspace_root
-    from app.tools import create_workspace_artifact as artifact_tool_module
-    from app.tools.create_workspace_artifact import create_workspace_artifact_tool
-
-    class _FakeSandboxService:
-        async def write_workspace_text(
-            self,
-            *,
-            user_id,
-            session_id,
-            workspace_path,
-            rel_path,
-            content,
-        ):
-            target = (workspace_path / rel_path).resolve()
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-
-    monkeypatch.setattr(artifact_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    monkeypatch.setattr(artifact_tool_module, "_workspace_artifact_timestamp", lambda: "2026071119330600")
-
-    tool = create_workspace_artifact_tool("sess-artifact-version")
-    first = asyncio.run(
-        tool.ainvoke(
-            {
-                "title": "沈腾演艺生涯介绍",
-                "kind": "大纲",
-                "content": "first outline",
-            }
-        )
-    )
-    second = asyncio.run(
-        tool.ainvoke(
-            {
-                "title": "沈腾演艺生涯介绍",
-                "kind": "大纲",
-                "content": "second outline",
-            }
-        )
-    )
-
-    assert "已创建工作区产物：沈腾演艺生涯介绍-大纲-2026071119330600.md" in first
-    assert "已创建工作区产物：沈腾演艺生涯介绍-大纲-2026071119330600-02.md" in second
-    ws = get_workspace_root("sess-artifact-version")
-    assert (ws / "沈腾演艺生涯介绍-大纲-2026071119330600.md").read_text(encoding="utf-8") == "first outline"
-    assert (ws / "沈腾演艺生涯介绍-大纲-2026071119330600-02.md").read_text(encoding="utf-8") == "second outline"
-
-
-def test_create_workspace_artifact_result_records_public_artifact(temp_user_data_root, monkeypatch):
-    from app.agent.group_chat_tool_result_content import collect_artifacts
-    from app.agent.skill_tool_result_records import _tool_result_record_from_raw
-    from app.tools import create_workspace_artifact as artifact_tool_module
-    from app.tools.create_workspace_artifact import create_workspace_artifact_tool
-
-    class _FakeSandboxService:
-        async def write_workspace_text(self, *, workspace_path, rel_path, content, **_kwargs):
-            target = (workspace_path / rel_path).resolve()
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-
-    monkeypatch.setattr(artifact_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    monkeypatch.setattr(artifact_tool_module, "_workspace_artifact_timestamp", lambda: "2026071119330600")
-
-    tool = create_workspace_artifact_tool("sess-artifact-record")
-    raw = asyncio.run(tool.ainvoke({"title": "沈腾演艺生涯介绍", "kind": "大纲", "content": "outline"}))
-    record = _tool_result_record_from_raw(
-        tool_name="create_workspace_artifact",
-        tool=tool,
-        arguments={"title": "沈腾演艺生涯介绍", "kind": "大纲"},
-        tool_call_id="call-1",
-        raw_result=raw,
-    )
-
-    assert collect_artifacts([record]) == [
-        {
-            "type": "file",
-            "name": "沈腾演艺生涯介绍-大纲-2026071119330600.md",
-            "path": "沈腾演艺生涯介绍-大纲-2026071119330600.md",
-        }
-    ]
 
 
 def test_write_workspace_file_allows_explicit_overwrite(temp_user_data_root, monkeypatch):

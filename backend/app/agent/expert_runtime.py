@@ -12,14 +12,15 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
+from app.agent.expert_prompt import get_expert_system_prompt
 from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
-from app.agent.skill_session_locks import clear_skill_session_lock, locked_skill_for_expert
-from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
+from app.agent.skill_session_manager import skill_session_for_expert
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
 from app.agent.structured_output_contracts import ExpertSkillSelectionPayload
 from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.agent.platform_prompts import render_platform_prompt
+from app.agent.session_prompt import build_shared_session_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ async def expert_llm_pick_skill(
     agent_name: str = "",
     agent_description: str = "",
     agent_prompt: str = "",
+    project_system_prompt: str = "",
     llm_name: str = "",
 ) -> Tuple[Optional[str], Dict[str, Any]]:
     """Ask the expert model to choose exactly one loaded Skill."""
@@ -87,7 +89,7 @@ async def expert_llm_pick_skill(
             lines.append(f'- skill="{sid}" | （未加载元数据，仍须从 id 中选择）')
     catalog = "\n".join(lines)
     um = (round_user_text or "").strip() or _last_user_message_text(messages)
-    sys_msg = render_platform_prompt(
+    selection_prompt = render_platform_prompt(
         "expert.select_skill.v1",
         {
             "agent_name": agent_name,
@@ -98,6 +100,14 @@ async def expert_llm_pick_skill(
             "skill_directories": catalog,
             "next_action": round_user_text or "（无）",
         },
+    )
+    sys_msg = "\n\n".join(
+        part
+        for part in (
+            str(project_system_prompt or "").strip(),
+            selection_prompt,
+        )
+        if part
     )
     user_prompt = render_platform_prompt("expert.select_skill.user_prompt.v1", {})
     try:
@@ -138,17 +148,14 @@ async def resolve_expert_skill(
     group_session_id: str = "",
 ) -> Tuple[str, str, Dict[str, Any]]:
     """Resolve the Skill for one expert turn; locked Skill sessions win."""
-    _ = app_settings
     skill_directories = _skill_directory_names(agent_profile)
     orchestration_state = orchestration_state if isinstance(orchestration_state, dict) else {}
 
-    continuation = orchestration_state.get("continuation") if isinstance(orchestration_state.get("continuation"), dict) else {}
-    owner = str(continuation.get("owner_agent_name") or "").strip().casefold()
-    locked_raw = str(continuation.get("skill") or "").strip()
-    if owner == str(agent_name or "").strip().casefold() and locked_raw and locked_raw not in skill_directories:
-        clear_skill_session_lock(orchestration_state)
-
-    locked = locked_skill_for_expert(orchestration_state, expert_agent_name=agent_name, expert_skills=skill_directories)
+    locked = skill_session_for_expert(
+        orchestration_state,
+        expert_agent_name=agent_name,
+        expert_skills=skill_directories,
+    )
     if locked:
         content = skills_loader.get_skill_full_content(locked)
         if content:
@@ -186,7 +193,8 @@ async def resolve_expert_skill(
         group_session_id=group_session_id,
         agent_name=agent_name,
         agent_description=str(agent_profile.get("description") or ""),
-        agent_prompt=str(agent_profile.get("system_prompt") or ""),
+        agent_prompt=get_expert_system_prompt(agent_profile),
+        project_system_prompt=build_shared_session_prompt(app_settings, session_item),
         llm_name=str(agent_profile.get("llm_name") or app_settings.get("default_llm") or ""),
     )
     if picked:
@@ -243,13 +251,12 @@ async def build_expert_turn_runtime(
 
     tools = await tool_builder(agent_profile, group_session_id, skill)
     skill_content = base_skill_content
-    agent_system = (agent_profile.get("system_prompt") or "").strip()
+    agent_system = get_expert_system_prompt(agent_profile)
     description = agent_profile.get("description") or ""
     if agent_system:
         skill_content = f"{agent_system}\n\n{skill_content}"
     if description:
         skill_content = f"你的职责：{description}\n\n{skill_content}"
-    skill_content += GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 
     llm = llm_resolver(agent_profile)
     expert_self_awareness = build_expert_self_awareness_block(agent_profile, skills_loader)

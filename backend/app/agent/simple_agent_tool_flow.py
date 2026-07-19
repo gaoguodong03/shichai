@@ -11,13 +11,11 @@ from typing import Any
 
 from app.agent.simple_agent_finalization import _json_loads_maybe
 from app.agent.simple_agent_tool_ids import _tool_call_args
-from app.agent.structured_output_contracts import SkillScriptStdoutPayload
+from app.agent.expert_completion_contract import SkillScriptStdoutPayload
 WORKSPACE_WRITE_SUCCESS_MARKERS = (
     "已写入当前 Chat 工作区文件：",
-    "已创建工作区产物：",
 )
 WORKSPACE_MUTATING_TOOL_NAMES = {
-    "create_workspace_artifact",
     "write_workspace_file",
     "edit_workspace_file",
     "rename_workspace_file",

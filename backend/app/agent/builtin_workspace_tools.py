@@ -25,7 +25,6 @@ from app.agent.workspace_visibility import (
 )
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
-from app.tools.create_workspace_artifact import create_workspace_artifact_tool
 from app.tools.read_file import create_read_file_tool
 from app.tools.write_workspace_file import create_write_workspace_file_tool
 
@@ -257,7 +256,6 @@ def create_builtin_workspace_tools(workspace_id: str) -> List:
 
     return [
         create_read_file_tool(session_id=workspace_id),
-        create_workspace_artifact_tool(workspace_id),
         create_write_workspace_file_tool(workspace_id),
         ToolSpec.from_function(
             name="edit_workspace_file",

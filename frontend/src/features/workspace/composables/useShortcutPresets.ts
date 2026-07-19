@@ -232,6 +232,7 @@ export function useShortcutPresets(args: {
       title,
       agent_names: targetExperts,
       host: sessionHostFromScenarioPreset(p.host),
+      scenario_prompt: String(p.system_prompt || '').trim(),
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {

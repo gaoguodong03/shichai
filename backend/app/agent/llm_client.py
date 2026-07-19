@@ -59,12 +59,13 @@ def _client_thinking_mode_enabled(client: Any) -> bool:
     return bool(getattr(raw, "_thinking_mode_enabled", False))
 
 
-def bind_tools_compat(client: Any, tools: list[Any]) -> Any:
-    """绑定工具：思考模式不强制 required，避免 Qwen 等网关 400。"""
+def bind_tools_compat(client: Any, tools: list[Any], *, tool_choice_strategy: str | None = None) -> Any:
+    """绑定工具；调用方可显式选择 auto，思考模式也不强制 required。"""
     if not tools:
         return client
     binding_tools = tools_to_openai_tools(tools)
-    strategy = (os.getenv("LLM_TOOL_CHOICE_STRATEGY", "required") or "required").strip().lower()
+    strategy = tool_choice_strategy or os.getenv("LLM_TOOL_CHOICE_STRATEGY", "required") or "required"
+    strategy = strategy.strip().lower()
     if strategy in ("", "default"):
         strategy = "required"
     if _client_thinking_mode_enabled(client) and strategy in ("required", "any"):

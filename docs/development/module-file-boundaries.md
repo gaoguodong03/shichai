@@ -70,13 +70,17 @@
 | `group_chat_runtime.py` | 群聊一轮请求的总编排入口。只能串联步骤，不承载所有细节。 |
 | `group_chat_once.py` | 非流式 `/chat` 聚合入口，只消费 SSE 契约事件并返回聚合 JSON。 |
 | `group_chat_request_inputs.py` | 聊天请求附件校验和专家可见用户输入组装。 |
-| `group_orchestration_fsm.py` | 入口路由优先级：空专家、目标专家、continuation、host_scheduler、主持人调度。 |
+| `group_entry_router.py` | 结构化入口路由：请求目标和已校验主持人目标；无目标时返回主持人模型。 |
 | `group_host_decision.py` | 主持人严格 JSON 解析、合法性校验、保护决策、招募建议后处理和调度决策应用。 |
 | `group_chat_host_runtime.py` | 主持人调用 LLM 的运行时包装。 |
 | `group_chat_host_messages.py` | 主持人可见消息生成，不做路由判断。 |
 | `expert_runtime.py` | 专家回合准备：专家资料、Skill 解析、LLM 和工具运行时构造。 |
-| `group_chat_expert_turn.py` | 专家单回合流式执行、进度事件、工具结果汇总、消息落盘和工具 trace 写入。 |
-| `group_chat_skill_session.py` | 从 `skill_result.next_action` 推导跨轮 Skill 状态。 |
+| `group_chat_expert_turn.py` | 专家单回合流式执行、进度事件和工具结果汇总；完成副作用委托给协调器。 |
+| `expert_completion_contract.py` | 校验不变的模型 JSON，并投影执行状态、输出和两个控制对象。 |
+| `expert_output_publisher.py` | 发布非空专家消息、落盘历史并关联工具 trace。 |
+| `agent_turn_controller.py` | 当前请求内决定继续同一专家或交回主持人。 |
+| `skill_session_manager.py` | 按专家管理跨轮 Skill 绑定，不产生路由。 |
+| `expert_completion_coordinator.py` | 固定执行“输出、Skill Session、Agent Turn”的协调顺序。 |
 | `group_chat_soft_stop.py` | soft stop 和等待用户规则。 |
 | `group_chat_streaming.py` | SSE 事件构造和序列化。 |
 | `group_chat_title_meta.py` | 标题刷新和会话元信息更新。 |
@@ -132,7 +136,7 @@
 
 - 工具权限只来自当前 Skill，不来自专家旧字段。
 - 工具 stdout、stderr、参数和耗时进入 trace 或日志，不进入 `history.json` 消息核心字段。
-- 工具结果不能直接决定跨轮路由；需要跨轮状态时必须经过 `skill_result.next_action`。
+- 工具结果不能直接决定跨轮路由；模型终态 `next_action` 经严格校验后只进入独立控制模块，不进入消息。
 
 ### 2.6 状态和存储层
 
@@ -254,7 +258,7 @@
 |------|--------------|
 | 请求和 SSE 契约 | `backend/tests/test_group_chat_stream_protocol.py` |
 | 主持人 JSON | `backend/tests/test_group_host_decision.py` |
-| 入口路由 FSM | `backend/tests/test_group_orchestration_fsm.py` |
+| 结构化入口路由 | `backend/tests/test_group_entry_router.py` |
 | 消息结构 | `backend/tests/test_message_contracts.py` |
 | 资源身份 | `backend/tests/test_name_based_resource_contract.py` |
 | 会话 API | `backend/tests/test_sessions_api.py` |

@@ -298,13 +298,15 @@ http://<server-ip>:8100
 
 重点确认：
 
-- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`content`、`artifacts`、`next_action`；
-- `content` 是脚本文本结果，平台不做 LLM 总结或改写；
-- `artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`；
+- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`message`、`next_action`；
+- `message.content` 是专家最终展示正文，平台不做 LLM 总结或改写；
+- `message.artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`；
 - `next_action.agent_turn` 只允许 `continue` 或 `respond`；
 - `next_action.skill_session` 只允许 `keep` 或 `release`；
-- `next_action.skill_session=keep` 表示保留同一专家与同一 Skill，等待用户补充或继续处理；
-- `next_action.skill_session=release` 表示 Skill 本轮流程结束，释放会话锁并交回四九调度；
+- `next_action.agent_turn=continue` 表示同一专家继续下一次 `agent_turn`；
+- `next_action.agent_turn=respond` 表示当前专家把控制权交回主持人/编排层；
+- `next_action.skill_session=keep` 表示同一专家后续被调用时沿用当前 Skill；
+- `next_action.skill_session=release` 表示同一专家后续被调用时重新选择 Skill；
 - 脚本型 Skill 使用 `scripts/manifest.json` 的 `args` 结构化字段；平台负责转换为 CLI 参数，不暴露 `cli_args`。
 
 建议执行：

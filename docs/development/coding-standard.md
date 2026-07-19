@@ -173,8 +173,8 @@ def test_chat_request_rejects_legacy_action_field():
 按改动范围选择最小验证集：
 
 ```bash
-rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_host_decision.py backend/app/agent/group_orchestration_fsm.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
-rtk python -m pytest backend/tests/test_group_host_decision.py backend/tests/test_group_orchestration_fsm.py backend/tests/test_group_chat_stream_protocol.py -q
+rtk python -m py_compile backend/app/api/sessions.py backend/app/agent/group_chat_runtime.py backend/app/agent/group_host_decision.py backend/app/agent/group_entry_router.py backend/app/agent/expert_runtime.py backend/app/agent/tools_for_skill.py
+rtk python -m pytest backend/tests/test_group_host_decision.py backend/tests/test_group_entry_router.py backend/tests/test_group_chat_stream_protocol.py -q
 rtk npm --prefix frontend run build
 ```
 

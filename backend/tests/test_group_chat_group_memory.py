@@ -152,10 +152,6 @@ def test_persist_group_memory_turn_updates_index_from_message_artifacts(tmp_path
         "created_at": "2026-05-13T12:31:50+00:00",
         "skill_result": {
             "execution_status": "succeeded",
-            "next_action": {
-                "agent_turn": "respond",
-                "skill_session": "release",
-            },
         },
     }
 

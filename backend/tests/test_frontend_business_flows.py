@@ -403,7 +403,6 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     answer = "2+2 等于 4。"
     final_state = json.dumps(
         {
-            "schema_version": "expert_final_state.v2",
             "execution_status": "succeeded",
             "message": {"content": answer},
             "next_action": {"agent_turn": "respond", "skill_session": "release"},

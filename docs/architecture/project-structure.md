@@ -69,7 +69,7 @@ shichai/
 | `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, session_id)`，按当前 Skill 的 `allowed-tools.mcp` / `allowed-tools.http_api` 注入外部工具，默认注入工作区 CRUD，并按 `scripts/manifest.json` 注入当前 Skill 脚本工具。 |
 | `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
 | `group_chat_runtime.py` | 群聊一轮请求的总编排入口，串联路由、主持人、专家、工具、历史和 SSE。 |
-| `group_orchestration_fsm.py` | 会话入口路由优先级和短期续跑状态解析。 |
+| `group_entry_router.py` | 会话结构化入口路由；不解释用户自然语言，不读取 Skill 绑定决定下一位专家。 |
 | `group_host_decision.py` | 主持人严格 JSON 输出解析、校验和保护决策。 |
 | `group_chat_prompt_builder.py` | 群聊运行 Prompt 块组装。 |
 | `group_chat_streaming.py` | SSE 事件构造和流式输出辅助。 |

@@ -8,7 +8,6 @@ from app.agent.tool_trace_contracts import ToolResultRecord
 
 
 _WORKSPACE_TOOL_NAMES = {
-    "create_workspace_artifact",
     "read_workspace_file",
     "write_workspace_file",
     "edit_workspace_file",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 from typing import Any, Dict, List
 
@@ -128,6 +129,18 @@ def scheduler_memory_prompt(group_session_id: str, messages: List[Dict[str, Any]
     """Host scheduling memory prompt: just the recent conversation excerpt."""
     _ = group_session_id
     return messages_to_context(messages)
+
+
+def skill_sessions_to_host_context(skill_sessions: Dict[str, Any] | None) -> str:
+    """Serialize validated Skill affinity as context, never as a route decision."""
+    clean: Dict[str, Dict[str, str]] = {}
+    for raw_agent_name, raw_binding in (skill_sessions or {}).items():
+        agent_name = str(raw_agent_name or "").strip()
+        binding = raw_binding if isinstance(raw_binding, dict) else {}
+        skill = str(binding.get("skill") or "").strip()
+        if agent_name and skill:
+            clean[agent_name] = {"skill": skill}
+    return json.dumps(clean, ensure_ascii=False, separators=(",", ":")) if clean else "（无）"
 
 
 def normalize_discussion_goal(raw: str, max_len: int = 200) -> str:

@@ -8,7 +8,7 @@
 |------|------|----------|
 | `requirements/` | 用户需求、验收口径、需求追踪矩阵 | [user-requirements.md](requirements/user-requirements.md)、[acceptance-and-tests.md](requirements/acceptance-and-tests.md) |
 | `contracts/` | 字段、接口、运行、环境变量和 Prompt 组装契约源头 | [runtime-interface-contract.md](contracts/runtime-interface-contract.md)、[data-structure-and-field-logic.md](contracts/data-structure-and-field-logic.md)、[user-env-vars-contract.md](contracts/user-env-vars-contract.md)、[prompt-assembly-contract.md](contracts/prompt-assembly-contract.md) |
-| `design/` | 正式详细设计和接口说明 | [detailed-design-spec.md](design/detailed-design-spec.md)、[interface-document.md](design/interface-document.md)、[expert-prompt-template.md](design/expert-prompt-template.md) |
+| `design/` | 正式详细设计和接口说明 | [detailed-design-spec.md](design/detailed-design-spec.md)、[interface-document.md](design/interface-document.md)、[collaborative-prompt-template-design.md](design/collaborative-prompt-template-design.md) |
 | `architecture/` | 架构图、项目结构、资源包和运行边界说明 | [system-architecture.md](architecture/system-architecture.md)、[project-structure.md](architecture/project-structure.md)、[scenario-bundle-export.md](architecture/scenario-bundle-export.md)、[images-and-dependencies.md](architecture/images-and-dependencies.md) |
 | `testing/` | 测试用例、契约实施追踪、回归测试、上线前测试、全流程业务测试 | [test-case-catalog.md](testing/test-case-catalog.md)、[contract-traceability-matrix.md](testing/contract-traceability-matrix.md)、[layer1-regression.md](testing/layer1-regression.md)、[pre-release-testing.md](testing/pre-release-testing.md)、[full-flow-business-tests.md](testing/full-flow-business-tests.md) |
 | `user-manual/` | 面向用户和验收人员的操作手册、截图、PDF | [user-guide.md](user-manual/user-guide.md)、[README.md](user-manual/README.md) |
