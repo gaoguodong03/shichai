@@ -26,6 +26,18 @@ def _read_skill(path: Path) -> tuple[dict, str]:
     return yaml.safe_load(frontmatter) or {}, body
 
 
+def _read_host_flow_rows(body: str) -> list[dict[str, str]]:
+    table_lines = [line for line in body.splitlines() if line.startswith("|")]
+    assert len(table_lines) >= 3
+    headers = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
+    assert headers == ["当前阶段", "如果", "主持人就", "然后进入"]
+    assert all(set(cell.strip()) <= {"-", ":"} for cell in table_lines[1].strip("|").split("|"))
+    return [
+        dict(zip(headers, [cell.strip() for cell in line.strip("|").split("|")], strict=True))
+        for line in table_lines[2:]
+    ]
+
+
 def test_collaboration_scenario_has_three_current_protocol_experts():
     scenario = _read_json(USER_RESOURCE_ROOT / "scenarios" / "协作" / "scenario.json")
 
@@ -64,6 +76,56 @@ def test_collaboration_scenario_has_three_current_protocol_experts():
     assert "信息检索专家" in host_body
     assert "文档合著专家" in host_body
     assert "图片生成专家" in host_body
+    assert (
+        "| 资料检索 | 资料检索已经完成，用户剩余目标包括图片或图文装配且不包括文档写作 | "
+        "调度`图片生成专家`"
+    ) in host_body
+
+    flow_rows = _read_host_flow_rows(host_body)
+    rows_by_phase = {
+        phase: [row for row in flow_rows if row["当前阶段"] == phase]
+        for phase in {row["当前阶段"] for row in flow_rows}
+    }
+    assert set(rows_by_phase) == {"（无）", "资料检索", "文档合著", "图片生成"}
+    assert {row["然后进入"] for row in flow_rows} <= {
+        "（无）",
+        "资料检索",
+        "文档合著",
+        "图片生成",
+        "end",
+    }
+    expected_routing = {
+        "（无）": (
+            ("询问用户：", "（无）"),
+            ("调度`信息检索专家`", "资料检索"),
+            ("调度`文档合著专家`", "文档合著"),
+            ("调度`图片生成专家`", "图片生成"),
+        ),
+        "资料检索": (
+            ("调度`信息检索专家`", "资料检索"),
+            ("询问用户：", "资料检索"),
+            ("调度`文档合著专家`", "文档合著"),
+            ("调度`图片生成专家`", "图片生成"),
+            ("告知用户协作结束：", "end"),
+        ),
+        "文档合著": (
+            ("询问用户：", "文档合著"),
+            ("调度`文档合著专家`", "文档合著"),
+            ("调度`图片生成专家`", "图片生成"),
+            ("告知用户协作结束：", "end"),
+        ),
+        "图片生成": (
+            ("询问用户：", "图片生成"),
+            ("调度`图片生成专家`", "图片生成"),
+            ("告知用户协作结束：", "end"),
+        ),
+    }
+    for phase, expected_rows in expected_routing.items():
+        actual_rows = rows_by_phase[phase]
+        assert len(actual_rows) == len(expected_rows)
+        for row, (action_prefix, target_phase) in zip(actual_rows, expected_rows, strict=True):
+            assert row["主持人就"].startswith(action_prefix)
+            assert row["然后进入"] == target_phase
     for platform_field in (
         '"current_phase"',
         '"message"',
@@ -138,11 +200,28 @@ def test_collaboration_experts_follow_cross_scenario_prompt_template():
             assert heading in prompt
         for fragment in specialty:
             assert fragment in prompt
-        for fragment in ('"execution_status"', '"next_action"', "continue + keep", "respond + release"):
+        for fragment in (
+            '"execution_status"',
+            '"next_action"',
+            "continue + keep",
+            "continue + release",
+            "respond + keep",
+            "respond + release",
+        ):
             assert fragment in prompt
+        assert "execution_status 只允许 succeeded、blocked 或 failed" in prompt
+        assert "agent_turn 只允许 continue 或 respond" in prompt
+        assert "skill_session 只允许 keep 或 release" in prompt
         assert "不选择下一位专家" in prompt
         assert "不得填写 target_agent_name" in prompt
         assert "协同写作场景" not in prompt
+
+        output_start = prompt.index("{", prompt.index("输出："))
+        output_end = prompt.index("\n- execution_status", output_start)
+        output_example = json.loads(prompt[output_start:output_end])
+        assert set(output_example) == {"execution_status", "message", "next_action"}
+        assert set(output_example["message"]) == {"content", "attachments", "artifacts"}
+        assert set(output_example["next_action"]) == {"agent_turn", "skill_session"}
 
 
 def test_collaboration_host_owns_dispatch_output_while_coauthor_uses_business_template():
@@ -159,6 +238,15 @@ def test_collaboration_host_owns_dispatch_output_while_coauthor_uses_business_te
     assert '"next_action": "' not in host_body
     assert coauthor_body.count("## 执行规则") == 1
     assert coauthor_body.count("## 结束条件") == 1
+    for business_gate in (
+        "大纲未确认前不写正文",
+        "当前章节未确认前不进入下一节",
+        "所有章节确认后",
+        "最终完整文档已经保存",
+        "- 等待用户：",
+        "- 完成：",
+    ):
+        assert business_gate in coauthor_body
     for platform_fragment in (
         "expert_final_state",
         "schema_version",
