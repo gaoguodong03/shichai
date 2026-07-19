@@ -130,9 +130,17 @@ class _RepeatedToolSynthesisLLM:
 
 
 class _BudgetFinalizerState:
-    def __init__(self, *, tool_calls: list[AIMessage], final_message: AIMessage):
+    def __init__(
+        self,
+        *,
+        tool_calls: list[AIMessage],
+        final_message: AIMessage,
+        retry_final_message: AIMessage | None = None,
+    ):
         self.tool_calls = list(tool_calls)
-        self.final_message = final_message
+        self.final_messages = [final_message]
+        if retry_final_message is not None:
+            self.final_messages.append(retry_final_message)
         self.bound_calls = 0
         self.unbound_calls = 0
         self.json_mode_calls = 0
@@ -177,10 +185,11 @@ class _BudgetFinalizerClient:
 
     async def ainvoke(self, messages):
         if not self._bound:
+            index = min(self._state.unbound_calls, len(self._state.final_messages) - 1)
             self._state.unbound_calls += 1
             if self._json_mode:
                 self._state.json_mode_calls += 1
-            return self._state.final_message
+            return self._state.final_messages[index]
         response = self._state.tool_calls[min(self._state.bound_calls, len(self._state.tool_calls) - 1)]
         self._state.bound_calls += 1
         return response
@@ -345,6 +354,60 @@ async def test_simple_agent_uses_structured_finalizer_when_tool_budget_is_exhaus
         item.get("source") == "tool_budget_exhausted_finalizer"
         for item in (out.get("tool_attempt_debug") or [])
     )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_retries_schema_invalid_tool_budget_finalizer_once():
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "沈腾"}}],
+    )
+    invalid_schema = AIMessage(
+        content=json.dumps(
+            {
+                "execution_status": "succeeded",
+                "message": {"content": "资料已整理。"},
+                "next_action": {"agent_turn": "respond"},
+            },
+            ensure_ascii=False,
+        )
+    )
+    valid_final = AIMessage(content=json.dumps(_v2_skill_stdout(instruction="资料已整理完成。"), ensure_ascii=False))
+    state = _BudgetFinalizerState(
+        tool_calls=[search_call],
+        final_message=invalid_schema,
+        retry_final_message=valid_final,
+    )
+
+    async def _tool_runner(tool_state, tools):
+        tool_call = tool_state["messages"][-1].tool_calls[0]
+        return {
+            "messages": [ToolMessage(content="检索完成", tool_call_id=tool_call["id"])],
+            "tool_calls": [{"tool": tool_call["name"], "arguments": tool_call["args"]}],
+            "tool_results": [
+                {
+                    "tool_call": {"name": tool_call["name"], "kind": "mcp"},
+                    "execution_status": "succeeded",
+                    "output": {"content": "检索完成"},
+                }
+            ],
+            "tool_raw_outputs": ["检索完成"],
+        }
+
+    agent = SimpleAgent(
+        llm=_BudgetFinalizerLLM(state),
+        tools=[ToolSpec(name="mcp_web_search", description="search")],
+        system_prompt="输出 expert_final_state.v2。",
+        tool_runner=_tool_runner,
+        max_steps=1,
+        final_output_model=ExpertFinalStatePayload,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜集资料")]})
+
+    assert state.unbound_calls == 2
+    assert state.json_mode_calls == 2
+    assert json.loads(str(out["messages"][-1].content)) == json.loads(str(valid_final.content))
 
 
 @pytest.mark.asyncio
@@ -725,6 +788,131 @@ async def test_simple_agent_normalizes_invalid_final_json_only_after_model_stops
         item.get("source") == "stopped_tool_loop_structured_finalizer"
         for item in (out.get("tool_attempt_debug") or [])
     )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_retries_schema_invalid_structured_finalizer_once():
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {"path": "web-crawler/report.md", "content": "资料"},
+            }
+        ],
+    )
+    invalid_schema = AIMessage(
+        content=json.dumps(
+            {
+                "execution_status": "succeeded",
+                "message": {"content": "资料已保存。"},
+                "next_action": {"agent_turn": "respond"},
+            },
+            ensure_ascii=False,
+        )
+    )
+    valid_final = AIMessage(
+        content=json.dumps(
+            _v2_skill_stdout(
+                instruction="资料已保存到 web-crawler/report.md，请确认是否足够。",
+                artifacts=[{"type": "markdown", "name": "report.md", "path": "web-crawler/report.md"}],
+                skill_session="keep",
+            ),
+            ensure_ascii=False,
+        )
+    )
+
+    class _State:
+        def __init__(self):
+            self.bound_calls = 0
+            self.json_bind_calls = 0
+            self.finalizer_outputs = [invalid_schema, valid_final]
+            self.finalizer_messages = []
+
+    class _Client:
+        def __init__(self, state, *, bound=False, json_mode=False):
+            self.state = state
+            self.bound = bound
+            self.json_mode = json_mode
+
+        def bind_tools(self, tools, *args, **kwargs):
+            return _Client(self.state, bound=True, json_mode=self.json_mode)
+
+        def bind(self, **kwargs):
+            self.state.json_bind_calls += 1
+            response_format = kwargs.get("response_format")
+            return _Client(
+                self.state,
+                bound=self.bound,
+                json_mode=isinstance(response_format, dict) and response_format.get("type") == "json_object",
+            )
+
+        async def ainvoke(self, messages):
+            if self.bound:
+                self.state.bound_calls += 1
+                if self.state.bound_calls == 1:
+                    return write_call
+                return AIMessage(content="资料写入完成。")
+            self.state.finalizer_messages.append(messages)
+            return self.state.finalizer_outputs.pop(0)
+
+    class _LLM:
+        def __init__(self, state):
+            self.state = state
+
+        def get_client(self):
+            return _Client(self.state)
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：web-crawler/report.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "web-crawler/report.md", "content": "资料"},
+                }
+            ],
+            "tool_results": [
+                {
+                    "tool_call": {"name": "write_workspace_file", "kind": "workspace"},
+                    "execution_status": "succeeded",
+                    "output": {
+                        "content": "已写入当前 Chat 工作区文件：web-crawler/report.md",
+                        "artifacts": [
+                            {"type": "markdown", "name": "report.md", "path": "web-crawler/report.md"}
+                        ],
+                    },
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/report.md"],
+        }
+
+    state = _State()
+    agent = SimpleAgent(
+        llm=_LLM(state),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="输出 expert_final_state.v2。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        final_output_model=ExpertFinalStatePayload,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="保存资料并返回结果")]})
+
+    assert json.loads(str(out["messages"][-1].content)) == json.loads(str(valid_final.content))
+    assert len(state.finalizer_messages) == 2
+    assert state.json_bind_calls == 1
+    assert "上一条内容不符合 expert_final_state.v2" in state.finalizer_messages[-1][-2].content
+    assert sum(
+        "上一条内容不符合 expert_final_state.v2" in str(message.content)
+        for message in state.finalizer_messages[-1]
+    ) == 1
+    for finalizer_messages in state.finalizer_messages:
+        schema_content = str(finalizer_messages[-1].content)
+        assert "Pydantic JSON Schema" in schema_content
+        assert '"ArtifactRef"' in schema_content
+        assert '"path"' in schema_content
 
 
 @pytest.mark.asyncio

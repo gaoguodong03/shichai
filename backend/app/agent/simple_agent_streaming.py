@@ -88,18 +88,27 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
     last_tool_signature = ""
     output_continuations = 0
     text_tool_protocol_retries = 0
+
+    async def _invoke_structured_finalizer(finalizer_client: Any):
+        correction = _post_tool_decision_instruction(
+            all_tool_raw_outputs,
+            tool_results=all_tool_results,
+        )
+        retry_messages = [*messages]
+        if not retry_messages or str(getattr(retry_messages[-1], "content", "")) != str(correction.content):
+            retry_messages.append(correction)
+        return await invoke_pydantic_llm_output(
+            finalizer_client,
+            messages,
+            agent.final_output_model,
+            retry_messages=retry_messages,
+        )
+
     async def _finalize_stopped_tool_loop(step: int) -> AIMessage:
         messages.append(_post_tool_decision_instruction(all_tool_raw_outputs, tool_results=all_tool_results))
         if agent.final_output_model is not None:
             finalizer_client = agent.llm.get_client()
-            bind_fn = getattr(finalizer_client, "bind", None)
-            if callable(bind_fn):
-                finalizer_client = bind_fn(response_format={"type": "json_object"})
-            parsed_final = await invoke_pydantic_llm_output(
-                finalizer_client,
-                messages,
-                agent.final_output_model,
-            )
+            parsed_final = await _invoke_structured_finalizer(finalizer_client)
             final_message = AIMessage(
                 content=json.dumps(parsed_final.model_dump(mode="json", exclude_none=True), ensure_ascii=False)
             )
@@ -321,14 +330,7 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 )
             )
             finalizer_client = agent.llm.get_client()
-            bind_fn = getattr(finalizer_client, "bind", None)
-            if callable(bind_fn):
-                finalizer_client = bind_fn(response_format={"type": "json_object"})
-            parsed_final = await invoke_pydantic_llm_output(
-                finalizer_client,
-                messages,
-                agent.final_output_model,
-            )
+            parsed_final = await _invoke_structured_finalizer(finalizer_client)
             final_message = AIMessage(
                 content=json.dumps(parsed_final.model_dump(mode="json", exclude_none=True), ensure_ascii=False)
             )

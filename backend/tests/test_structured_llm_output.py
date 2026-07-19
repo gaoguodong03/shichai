@@ -1,8 +1,11 @@
 """Tests for the shared structured LLM output gateway."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from app.agent.expert_completion_contract import ExpertFinalStatePayload
 from app.agent.messages import HumanMessage
 from app.agent.llm_prompt_trace import instrument_llm_client
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
@@ -84,6 +87,52 @@ async def test_invoke_pydantic_llm_output_reuses_json_mode_for_retry():
     assert out.selected_skill == "research"
     assert state.bind_calls == [{"response_format": {"type": "json_object"}}]
     assert [call["json_mode"] for call in state.calls] == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_supplies_exact_schema_on_first_and_retry_calls():
+    invalid_artifacts = {
+        "execution_status": "succeeded",
+        "message": {
+            "content": "资料已保存。",
+            "artifacts": ["web-crawler/report.md"],
+        },
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+    valid_final = {
+        "execution_status": "succeeded",
+        "message": {
+            "content": "资料已保存。",
+            "artifacts": [
+                {
+                    "type": "markdown",
+                    "name": "report.md",
+                    "path": "web-crawler/report.md",
+                }
+            ],
+        },
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+    client = _Client(
+        json.dumps(invalid_artifacts, ensure_ascii=False),
+        json.dumps(valid_final, ensure_ascii=False),
+    )
+
+    out = await invoke_pydantic_llm_output(
+        client,
+        [HumanMessage(content="finalize")],
+        ExpertFinalStatePayload,
+        retry_messages=[HumanMessage(content="retry with strict JSON")],
+    )
+
+    assert out.message.artifacts[0].path == "web-crawler/report.md"
+    assert len(client.calls) == 2
+    for call in client.calls:
+        schema_message = call[-1]
+        assert isinstance(schema_message, HumanMessage)
+        assert "Pydantic JSON Schema" in str(schema_message.content)
+        assert '"ArtifactRef"' in str(schema_message.content)
+        assert '"path"' in str(schema_message.content)
 
 
 @pytest.mark.asyncio
