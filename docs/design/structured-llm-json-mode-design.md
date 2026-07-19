@@ -18,6 +18,7 @@ Pydantic 校验位于 JSON 文本解析之后。带围栏的响应会在进入 `
 
 - 当客户端提供可调用的 `bind` 方法时，调用 `bind(response_format={"type": "json_object"})`；
 - 当客户端没有 `bind` 方法时，保留原客户端，使测试替身和非标准客户端继续由现有严格解析与重试处理；
+- 当客户端经过 `TracedLLMClient` 包装但底层没有 `bind` 方法时，追踪包装器返回自身，继续保留提示词追踪并调用底层 `ainvoke(...)`；
 - 首次调用和协议重试必须复用同一个已绑定客户端；
 - 不剥离 Markdown 围栏、不提取文本中的 JSON、不放宽额外字段规则；
 - 返回结果仍依次经过裸 JSON 解析、Pydantic `model_validate(...)` 和调用方 `post_validate` 业务校验。
@@ -27,6 +28,7 @@ Pydantic 校验位于 JSON 文本解析之后。带围栏的响应会在进入 `
 ## 文件范围
 
 - 修改 `backend/app/agent/structured_llm_output.py`：集中绑定 JSON Object 模式。
+- 修改 `backend/app/agent/llm_prompt_trace.py`：让追踪包装器准确回退到底层客户端能力。
 - 修改 `backend/tests/test_structured_llm_output.py`：验证首次调用、协议重试和无 `bind` 客户端的行为。
 
 不修改主持人协议字段、提示词、前端展示、持久化会话或现有历史数据。
@@ -35,7 +37,7 @@ Pydantic 校验位于 JSON 文本解析之后。带围栏的响应会在进入 `
 
 1. 新增支持 `bind(...)` 的记录客户端，断言网关在第一次模型调用前绑定 `response_format={"type": "json_object"}`。
 2. 让第一次响应仍为非法自由文本、第二次为合法 JSON，断言两次 `ainvoke(...)` 都发生在 JSON 模式客户端上。
-3. 保留不实现 `bind(...)` 的现有测试客户端，证明兼容回退不改变严格解析和重试语义。
+3. 保留不实现 `bind(...)` 的现有测试客户端，并覆盖其经过 `TracedLLMClient` 包装后的真实边界，证明兼容回退不改变严格解析、提示词追踪和重试语义。
 4. 运行主持人调度测试，确认 `HostSchedulerDecisionPayload`、目标专家业务校验和协议错误行为保持不变。
 5. 使用当前默认模型做一次不落盘复现，确认首次响应直接为裸 JSON，且主持人决策通过现有 Pydantic 校验。
 

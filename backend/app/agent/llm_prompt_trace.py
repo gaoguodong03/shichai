@@ -43,7 +43,9 @@ class TracedLLMClient:
         return getattr(self._raw_client, item)
 
     def bind(self, *args: Any, **kwargs: Any) -> Any:
-        bind_fn = getattr(self._raw_client, "bind")
+        bind_fn = getattr(self._raw_client, "bind", None)
+        if not callable(bind_fn):
+            return self
         return instrument_llm_client(
             bind_fn(*args, **kwargs),
             provider_base_url=self._provider_base_url,

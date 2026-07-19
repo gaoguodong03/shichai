@@ -15,12 +15,14 @@
 ## 文件结构
 
 - 修改 `backend/app/agent/structured_llm_output.py`：拥有结构化 LLM 调用的 JSON 模式绑定与 Pydantic 校验流程。
+- 修改 `backend/app/agent/llm_prompt_trace.py`：底层无 `bind` 时安全保留追踪包装器。
 - 修改 `backend/tests/test_structured_llm_output.py`：覆盖绑定、重试复用和无绑定能力回退。
 
 ### 任务 1：共享网关绑定 JSON Object 模式
 
 **文件：**
 - 修改：`backend/app/agent/structured_llm_output.py`
+- 修改：`backend/app/agent/llm_prompt_trace.py`
 - 测试：`backend/tests/test_structured_llm_output.py`
 
 - [ ] **步骤 1：编写失败的首次调用 JSON 模式测试**
@@ -70,6 +72,8 @@ def _bind_json_object_mode(client: Any) -> Any:
 
 并在第一次 `ainvoke(...)` 前绑定一次，首次调用和重试都使用返回的客户端。
 
+为经过提示词追踪包装、但底层没有 `bind` 的客户端补充失败测试；在 `TracedLLMClient.bind(...)` 中仅当底层 `bind` 可调用时才转发，否则返回当前包装器。
+
 - [ ] **步骤 6：运行结构化网关测试确认通过**
 
 运行：
@@ -78,7 +82,7 @@ def _bind_json_object_mode(client: Any) -> Any:
 rtk conda run -n st49 pytest backend/tests/test_structured_llm_output.py -q
 ```
 
-预期：全部通过；现有无 `bind` 测试客户端继续证明兼容回退。
+预期：全部通过；裸客户端和经过提示词追踪包装的无 `bind` 客户端都继续证明兼容回退。
 
 - [ ] **步骤 7：运行主持人和专家结构化输出回归测试**
 
@@ -95,7 +99,7 @@ rtk conda run -n st49 pytest backend/tests/test_host_takeover.py backend/tests/t
 运行：
 
 ```bash
-rtk conda run -n st49 python -m compileall -q backend/app/agent/structured_llm_output.py backend/tests/test_structured_llm_output.py
+rtk conda run -n st49 python -m compileall -q backend/app/agent/structured_llm_output.py backend/app/agent/llm_prompt_trace.py backend/tests/test_structured_llm_output.py
 ```
 
 预期：退出码 0。
@@ -116,7 +120,7 @@ rtk conda run -n st49 python -m compileall -q backend/app/agent/structured_llm_o
 只暂存以下文件，不包含工作区既有修改：
 
 ```bash
-rtk git add backend/app/agent/structured_llm_output.py backend/tests/test_structured_llm_output.py docs/superpowers/specs/2026-07-19-structured-llm-json-mode-design.md docs/superpowers/plans/2026-07-19-structured-llm-json-mode.md
+rtk git add backend/app/agent/structured_llm_output.py backend/app/agent/llm_prompt_trace.py backend/tests/test_structured_llm_output.py docs/design/structured-llm-json-mode-design.md docs/design/structured-llm-json-mode-plan.md
 rtk git diff --cached --check
 rtk git commit -m "fix(协议): 为 Pydantic 输出启用 JSON 模式"
 ```

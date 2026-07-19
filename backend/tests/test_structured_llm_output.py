@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.agent.messages import HumanMessage
+from app.agent.llm_prompt_trace import instrument_llm_client
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
 from app.agent.structured_output_contracts import (
     ExpertSkillSelectionPayload,
@@ -83,6 +84,25 @@ async def test_invoke_pydantic_llm_output_reuses_json_mode_for_retry():
     assert out.selected_skill == "research"
     assert state.bind_calls == [{"response_format": {"type": "json_object"}}]
     assert [call["json_mode"] for call in state.calls] == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_keeps_traced_client_without_bind_compatible():
+    raw_client = _Client('{"selected_skill":"research"}')
+    traced_client = instrument_llm_client(
+        raw_client,
+        provider_base_url="https://example.test/v1",
+        model_name="test-model",
+    )
+
+    out = await invoke_pydantic_llm_output(
+        traced_client,
+        [HumanMessage(content="select")],
+        ExpertSkillSelectionPayload,
+    )
+
+    assert out.selected_skill == "research"
+    assert len(raw_client.calls) == 1
 
 
 @pytest.mark.asyncio
