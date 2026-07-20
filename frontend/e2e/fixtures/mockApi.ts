@@ -64,6 +64,7 @@ type Skill = {
   directory_name?: string
   name: string
   description: string
+  body?: string
   allowed_tools?: {
     mcp?: string[]
     python?: string
@@ -665,10 +666,10 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const skill = state.skills.find((s) => s.directory_name === decodeURIComponent(skillContentMatch[1]))
       if (!skill) return notFound(route)
       return ok(route, {
-        raw: `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n# ${skill.name}\n\n执行用户可见的验收任务。`,
+        raw: `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.body || `# ${skill.name}\n\n执行用户可见的验收任务。`}`,
         name: skill.name,
         description: skill.description,
-        body: `# ${skill.name}\n\n执行用户可见的验收任务。`,
+        body: skill.body || `# ${skill.name}\n\n执行用户可见的验收任务。`,
         allowed_tools: skill.allowed_tools || { mcp: [], python: '' },
       })
     }

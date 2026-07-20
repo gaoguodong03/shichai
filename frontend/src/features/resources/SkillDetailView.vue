@@ -1215,28 +1215,6 @@ onBeforeUnmount(() => {
   opacity: 0.82;
 }
 
-.skill-markdown-preview :deep(h1) { font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem; }
-.skill-markdown-preview :deep(h2) { font-size: 1.2rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
-.skill-markdown-preview :deep(h3) { font-size: 1.05rem; font-weight: 600; margin: 0.6rem 0 0.3rem; }
-.skill-markdown-preview :deep(p) { margin: 0 0 0.5rem; line-height: 1.6; }
-.skill-markdown-preview :deep(ul) { list-style: disc; margin: 0 0 0.5rem 1.25rem; }
-.skill-markdown-preview :deep(ol) { list-style: decimal; margin: 0 0 0.5rem 1.25rem; }
-.skill-markdown-preview :deep(pre) {
-  margin: 0.5rem 0;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  background: var(--color-list-hover);
-  border: 1px solid var(--color-border-light);
-  overflow: auto;
-}
-.skill-markdown-preview :deep(code) {
-  background: var(--color-list-hover);
-  border: 1px solid var(--color-border-light);
-  border-radius: 0.25rem;
-  padding: 0.1rem 0.3rem;
-}
-.skill-markdown-preview :deep(a) { color: var(--color-accent); text-decoration: underline; }
-
 .file-detail-markdown :deep(h1) { font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem; margin-bottom: 0.5rem; }
 .file-detail-markdown :deep(h2) { font-size: 1.25rem; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0.25rem; }
 .file-detail-markdown :deep(h3) { font-size: 1.125rem; font-weight: 600; margin-top: 0.5rem; }

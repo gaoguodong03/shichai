@@ -59,6 +59,50 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: /Scripts/ })).toBeVisible()
   })
 
+  test('技能正文按标准 Markdown 层级和块元素排版', async ({ page }) => {
+    const state = createE2eState()
+    state.skills[0].body = [
+      '# 伴学研讨材料研究',
+      '',
+      '## 执行规则',
+      '',
+      '1. 围绕同一争议寻找材料。',
+      '2. 标明来源和视角。',
+      '',
+      '> 检索结束后整理现有材料。',
+      '',
+      '| 类型 | 要求 |',
+      '| --- | --- |',
+      '| 案例 | 可追溯 |',
+      '',
+      '`Exa` 用于检索。',
+    ].join('\n')
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/resources/skill')
+
+    const preview = page.locator('.skill-markdown-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview.locator('h1')).toHaveText('伴学研讨材料研究')
+    await expect(preview.locator('h2')).toHaveText('执行规则')
+    await expect(preview.locator('ol')).toHaveCSS('list-style-type', 'decimal')
+    await expect(preview.locator('blockquote')).toHaveCSS('border-left-width', '4px')
+    await expect(preview.locator('table')).toBeVisible()
+
+    const typography = await preview.evaluate((element) => {
+      const heading = element.querySelector('h1')
+      const paragraph = element.querySelector('p')
+      return {
+        headingSize: heading ? Number.parseFloat(getComputedStyle(heading).fontSize) : 0,
+        headingWeight: heading ? Number.parseInt(getComputedStyle(heading).fontWeight, 10) : 0,
+        paragraphSize: paragraph ? Number.parseFloat(getComputedStyle(paragraph).fontSize) : 0,
+      }
+    })
+    expect(typography.headingSize).toBeGreaterThan(typography.paragraphSize)
+    expect(typography.headingWeight).toBeGreaterThanOrEqual(700)
+  })
+
   test('技能详情页工具空状态使用统一描述', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/skill')
 

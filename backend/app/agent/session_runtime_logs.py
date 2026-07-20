@@ -305,7 +305,10 @@ def _argument_summary(arguments: Any) -> str:
         elif isinstance(value, (int, float, bool)) or value is None:
             parts.append(f"{key}={value}")
         else:
-            parts.append(f"{key}=<{type(value).__name__}>")
+            json_str = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            if len(json_str) > 120:
+                json_str = json_str[:117] + "..."
+            parts.append(f"{key}={json_str}")
     return "; ".join(parts)
 
 
@@ -320,6 +323,12 @@ def _output_summary(output: Any) -> str:
     if isinstance(json_value, dict) and json_value:
         status = json_value.get("content") or json_value.get("message") or json_value.get("execution_status")
         if status:
+            if isinstance(status, dict):
+                content_text = _short_text(status.get("content"))
+                if content_text:
+                    return content_text
+                seps = (",", ":")
+                return f"message={json.dumps(status, ensure_ascii=False, separators=seps)}"
             return _short_text(status)
     return ""
 
