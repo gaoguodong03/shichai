@@ -417,7 +417,7 @@ POST /api/sessions/{session_id}/chat/stream
 - Skill 目录不存在：返回缺失引用诊断。
 - `SKILL.md` 缺失、frontmatter 错误或脚本型 Skill 缺少 `scripts/manifest.json`：页面和运行时提示配置不完整。
 - 脚本超时、退出码非零、stdout 非 JSON：回传工具错误。
-- 脚本 stdout 缺少完整 `expert_final_state.v2`、字段非法或与 finalizer 冲突：按协议失败，保留日志，不合成专家回复或兼容映射。
+- 脚本 stdout 缺少完整 `expert_final_state.v2` 或字段非法：按协议失败，保留日志，不合成专家回复或兼容映射；脚本 stdout 与 finalizer 冲突时以脚本 stdout 为准。
 - 依赖缺失：提示维护 requirements 或切换沙箱版本。
 - Skill 会话状态不明确：按严格协议处理，不用旧字段兜底。
 

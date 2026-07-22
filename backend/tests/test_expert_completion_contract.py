@@ -1,9 +1,6 @@
 import json
 
-import pytest
-
 from app.agent.expert_completion_contract import (
-    ExpertFinalStateProtocolError,
     parse_expert_completion,
     select_expert_completion,
 )
@@ -44,17 +41,18 @@ def test_existing_model_json_projects_to_four_internal_objects():
     assert completion.skill_session.action == "keep"
 
 
-def test_script_stdout_and_finalizer_conflict_remains_protocol_error():
-    with pytest.raises(ExpertFinalStateProtocolError, match="互相冲突"):
-        select_expert_completion(
-            final_content=json.dumps(_payload(content="finalizer"), ensure_ascii=False),
-            tool_results=[
-                {
-                    "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
-                    "execution_status": "succeeded",
-                    "output": {
-                        "stdout": json.dumps(_payload(content="script"), ensure_ascii=False),
-                    },
-                }
-            ],
-        )
+def test_script_stdout_takes_precedence_over_conflicting_finalizer():
+    completion = select_expert_completion(
+        final_content=json.dumps(_payload(content="finalizer"), ensure_ascii=False),
+        tool_results=[
+            {
+                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
+                "execution_status": "succeeded",
+                "output": {
+                    "stdout": json.dumps(_payload(content="script"), ensure_ascii=False),
+                },
+            }
+        ],
+    )
+
+    assert completion.output.message.content == "script"

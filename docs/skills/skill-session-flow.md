@@ -107,6 +107,6 @@
 
 ## 6. 脚本 stdout
 
-脚本型 Skill 的 stdout 可以直接输出 `expert_final_state.v2`，字段与非脚本 finalizer 完全一致。脚本输出与 LLM finalizer 同时存在时必须一致；冲突、缺字段、非法枚举或额外旧字段均按协议失败，不做兼容映射或程序合成回复。
+脚本型 Skill 的 stdout 可以直接输出 `expert_final_state.v2`，字段与非脚本 finalizer 完全一致。脚本输出与 LLM finalizer 同时存在时，以脚本输出为准；脚本输出缺字段、非法枚举或额外旧字段均按协议失败，不做兼容映射或程序合成回复。
 
 禁止字段：`schema_version`、顶层 `content`、顶层 `artifacts`、`handoff`、`resume`、`reason`、`instruction`、`result_code`、`workflow_state` 和隐藏状态块标记。

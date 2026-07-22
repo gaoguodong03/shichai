@@ -171,13 +171,7 @@ def select_expert_completion(
     script_payload, script_error = _script_payload_from_tool_results(tool_results)
     if script_error:
         raise ExpertFinalStateProtocolError(script_error)
-    if (
-        content_payload is not None
-        and script_payload is not None
-        and content_payload.model_dump() != script_payload.model_dump()
-    ):
-        raise ExpertFinalStateProtocolError("同一轮出现多个互相冲突的 expert_final_state.v2。")
-    selected = content_payload or script_payload
+    selected = script_payload or content_payload
     if selected is None:
         raise ExpertFinalStateProtocolError("专家没有产出合格的 expert_final_state.v2。") from content_error
     payload = ExpertFinalStatePayload.model_validate(selected.model_dump())
