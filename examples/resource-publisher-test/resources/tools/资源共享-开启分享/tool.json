@@ -1,0 +1,17 @@
+{
+  "name": "资源共享-开启分享",
+  "type": "http_api",
+  "description": "为已创建的资源开启分享，并返回公开链接。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/share",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

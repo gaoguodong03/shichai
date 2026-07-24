@@ -101,6 +101,7 @@
   "tool.schema.saved_http_api.query.v1": "追加或覆盖默认查询参数。",
   "tool.schema.saved_http_api.headers.v1": "追加或覆盖默认请求头。",
   "tool.schema.saved_http_api.body.v1": "覆盖默认请求体；对象会自动序列化为 JSON。",
+  "tool.schema.saved_http_api.workspace_file.v1": "当前会话工作区中的文件，供工具按自身配置上传或读取为文本，格式为 {{\"path\": \"相对路径\"}}。不要提供文件正文或绝对路径。",
   "skill.execution.workspace_read_rule.v1": "当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，你必须优先使用可用文件读取工具，而不是只用自然语言解释路径是否正确；path 必须用用户本条消息里写的路径，不要用会话里较早提到的旧文件路径。",
   "skill.execution.workspace_write_rule.v1": "当本轮任务需要把中间产物、最终产物或新文本文件沉淀到工作区时，调用 `write_workspace_file`，同一次调用传入明确相对路径 path 和完整文本 content，overwrite 默认 false。修改已有文件使用 `edit_workspace_file`，重命名或移动使用 `rename_workspace_file`。不要只说「请手动保存」或把全部内容堆在回复里。",
   "skill.execution.workspace_task_file_rule.v1": "调度任务由平台通过本轮提示词传入，不要自行读写任何调度状态文件。\n\n新建大纲、正文、报告、阶段产物或最终产物时，调用 `write_workspace_file(path, content, overwrite=false)`；path 使用工作区明确相对路径，content 放完整正文。不要在同名错误后自行改用 overwrite=true；需要修改已有文件时使用 `edit_workspace_file`。\n\n只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出「报告已保存至工作区」或类似结论。",

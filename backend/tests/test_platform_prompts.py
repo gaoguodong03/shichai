@@ -665,6 +665,7 @@ def test_saved_http_api_tool_schema_descriptions_use_platform_prompt_registry():
         "tool.schema.saved_http_api.query.v1",
         "tool.schema.saved_http_api.headers.v1",
         "tool.schema.saved_http_api.body.v1",
+        "tool.schema.saved_http_api.workspace_file.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 

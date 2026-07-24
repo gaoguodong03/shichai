@@ -1,4 +1,5 @@
 import { apiRequest } from '@/api/base'
+import { appAlert } from '@/composables/useAppDialog'
 import type { ComputedRef, Ref } from 'vue'
 import { createGroupChatStreamRunner } from './useGroupChatStreamRunner'
 import type { AttachedFile } from './useGroupFileReferences'
@@ -22,6 +23,31 @@ type StreamState = {
 }
 type StreamContent = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
+
+const RESOURCE_PUBLISHER_AGENT_NAME = '资源发布专家'
+const PASTE_TO_WORKSPACE_THRESHOLD = 32 * 1024
+
+function shouldStageResourcePublisherPaste(detail: GroupDetail, message: string, attachmentCount: number): boolean {
+  if (attachmentCount > 0 || message.length <= PASTE_TO_WORKSPACE_THRESHOLD) return false
+  if (!(detail.agent_names || []).includes(RESOURCE_PUBLISHER_AGENT_NAME)) return false
+  return /发布|共享|上传/.test(message)
+}
+
+async function stageResourcePublisherPaste(workspaceId: string, content: string): Promise<{ path: string; name: string }> {
+  const name = `pasted-markdown-${Date.now()}.md`
+  const response = await apiRequest(`/sessions/${encodeURIComponent(workspaceId)}/workspace/files`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: name, content }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || payload?.status !== 'ok') {
+    throw new Error(String(payload?.detail || `长文本暂存失败 (${response.status})`))
+  }
+  const path = String(payload?.data?.path || '').trim()
+  if (!path) throw new Error('长文本暂存失败：服务未返回工作区路径。')
+  return { path, name: path.split('/').pop() || name }
+}
 
 export function useGroupComposerActions(args: {
   selectedGroupSessionId: () => string | null
@@ -141,18 +167,33 @@ export function useGroupComposerActions(args: {
     const targetAgentName = requestTargetAgentName()
     if (!detail || args.groupStreaming.value || (!base && !hasFiles && !targetAgentName)) return
     args.clearAutoSwitchHint()
+    let msg = base
+    let attachments = requestAttachments()
+    try {
+      if (shouldStageResourcePublisherPaste(detail, base, attachments.length)) {
+        const staged = await stageResourcePublisherPaste(detail.id, base)
+        attachments = [...attachments, { type: 'workspace_file', path: staged.path, name: staged.name }]
+        msg = `请将附带的 Markdown 渲染为网页正文发布。`
+      }
+    } catch (error) {
+      console.error('暂存长文本失败', error)
+      await appAlert({
+        title: '发送失败',
+        message: error instanceof Error ? error.message : '长文本暂存失败，请稍后重试。',
+        variant: 'danger',
+      })
+      return
+    }
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
       targetAgentName,
-      files: [...(args.attachedFiles.value || [])],
+      files: attachments.map((file) => ({ path: file.path, name: file.name })),
     }
     args.groupDiscussionGoal.value = ''
     args.groupTargetAgentName.value = null
     const { runToken, abort } = args.beginGroupStream(detail.id, 'routing')
     try {
-      const msg = base
       const messageId = createMessageId()
-      const attachments = requestAttachments()
       const createdAt = currentStorageTimestamp()
       const messageBody: GroupMessage['message'] = { content: msg }
       if (attachments.length) messageBody.attachments = attachments

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from app.core.name_based_resources import (
     normalize_agent_row,
     normalize_scenario_row,
@@ -95,6 +97,72 @@ def test_normalize_tool_row_completes_http_api_executable_config():
     assert "id" not in row
 
 
+def test_normalize_tool_row_keeps_workspace_file_upload_mapping():
+    row = normalize_tool_row(
+        {
+            "name": "资源共享-上传文件",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "path": "/api/write/file",
+                "file_upload": {
+                    "content_base64_field": "contentBase64",
+                    "filename_field": "filename",
+                    "mime_type_field": "mimeType",
+                    "max_bytes": 10485760,
+                },
+            },
+        }
+    )
+
+    assert row["config"]["file_upload"] == {
+        "content_base64_field": "contentBase64",
+        "filename_field": "filename",
+        "mime_type_field": "mimeType",
+        "max_bytes": 10485760,
+    }
+
+
+def test_normalize_tool_row_keeps_workspace_text_mapping():
+    row = normalize_tool_row(
+        {
+            "name": "资源共享-发布 Markdown",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "workspace_text": {
+                    "content_field": "body",
+                    "title_field": "title",
+                    "allowed_extensions": [".md"],
+                    "max_bytes": 10485760,
+                    "encoding": "utf-8",
+                },
+            },
+        }
+    )
+
+    assert row["config"]["workspace_text"] == {
+        "content_field": "body",
+        "title_field": "title",
+        "allowed_extensions": [".md"],
+        "max_bytes": 10485760,
+        "encoding": "utf-8",
+    }
+
+
+def test_normalize_tool_row_rejects_conflicting_workspace_payload_modes():
+    with pytest.raises(ValueError, match="不能同时配置"):
+        normalize_tool_row(
+            {
+                "name": "冲突工具",
+                "type": "http_api",
+                "config": {"file_upload": {}, "workspace_text": {}},
+            }
+        )
+
+
 def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
     from app.tools import call_api as call_api_mod
     from app.tools.http_api_tool import create_http_api_tool
@@ -135,6 +203,162 @@ def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
     assert json.loads(called["headers_json"]) == {"Authorization": "Bearer secret-token"}
     assert json.loads(called["body"]) == {"q": "override"}
     assert called["timeout_seconds"] == 12
+
+
+def test_saved_http_api_tool_encodes_current_workspace_file_for_upload(tmp_path, monkeypatch):
+    from app.tools.http_api_tool import create_http_api_tool
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    (tmp_path / "report.pdf").write_bytes(b"%PDF-test")
+    called = {}
+
+    def fake_call_api(**kwargs):
+        called.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_response_impl", fake_call_api)
+    monkeypatch.setattr(http_api_tool_mod, "get_workspace_root_path", lambda _workspace_id: tmp_path)
+    tool = create_http_api_tool(
+        {
+            "name": "资源共享-上传文件",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "path": "/api/write/file",
+                "file_upload": {
+                    "content_base64_field": "contentBase64",
+                    "filename_field": "filename",
+                    "mime_type_field": "mimeType",
+                    "max_bytes": 1024,
+                },
+            },
+        },
+        workspace_id="session-1",
+    )
+
+    assert tool.invoke({"body": {"title": "测试报告"}, "workspace_file": {"path": "report.pdf"}}) == "ok"
+    assert json.loads(called["body"]) == {
+        "title": "测试报告",
+        "contentBase64": "JVBERi10ZXN0",
+        "filename": "report.pdf",
+        "mimeType": "application/pdf",
+    }
+
+
+def test_saved_http_api_tool_injects_current_workspace_markdown_without_model_content(tmp_path, monkeypatch):
+    from app.tools.http_api_tool import create_http_api_tool
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    inline_image = "A" * 100_000
+    markdown = f"# 展示\n\n![内嵌图片](data:image/png;base64,{inline_image})"
+    (tmp_path / "演示文档.md").write_text(markdown, encoding="utf-8")
+    called = {}
+
+    def fake_call_api(**kwargs):
+        called.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_response_impl", fake_call_api)
+    monkeypatch.setattr(http_api_tool_mod, "get_workspace_root_path", lambda _workspace_id: tmp_path)
+    tool = create_http_api_tool(
+        {
+            "name": "资源共享-发布文字",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "body": {"bodyFormat": "markdown", "accessMode": "public"},
+                "workspace_text": {
+                    "content_field": "body",
+                    "title_field": "title",
+                    "allowed_extensions": [".md"],
+                    "max_bytes": 10485760,
+                    "encoding": "utf-8",
+                },
+            },
+        },
+        workspace_id="session-1",
+    )
+
+    assert tool.invoke({"workspace_file": {"path": "演示文档.md"}}) == "ok"
+    assert json.loads(called["body"]) == {
+        "title": "演示文档",
+        "body": markdown,
+        "bodyFormat": "markdown",
+        "accessMode": "public",
+    }
+    assert len(json.loads(called["body"])["body"]) > 100_000
+
+
+@pytest.mark.parametrize(
+    ("workspace_file", "file_bytes", "error"),
+    [
+        ({"path": "../outside.md"}, None, "文件路径无效"),
+        ({"path": "missing.md"}, None, "工作区文件不存在"),
+        ({"path": "note.txt"}, b"text", "不允许的文件类型"),
+        ({"path": "large.md"}, b"too-large", "文件超过工具允许的大小上限"),
+        ({"path": "invalid.md"}, b"\xff", "无法按 utf-8 解码"),
+    ],
+)
+def test_saved_http_api_tool_rejects_invalid_workspace_text_inputs(tmp_path, monkeypatch, workspace_file, file_bytes, error):
+    from app.tools.http_api_tool import create_http_api_tool
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    if file_bytes is not None:
+        (tmp_path / workspace_file["path"]).write_bytes(file_bytes)
+    monkeypatch.setattr(http_api_tool_mod, "get_workspace_root_path", lambda _workspace_id: tmp_path)
+    tool = create_http_api_tool(
+        {
+            "name": "发布 Markdown",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "workspace_text": {
+                    "allowed_extensions": [".md"],
+                    "max_bytes": 4,
+                    "encoding": "utf-8",
+                },
+            },
+        },
+        workspace_id="session-1",
+    )
+
+    with pytest.raises(ValueError, match=error):
+        tool.invoke({"workspace_file": workspace_file})
+
+
+@pytest.mark.parametrize(
+    ("workspace_file", "file_bytes", "error"),
+    [
+        ({"path": "../outside.pdf"}, None, "文件路径无效"),
+        ({"path": "missing.pdf"}, None, "工作区文件不存在"),
+        ({"path": "large.pdf"}, b"too-large", "文件超过工具允许的大小上限"),
+    ],
+)
+def test_saved_http_api_tool_rejects_invalid_workspace_file_uploads(tmp_path, monkeypatch, workspace_file, file_bytes, error):
+    from app.tools.http_api_tool import create_http_api_tool
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    if file_bytes is not None:
+        (tmp_path / workspace_file["path"]).write_bytes(file_bytes)
+    monkeypatch.setattr(http_api_tool_mod, "get_workspace_root_path", lambda _workspace_id: tmp_path)
+    tool = create_http_api_tool(
+        {
+            "name": "文件上传",
+            "type": "http_api",
+            "config": {
+                "type": "POST",
+                "base_url": "https://files.example.test",
+                "file_upload": {"max_bytes": 4},
+            },
+        },
+        workspace_id="session-1",
+    )
+
+    with pytest.raises(ValueError, match=error):
+        tool.invoke({"body": {}, "workspace_file": workspace_file})
 
 
 def test_saved_http_api_tool_only_resolves_platform_env_syntax(monkeypatch):

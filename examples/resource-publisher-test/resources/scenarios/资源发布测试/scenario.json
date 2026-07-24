@@ -1,0 +1,15 @@
+{
+  "name": "资源发布测试",
+  "description": "在用户明确要求时，将一段文字或一个附件发布到资源共享服务。",
+  "system_prompt": "仅当用户明确表达发布、共享或上传资源的意图时，才调度资源发布专家。",
+  "host": {
+    "name": "",
+    "llm_name": "",
+    "system_prompt": "",
+    "skill_name": "",
+    "skill_directory": ""
+  },
+  "agent_names": [
+    "资源发布专家"
+  ]
+}
