@@ -205,6 +205,19 @@
                             </svg>
                           </button>
                           <button
+                            type="button"
+                            class="group-chat-bubble-action-btn"
+                            aria-label="保存到工作区"
+                            title="保存到工作区"
+                            @click="saveAgentMessageToFile(msg)"
+                          >
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                              <path d="M17 21v-8H7v8" />
+                              <path d="M7 3v5h8" />
+                            </svg>
+                          </button>
+                          <button
                             v-if="msg.message_id"
                             type="button"
                             class="group-chat-bubble-action-btn"
@@ -225,19 +238,6 @@
                             @click="rollbackMessageState(msg, i)"
                           >
                             <span class="group-chat-action-icon group-chat-message-icon-mask" :style="messageIconStyle(rollbackIconUrl)" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            class="group-chat-bubble-action-btn"
-                            aria-label="保存到工作区"
-                            title="保存到工作区"
-                            @click="saveAgentMessageToFile(msg)"
-                          >
-                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                              <path d="M17 21v-8H7v8" />
-                              <path d="M7 3v5h8" />
-                            </svg>
                           </button>
                           <span
                             v-if="messageCreatedAt(msg)"
