@@ -1,0 +1,29 @@
+{
+  "name": "资源共享-发布文字",
+  "type": "http_api",
+  "description": "创建公开 Markdown 内容。直接发布文字时，body 参数传 JSON 对象，包含 title、body、bodyFormat=markdown、accessMode=public。发布工作区 Markdown 时只传 workspace_file.path；后端会读取该 .md 文件并安全填入正文，默认标题为文件名。不要使用 content 字段，也不要读取全文后再传给工具。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/content",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {
+      "bodyFormat": "markdown",
+      "accessMode": "public"
+    },
+    "timeout_seconds": 60,
+    "workspace_text": {
+      "content_field": "body",
+      "title_field": "title",
+      "allowed_extensions": [
+        ".md"
+      ],
+      "max_bytes": 10485760,
+      "encoding": "utf-8"
+    }
+  }
+}

@@ -206,7 +206,7 @@ async def build_tools_for_group_chat(
     extras: List = [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
     if http_api_rows:
         for row in http_api_rows:
-            tool = create_http_api_tool(row, env_vars=env_vars)
+            tool = create_http_api_tool(row, env_vars=env_vars, workspace_id=workspace_id)
             if getattr(tool, "name", "") not in tool_names:
                 extras.append(tool)
                 tool_names.add(getattr(tool, "name", ""))

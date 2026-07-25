@@ -76,6 +76,23 @@ def test_host_snapshot_with_empty_prompt_stays_empty():
     assert host_agent["system_prompt"] == ""
 
 
+def test_duplicate_host_followup_is_suppressed_after_expert_success():
+    from app.agent.group_chat_runtime import _is_duplicate_host_followup
+
+    messages = [
+        {
+            "speaker": {"type": "expert", "agent_name": "资源发布专家"},
+            "message": {"content": "发布完成：https://example.test/share/123"},
+        }
+    ]
+
+    assert _is_duplicate_host_followup(
+        messages,
+        {"content": "发布完成：https://example.test/share/123"},
+    )
+    assert not _is_duplicate_host_followup(messages, {"content": "已发布，请确认下一步。"})
+
+
 @pytest.mark.asyncio
 async def test_skill_session_does_not_route_owner_without_host_target(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime

@@ -72,7 +72,7 @@ def normalize_tool_type(raw: Any) -> str:
 def _normalize_http_api_config(raw: Any) -> Dict[str, Any]:
     cfg = dict(raw) if isinstance(raw, dict) else {}
     method = str(cfg.get("type") or cfg.get("method") or "GET").strip().upper() or "GET"
-    return {
+    normalized = {
         "type": method,
         "base_url": str(cfg.get("base_url") or "").strip(),
         "path": str(cfg.get("path") or "").strip(),
@@ -81,6 +81,32 @@ def _normalize_http_api_config(raw: Any) -> Dict[str, Any]:
         "body": cfg.get("body") if cfg.get("body") is not None else "",
         "timeout_seconds": int(cfg.get("timeout_seconds") or 60),
     }
+    raw_file_upload = cfg.get("file_upload")
+    raw_workspace_text = cfg.get("workspace_text")
+    if isinstance(raw_file_upload, dict) and isinstance(raw_workspace_text, dict):
+        raise ValueError("file_upload 和 workspace_text 不能同时配置。")
+    if isinstance(raw_file_upload, dict):
+        max_bytes = int(raw_file_upload.get("max_bytes") or 0)
+        normalized["file_upload"] = {
+            "content_base64_field": str(raw_file_upload.get("content_base64_field") or "contentBase64").strip(),
+            "filename_field": str(raw_file_upload.get("filename_field") or "filename").strip(),
+            "mime_type_field": str(raw_file_upload.get("mime_type_field") or "mimeType").strip(),
+            "max_bytes": max_bytes,
+        }
+    if isinstance(raw_workspace_text, dict):
+        raw_extensions = raw_workspace_text.get("allowed_extensions")
+        allowed_extensions = [
+            str(item).strip().lower()
+            for item in raw_extensions if str(item).strip()
+        ] if isinstance(raw_extensions, list) else []
+        normalized["workspace_text"] = {
+            "content_field": str(raw_workspace_text.get("content_field") or "body").strip(),
+            "title_field": str(raw_workspace_text.get("title_field") or "title").strip(),
+            "allowed_extensions": allowed_extensions,
+            "max_bytes": int(raw_workspace_text.get("max_bytes") or 0),
+            "encoding": str(raw_workspace_text.get("encoding") or "utf-8").strip() or "utf-8",
+        }
+    return normalized
 
 
 def normalize_tool_row(raw: Dict[str, Any]) -> Dict[str, Any]:
