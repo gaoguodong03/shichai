@@ -12,7 +12,7 @@
 | `architecture/` | 架构图、项目结构、资源包和运行边界说明 | [system-architecture.md](architecture/system-architecture.md)、[project-structure.md](architecture/project-structure.md)、[scenario-bundle-export.md](architecture/scenario-bundle-export.md)、[images-and-dependencies.md](architecture/images-and-dependencies.md) |
 | `testing/` | 测试用例、契约实施追踪、回归测试、上线前测试、全流程业务测试 | [test-case-catalog.md](testing/test-case-catalog.md)、[contract-traceability-matrix.md](testing/contract-traceability-matrix.md)、[layer1-regression.md](testing/layer1-regression.md)、[pre-release-testing.md](testing/pre-release-testing.md)、[full-flow-business-tests.md](testing/full-flow-business-tests.md) |
 | `user-manual/` | 面向用户和验收人员的操作手册、截图、PDF | [user-guide.md](user-manual/user-guide.md)、[README.md](user-manual/README.md) |
-| `skills/` | Skill 规范、主持人 Skill、脚本路径、沙箱工具接口 | [skill-standard.md](skills/skill-standard.md)、[host-skill.md](skills/host-skill.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md) |
+| `skills/` | Skill 规范、主持人 Skill、脚本路径、沙箱工具接口、文件操作方式 | [skill-standard.md](skills/skill-standard.md)、[host-skill.md](skills/host-skill.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md)、[skill-file-operations.md](skills/skill-file-operations.md) |
 | `development/` | 面向开发者和 AI 编程代理的代码书写规范、模块拆分边界 | [coding-standard.md](development/coding-standard.md)、[module-file-boundaries.md](development/module-file-boundaries.md) |
 | `operations/` | 部署、运行、沙箱和运维约束 | [single-user-single-sandbox.md](operations/single-user-single-sandbox.md) |
 | `release/` | 发版、提测、部署和验收的统一入口 | [README.md](release/README.md) |
@@ -25,7 +25,7 @@
 4. 架构和代码入口：读 [architecture/system-architecture.md](architecture/system-architecture.md) 和 [architecture/project-structure.md](architecture/project-structure.md)。
 5. 开发验证：读 [testing/test-case-catalog.md](testing/test-case-catalog.md)、[testing/contract-traceability-matrix.md](testing/contract-traceability-matrix.md)、[testing/layer1-regression.md](testing/layer1-regression.md) 和 [testing/pre-release-testing.md](testing/pre-release-testing.md)。
 6. 代码书写和拆分：读 [development/coding-standard.md](development/coding-standard.md) 和 [development/module-file-boundaries.md](development/module-file-boundaries.md)。
-7. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/host-skill.md](skills/host-skill.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)。
+7. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/host-skill.md](skills/host-skill.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)、[skills/skill-file-operations.md](skills/skill-file-operations.md)。
 8. 发布和上线验收：先读 [release/README.md](release/README.md)，再按范围进入 [testing/pre-release-testing.md](testing/pre-release-testing.md)、[operations/single-user-single-sandbox.md](operations/single-user-single-sandbox.md) 和 [user-manual/README.md](user-manual/README.md)。
 9. 用户操作：读 [user-manual/user-guide.md](user-manual/user-guide.md)。
 
