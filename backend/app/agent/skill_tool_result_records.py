@@ -41,7 +41,7 @@ def _tool_trace_identity(tool: object | None) -> tuple[str, str, str]:
 
 def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
     source, _provider, _provider_tool = _tool_trace_identity(tool)
-    if source in {"mcp", "script", "workspace", "api"}:
+    if source in {"mcp", "script", "workspace", "api", "skill_file"}:
         return source
     server_name, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
     if server_name or provider_tool:
@@ -53,6 +53,8 @@ def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
         return "workspace"
     if name.startswith("http_api_"):
         return "api"
+    if name.startswith("read_skill_file_"):
+        return "skill_file"
     raise ValueError(f"tool source is missing for {name or 'tool'}")
 
 

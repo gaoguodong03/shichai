@@ -17,7 +17,7 @@ class StrictTraceModel(BaseModel):
 class ToolCallRecord(StrictTraceModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    kind: Literal["mcp", "script", "workspace", "api"]
+    kind: Literal["mcp", "script", "workspace", "api", "skill_file"]
     provider: str | None = Field(default=None, min_length=1)
     provider_tool: str | None = Field(default=None, min_length=1)
     arguments: dict[str, Any] = Field(default_factory=dict)

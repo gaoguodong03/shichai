@@ -20,8 +20,10 @@ from app.mcp.manager import (
 )
 from app.agent.builtin_workspace_tools import create_builtin_workspace_tools
 from app.agent.skill_tool_naming import build_skill_script_tool_name
+from app.agent.skill_tool_naming import build_read_skill_file_tool_name
 from app.tools.http_api_tool import create_http_api_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
+from app.tools.read_skill_file import create_read_skill_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.agent.tool_spec import ToolSpec
 from app.agent.platform_prompts import render_platform_prompt
@@ -221,4 +223,13 @@ async def build_tools_for_group_chat(
         if run_tool.name not in tool_names:
             tools.append(run_tool)
             tool_names.add(run_tool.name)
+
+    # 有附加文件（references/assets/other）时注入只读读取工具
+    if rid and rid != "default":
+        read_tool = create_read_skill_file_tool(rid)
+        read_tool.name = build_read_skill_file_tool_name(rid)
+        if read_tool.name not in tool_names:
+            tools.append(read_tool)
+            tool_names.add(read_tool.name)
+
     return wrap_filesystem_tools(tools, workspace_id)

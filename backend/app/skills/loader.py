@@ -9,12 +9,16 @@ from functools import lru_cache
 class Skill:
     """Skill 类"""
 
-    def __init__(self, name: str, description: str, content: str, metadata: Dict[str, Any] = None, directory_name: str = None):
+    def __init__(self, name: str, description: str, content: str, metadata: Dict[str, Any] = None, directory_name: str = None, skill_dir: Path = None, references: List[str] = None, assets: List[str] = None, other_files: List[str] = None):
         self.name = name
         self.description = description
         self.content = content
         self.metadata = metadata or {}
-        self.directory_name = directory_name or name  # 目录名，用于筛选
+        self.directory_name = directory_name or name
+        self.skill_dir = skill_dir          # Skill 目录的完整路径
+        self.references = references or []   # references/ 下的文件相对路径
+        self.assets = assets or []           # assets/ 下的文件相对路径
+        self.other_files = other_files or [] # 其他附加文件相对路径（排除 scripts/、SKILL.md）
 
     def get_instruction(self) -> str:
         """获取技能指令"""
@@ -74,8 +78,31 @@ class SkillsLoader:
             name = frontmatter.get("name", skill_path.name)
             description = frontmatter.get("description", "")
             metadata = frontmatter
-            directory_name = skill_path.name  # 目录名
-            return Skill(name, description, body, metadata, directory_name)
+            directory_name = skill_path.name
+
+            # 扫描 Skill 目录下的附加文件（references、assets 等）
+            references: List[str] = []
+            assets: List[str] = []
+            other_files: List[str] = []
+            skill_dir_resolved = skill_path.resolve()
+            if skill_dir_resolved.is_dir():
+                for f in sorted(skill_dir_resolved.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    try:
+                        rel = str(f.relative_to(skill_dir_resolved)).replace("\\", "/")
+                    except ValueError:
+                        continue
+                    if rel == "SKILL.md" or rel.startswith("scripts/") or "/__pycache__/" in rel:
+                        continue
+                    if rel.startswith("references/"):
+                        references.append(rel)
+                    elif rel.startswith("assets/"):
+                        assets.append(rel)
+                    else:
+                        other_files.append(rel)
+
+            return Skill(name, description, body, metadata, directory_name, skill_dir_resolved, references, assets, other_files)
         except (yaml.YAMLError, ValueError) as e:
             self._record_diagnostic(skill_path, "invalid_frontmatter", f"Invalid SKILL.md frontmatter: {e}")
             return None
@@ -190,7 +217,18 @@ class SkillsLoader:
         skill = self.skills.get(directory_name)
         if not skill:
             return None
-        return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"
+        parts = [f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"]
+        extra_lines: List[str] = []
+        for ref in sorted(skill.references):
+            extra_lines.append(f"- {ref}")
+        for asset in sorted(skill.assets):
+            extra_lines.append(f"- {asset}")
+        for other in sorted(skill.other_files):
+            extra_lines.append(f"- {other}")
+        if extra_lines:
+            parts.append("\n---\n**本 Skill 附加文件（只读）：**")
+            parts.extend(extra_lines)
+        return "\n".join(parts)
 
 
 def get_builtin_skills_dir() -> Path:

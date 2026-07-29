@@ -23,3 +23,20 @@ def build_skill_script_tool_name(directory_name: str) -> str:
         suffix = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
         sanitized = f"{sanitized}_{suffix}"
     return f"run_skill_script_{sanitized}"
+
+
+def build_read_skill_file_tool_name(directory_name: str) -> str:
+    """构造符合工具命名约束的 read_skill_file 工具名。
+
+    与 build_skill_script_tool_name 采用完全相同的安全化逻辑。
+    """
+    raw = str(directory_name or "").strip()
+    if not raw:
+        return "read_skill_file_default"
+    sanitized = _TOOL_NAME_INVALID_CHARS_RE.sub("_", raw).strip("_.-")
+    if not sanitized:
+        sanitized = "skill"
+    if sanitized != raw:
+        suffix = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+        sanitized = f"{sanitized}_{suffix}"
+    return f"read_skill_file_{sanitized}"
