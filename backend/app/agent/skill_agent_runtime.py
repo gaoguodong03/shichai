@@ -193,7 +193,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
     tool_calls_trace: list[dict] = []
     tool_result_records: list[dict] = []
     tool_raw_outputs: list[str] = []
-    max_tool_result_chars = 4000
+    max_tool_result_chars = 8000
     tool_result_cache = state.get("tool_result_cache") if isinstance(state, dict) else None
     if not isinstance(tool_result_cache, dict):
         tool_result_cache = {}
