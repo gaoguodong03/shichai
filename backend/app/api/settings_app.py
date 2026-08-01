@@ -37,37 +37,45 @@ _JENIYA_BASE = "https://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS = {
     "qwen3-max": {
+        "provider": "openai",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3-max",
         "api_key_env": "QWEN_API_KEY",
+        "extra_body": {"enable_thinking": False},
     },
     "gpt-4o": {
+        "provider": "openai",
         "base_url": _JENIYA_BASE,
         "model": "gpt-4o",
         "api_key_env": _JENIYA_KEY,
     },
     "gemini-3-pro-preview": {
+        "provider": "openai",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-3-pro-preview",
         "api_key_env": "GEMINI_API_KEY",
     },
     "claude-sonnet-4-6": {
+        "provider": "openai",
         "base_url": _JENIYA_BASE,
         "model": "claude-sonnet-4-6",
         "api_key_env": _JENIYA_KEY,
     },
     "glm-4.7": {
+        "provider": "openai",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model": "glm-4.7",
         "api_key_env": "ZHIPUAI_API_KEY",
     },
     "deepseek-chat": {
+        "provider": "deepseek",
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-chat",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "thinking": False,
+        "extra_body": {"thinking": {"type": "disabled"}},
     },
     "moonshot-v1-128k": {
+        "provider": "openai",
         "base_url": "https://api.moonshot.cn/v1",
         "model": "moonshot-v1-128k",
         "api_key_env": "MOONSHOT_API_KEY",

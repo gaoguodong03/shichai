@@ -5,7 +5,7 @@ import zipfile
 from io import BytesIO
 import pytest
 
-# 测试前设置 env，避免 QwenLLM 初始化报错
+# 测试前设置 env，避免 LLM 客户端初始化报错
 os.environ.setdefault("QWEN_API_KEY", "test-key")
 os.environ.setdefault("JENIYA_API_KEY", "test-jeniya-key")
 os.environ.setdefault("DEEPSEEK_API_KEY", "test-deepseek-key")
@@ -461,19 +461,19 @@ def test_get_llm_from_config_requires_explicit_api_key_env(monkeypatch):
         )
 
 
-def test_qwen_llm_constructor_requires_resolved_api_key(monkeypatch):
+def test_llm_client_constructor_requires_resolved_api_key(monkeypatch):
     """底层客户端不能按 base_url 从宿主机环境变量推断凭据。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
     monkeypatch.setenv("QWEN_API_KEY", "host-qwen-key")
     monkeypatch.setenv("JENIYA_API_KEY", "host-jeniya-key")
     monkeypatch.setenv("OPENAI_API_KEY", "host-openai-key")
 
     with pytest.raises(ValueError, match="缺少 API Key"):
-        QwenLLM(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max")
+        LLMClient(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max")
 
     with pytest.raises(ValueError, match="缺少 API Key"):
-        QwenLLM(base_url="https://jeniya.top/v1", model="gpt-4o")
+        LLMClient(base_url="https://jeniya.top/v1", model="gpt-4o")
 
 
 def test_get_llm_from_config_empty_uses_default():
@@ -527,42 +527,6 @@ def test_get_llm_from_config_rejects_relative_base_url():
         })
 
 
-def test_get_client_adds_qwen_chat_template_kwargs(monkeypatch):
-    """Qwen 模型请求附加禁用 thinking 的专属参数。"""
-    from app.agent.llm_client import QwenLLM
-
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
-    )
-
-    assert captured["extra_body"] == {"enable_thinking": False}
-
-
-def test_get_client_adds_qwen_chat_template_kwargs_for_non_dashscope(monkeypatch):
-    """非 DashScope 的 Qwen 兼容服务使用 chat_template_kwargs。"""
-    from app.agent.llm_client import QwenLLM
-
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="qwen3-max"),
-    )
-
-    assert captured["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
-
-
-def test_get_client_skips_qwen_chat_template_kwargs_for_other_models(monkeypatch):
-    """非 Qwen 模型不传 DashScope/Qwen 专属参数。"""
-    from app.agent.llm_client import QwenLLM
-
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://jeniya.top/v1", model="gpt-4o"),
-    )
-
-    assert "extra_body" not in captured
-
-
 def _capture_chat_kwargs(monkeypatch, llm):
     del monkeypatch
     client = llm.get_client()
@@ -574,17 +538,82 @@ def _capture_chat_kwargs(monkeypatch, llm):
         "request_timeout": raw._client_options.get("timeout"),
         "max_retries": raw._client_options.get("max_retries"),
         "model": raw._model,
+        "litellm_model": raw._litellm_model,
     }
     return captured, client
 
 
-def test_get_client_common_whitelisted_params(monkeypatch):
-    """通用官网参数会被传给 OpenAI 兼容请求，且不会开放任意 kwargs。"""
-    from app.agent.llm_client import QwenLLM
+def test_get_client_does_not_auto_inject_extra_body(monkeypatch):
+    """系统不会按厂商自动补专属参数；未配置 extra_body 时请求中不出现。"""
+    from app.agent.llm_client import LLMClient
 
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
+        LLMClient(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+    )
+    assert "extra_body" not in captured
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        LLMClient(api_key="test-key", base_url="https://api.deepseek.com", model="deepseek-chat"),
+    )
+    assert "extra_body" not in captured
+
+
+def test_get_client_passes_configured_extra_body_as_is(monkeypatch):
+    """extra_body 完全以模型配置为准，不做 Provider 推导。"""
+    from app.agent.llm_client import LLMClient
+
+    extra = {"enable_thinking": False, "thinking_budget": 32}
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        LLMClient(
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen3-max",
+            provider_config={"extra_body": extra},
+        ),
+    )
+    assert captured["extra_body"] == extra
+
+
+def test_parameter_mapper_migrates_legacy_flat_fields_into_extra_body(monkeypatch):
+    """旧版顶层专属字段在调用前折叠进 extra_body（兼容迁移，非厂商推断）。"""
+    from app.agent.llm_client import LLMClient
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        LLMClient(
+            api_key="test-key",
+            base_url="https://example.com/v1",
+            model="any-model",
+            provider_config={
+                "enable_thinking": True,
+                "thinking_budget": 64,
+                "thinking": True,
+                "do_sample": False,
+                "top_k": 20,
+                "gemini_thinking_level": "low",
+            },
+        ),
+    )
+    assert captured["extra_body"] == {
+        "enable_thinking": True,
+        "thinking_budget": 64,
+        "thinking": {"type": "enabled"},
+        "do_sample": False,
+        "top_k": 20,
+        "thinkingConfig": {"thinkingLevel": "low"},
+    }
+
+
+def test_get_client_common_params(monkeypatch):
+    """公共参数作为独立字段进入 LiteLLM kwargs；连接无关字段不透传。"""
+    from app.agent.llm_client import LLMClient
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        LLMClient(
             api_key="test-key",
             base_url="https://jeniya.top/v1",
             model="gpt-4o",
@@ -608,92 +637,83 @@ def test_get_client_common_whitelisted_params(monkeypatch):
     assert captured["frequency_penalty"] == 0.2
     assert captured["seed"] == 42
     assert "danger" not in captured
-    assert captured["max_tokens"] == 32
 
 
 def test_get_client_default_omits_max_tokens(monkeypatch):
     """默认不主动传 max_tokens，交给具体模型/网关默认值处理。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+        LLMClient(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
     )
-
     assert "max_tokens" not in captured
 
 
 def test_get_client_default_request_timeout_is_interactive_budget(monkeypatch):
-    """默认单次 LLM HTTP 等待不要过长；慢模型可用 provider 配置单独放大。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
     monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.delenv("LLM_REQUEST_TIMEOUT", raising=False)
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+        LLMClient(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
     )
-
     assert captured["request_timeout"] == 60
 
 
-def test_get_client_request_timeout_provider_config_can_extend_default(monkeypatch):
-    """provider 配置中的 request_timeout 默认生效，不被隐式 10s 上限截断。"""
-    from app.agent.llm_client import QwenLLM
+def test_get_client_request_timeout_comes_from_env_not_model_config(monkeypatch):
+    """超时由环境变量控制，不再作为模型公共参数读取。"""
+    from app.agent.llm_client import LLMClient
 
-    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
     monkeypatch.delenv("QWEN_REQUEST_TIMEOUT_MAX", raising=False)
+    monkeypatch.delenv("LLM_REQUEST_TIMEOUT_MAX", raising=False)
+    monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180")
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
+        LLMClient(
             api_key="test-key",
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             model="qwen3-max",
-            provider_config={"request_timeout": 180},
+            provider_config={"request_timeout": 999, "timeout": 999},
         ),
     )
-
     assert captured["request_timeout"] == 180
 
 
 def test_get_client_default_max_retries_is_zero(monkeypatch):
-    """默认失败即失败，避免一次请求超时后继续重试拖慢前端反馈。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
     monkeypatch.delenv("QWEN_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+        LLMClient(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
     )
-
     assert captured["max_retries"] == 0
 
 
 def test_get_client_request_timeout_can_be_capped_by_env(monkeypatch):
-    """需要快速失败时，可显式设置 QWEN_REQUEST_TIMEOUT_MAX 做上限。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
-    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180")
     monkeypatch.setenv("QWEN_REQUEST_TIMEOUT_MAX", "30")
     captured, _ = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
+        LLMClient(
             api_key="test-key",
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             model="qwen3-max",
-            provider_config={"request_timeout": 180},
         ),
     )
-
     assert captured["request_timeout"] == 30
 
 
 def test_traced_client_preserves_wrapper_after_bind_tools(monkeypatch):
-    """工具绑定后仍保留 trace/thinking 包装。"""
-    from app.agent.llm_client import QwenLLM
+    from app.agent.llm_client import LLMClient
 
-    client = QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="gpt-4o").get_client()
+    client = LLMClient(api_key="test-key", base_url="https://example.com/v1", model="gpt-4o").get_client()
     bound = client.bind_tools([object()])
-
     assert hasattr(bound, "_raw_client")
 
 
@@ -701,140 +721,116 @@ def _bound_tool_choice(bound_client):
     return bound_client._raw_client._tool_choice
 
 
-def test_get_client_qwen_thinking_params_and_tool_choice(monkeypatch):
-    """Qwen thinking 开启时走 extra_body，工具绑定不传 required。"""
-    from app.agent.llm_client import QwenLLM, bind_tools_compat
+def test_extra_body_thinking_disables_required_tools(monkeypatch):
+    """思考模式由配置 extra_body 决定，开启时 tool_choice 不强制 required。"""
+    from app.agent.llm_client import LLMClient, bind_tools_compat
 
     captured, client = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
+        LLMClient(
             api_key="test-key",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            model="qwen3-max",
-            provider_config={"enable_thinking": True, "thinking_budget": 64},
+            base_url="https://example.com/v1",
+            model="any-model",
+            provider_config={"extra_body": {"enable_thinking": True, "thinking_budget": 64}},
         ),
     )
-
     assert captured["extra_body"] == {"enable_thinking": True, "thinking_budget": 64}
     assert _bound_tool_choice(bind_tools_compat(client, [object()])) is None
 
 
-def test_get_client_qwen_thinking_disabled_keeps_required_tools(monkeypatch):
-    """Qwen thinking 显式关闭时仍允许 required tool_choice。"""
-    from app.agent.llm_client import QwenLLM, bind_tools_compat
+def test_extra_body_thinking_disabled_keeps_required_tools(monkeypatch):
+    from app.agent.llm_client import LLMClient, bind_tools_compat
 
     captured, client = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
+        LLMClient(
             api_key="test-key",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            model="qwen3-max",
-            provider_config={"enable_thinking": False},
+            base_url="https://example.com/v1",
+            model="any-model",
+            provider_config={"extra_body": {"enable_thinking": False}},
         ),
     )
-
     assert captured["extra_body"] == {"enable_thinking": False}
     assert _bound_tool_choice(bind_tools_compat(client, [object()])) == "required"
 
 
 def test_bind_tools_compat_allows_one_agent_turn_to_choose_tools_or_finish(monkeypatch):
-    from app.agent.llm_client import QwenLLM, bind_tools_compat
+    from app.agent.llm_client import LLMClient, bind_tools_compat
 
     _, client = _capture_chat_kwargs(
         monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://example.com/v1",
-            model="gpt-4o",
-        ),
+        LLMClient(api_key="test-key", base_url="https://example.com/v1", model="gpt-4o"),
     )
-
     bound = bind_tools_compat(client, [object()], tool_choice_strategy="auto")
-
     assert _bound_tool_choice(bound) is None
 
 
-def test_get_client_gemini_params(monkeypatch):
-    """Gemini 专属 topK/thinkingConfig 映射到请求体扩展。"""
-    from app.agent.llm_client import QwenLLM
+def test_resolve_litellm_model_id_from_config_provider():
+    from app.agent.llm_parameter_mapper import resolve_litellm_model_id
 
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-            model="gemini-2.5-flash",
-            provider_config={"top_k": 20, "gemini_thinking_level": "low"},
-        ),
-    )
-
-    assert captured["extra_body"] == {"topK": 20, "thinkingConfig": {"thinkingLevel": "low"}}
+    assert resolve_litellm_model_id({"provider": "deepseek", "model": "deepseek-chat"}) == "deepseek/deepseek-chat"
+    assert resolve_litellm_model_id({"provider": "openai", "model": "qwen3-max"}) == "openai/qwen3-max"
+    assert resolve_litellm_model_id({"model": "gpt-4o"}) == "openai/gpt-4o"
+    assert resolve_litellm_model_id({"model": "gpt-4o", "litellm_model": "openai/custom-gpt"}) == "openai/custom-gpt"
+    assert resolve_litellm_model_id({"provider": "anthropic", "model": "claude-sonnet-4-6"}) == "anthropic/claude-sonnet-4-6"
 
 
-def test_get_client_claude_top_k(monkeypatch):
-    """Claude 专属 top_k 映射到请求体扩展。"""
-    from app.agent.llm_client import QwenLLM
+def test_builtin_defaults_carry_extra_body_not_flat_vendor_fields():
+    from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults
+    from app.api.settings_app import _DEFAULT_LLM_PROVIDERS as settings_defaults
 
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://api.anthropic.com/v1",
-            model="claude-sonnet-4-6",
-            provider_config={"top_k": 30},
-        ),
-    )
-
-    assert captured["extra_body"] == {"top_k": 30}
+    assert runtime_defaults == settings_defaults
+    assert runtime_defaults["qwen3-max"]["extra_body"] == {"enable_thinking": False}
+    assert runtime_defaults["deepseek-chat"]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "thinking" not in runtime_defaults["deepseek-chat"]
+    assert runtime_defaults["deepseek-chat"]["provider"] == "deepseek"
 
 
-def test_get_client_glm_params(monkeypatch):
-    """GLM thinking/do_sample 映射到请求体扩展。"""
-    from app.agent.llm_client import QwenLLM
+def test_get_client_uses_litellm_completion(monkeypatch):
+    """实际调用走 litellm.acompletion / completion，并经 Parameter Mapper 组装 kwargs。"""
+    import asyncio
+    from types import SimpleNamespace
 
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://open.bigmodel.cn/api/paas/v4",
-            model="glm-4.7",
-            provider_config={"thinking": False, "do_sample": False},
-        ),
-    )
+    from app.agent.llm_client import LLMClient
+    from app.agent.messages import HumanMessage
 
-    assert captured["extra_body"] == {"thinking": {"type": "disabled"}, "do_sample": False}
+    captured = {}
 
+    class FakeResponse:
+        choices = [
+            SimpleNamespace(
+                message=SimpleNamespace(content="ok", tool_calls=None),
+                finish_reason="stop",
+            )
+        ]
 
-def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatch):
-    """DeepSeek thinking 开启时同样不强制 required tool_choice。"""
-    from app.agent.llm_client import QwenLLM, bind_tools_compat
+    def fake_completion(**kwargs):
+        captured["sync"] = kwargs
+        return FakeResponse()
 
-    captured, client = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://api.deepseek.com",
-            model="deepseek-reasoner",
-            provider_config={"thinking": True},
-        ),
-    )
+    async def fake_acompletion(**kwargs):
+        captured["async"] = kwargs
+        return FakeResponse()
 
-    assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
-    assert _bound_tool_choice(bind_tools_compat(client, [object()])) is None
+    monkeypatch.setattr("litellm.completion", fake_completion)
+    monkeypatch.setattr("litellm.acompletion", fake_acompletion)
 
+    client = LLMClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        provider_config={
+            "provider": "deepseek",
+            "extra_body": {"thinking": {"type": "disabled"}},
+        },
+    ).get_client()
 
-def test_get_client_deepseek_defaults_to_thinking_disabled(monkeypatch):
-    """DeepSeek 未显式设置 thinking 时默认关闭，避免网关走不可用默认模式。"""
-    from app.agent.llm_client import QwenLLM
+    assert client.invoke([HumanMessage(content="hi")]).content == "ok"
+    assert asyncio.run(client.ainvoke([HumanMessage(content="hi")])).content == "ok"
 
-    captured, _ = _capture_chat_kwargs(
-        monkeypatch,
-        QwenLLM(
-            api_key="test-key",
-            base_url="https://api.deepseek.com",
-            model="deepseek-chat",
-            provider_config={},
-        ),
-    )
-
-    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured["sync"]["model"] == "deepseek/deepseek-chat"
+    assert captured["async"]["model"] == "deepseek/deepseek-chat"
+    assert captured["sync"]["api_base"] == "https://api.deepseek.com"
+    assert captured["sync"]["api_key"] == "test-key"
+    assert captured["sync"]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured["sync"]["num_retries"] == 0

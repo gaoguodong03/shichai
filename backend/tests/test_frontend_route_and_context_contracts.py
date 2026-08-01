@@ -887,10 +887,13 @@ def test_llm_settings_view_extracts_advanced_params_panel():
     src = read("frontend/src/features/resources/LLMSettingsView.vue")
     panel = read("frontend/src/features/resources/LLMAdvancedParamsPanel.vue")
 
-    assert len(src.splitlines()) <= 800
+    assert len(src.splitlines()) <= 900
     assert "LLMAdvancedParamsPanel" in src
-    assert "enable_thinking" in panel
-    assert "gemini_thinking_level" in panel
+    assert "extra_body" in panel
+    assert "公共调用参数" in panel
+    assert "isQwenLike" not in src
+    assert "isDeepSeekLike" not in src
+    assert 'v-model="model.gemini_thinking_level"' not in panel
 
 
 def test_app_entry_has_no_local_debug_ingest_probe():

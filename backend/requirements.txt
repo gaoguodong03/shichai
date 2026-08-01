@@ -4,8 +4,9 @@
 fastapi==0.128.0
 uvicorn[standard]==0.40.0
 
-# LLM client compatibility
-openai>=1.24.0,<2.0.0
+# LLM client compatibility（经 LiteLLM 统一调用；openai 作为其兼容依赖保留）
+openai>=1.24.0,<3.0.0
+litellm>=1.70.0,<2.0.0
 
 # MCP SDK（stdio / streamable HTTP 连接远程 MCP）
 mcp==1.25.0
