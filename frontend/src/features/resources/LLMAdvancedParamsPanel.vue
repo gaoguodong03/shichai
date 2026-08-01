@@ -1,8 +1,8 @@
 <template>
   <div class="space-y-4 rounded-xl border border-border-light bg-bg-subtle/40 p-4">
     <div>
-      <label class="block text-sm font-medium text-primary mb-1">调用参数（可选）</label>
-      <p class="text-xs text-muted">仅开放官网明确支持的字段；留空表示使用厂商默认值。</p>
+      <label class="block text-sm font-medium text-primary mb-1">公共调用参数（可选）</label>
+      <p class="text-xs text-muted">留空表示使用模型/网关默认值。厂商专属参数请写在下方 extra_body。</p>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div>
@@ -30,49 +30,23 @@
         <input v-model.trim="model.seed" type="number" step="1" placeholder="可选整数" class="llm-param-input" />
       </div>
     </div>
-    <div v-if="isQwenLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
+    <div class="pt-2 border-t border-border-light space-y-2">
       <div>
-        <label class="block text-xs text-muted mb-1">Qwen/百炼思考模式 enable_thinking</label>
-        <select v-model="model.enable_thinking" class="llm-param-input">
-          <option value="">默认</option>
-          <option value="true">开启</option>
-          <option value="false">关闭</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs text-muted mb-1">思考预算 thinking_budget</label>
-        <input v-model.trim="model.thinking_budget" type="number" step="1" min="0" placeholder="如 50" class="llm-param-input" />
-      </div>
-    </div>
-    <div v-if="isDeepSeekLike || isGlmLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
-      <div>
-        <label class="block text-xs text-muted mb-1">思考模式 thinking</label>
-        <select v-model="model.thinking" class="llm-param-input">
-          <option value="">默认</option>
-          <option value="true">开启</option>
-          <option value="false">关闭</option>
-        </select>
-      </div>
-      <div v-if="isGlmLike">
-        <label class="block text-xs text-muted mb-1">采样 do_sample</label>
-        <select v-model="model.do_sample" class="llm-param-input">
-          <option value="">默认</option>
-          <option value="true">开启</option>
-          <option value="false">关闭</option>
-        </select>
-      </div>
-    </div>
-    <div v-if="isGeminiLike || isClaudeLike" class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border-light">
-      <div>
-        <label class="block text-xs text-muted mb-1">Top K</label>
-        <input v-model.trim="model.top_k" type="number" step="1" min="0" placeholder="如 20" class="llm-param-input" />
-      </div>
-      <div v-if="isGeminiLike">
-        <label class="block text-xs text-muted mb-1">Gemini 思考级别 thinkingLevel</label>
-        <select v-model="model.gemini_thinking_level" class="llm-param-input">
-          <option value="">默认</option>
-          <option value="low">low</option>
-        </select>
+        <label class="block text-sm font-medium text-primary mb-1">模型专属参数 extra_body（JSON）</label>
+        <p class="text-xs text-muted mb-2">
+          按目标模型官方文档自由填写，例如 Qwen 的
+          <code class="text-[11px]">{"enable_thinking": false}</code>
+          、DeepSeek 的
+          <code class="text-[11px]">{"thinking": {"type": "disabled"}}</code>
+          。系统不会按厂商自动补参。
+        </p>
+        <textarea
+          v-model="model.extra_body"
+          rows="8"
+          spellcheck="false"
+          placeholder='{"enable_thinking": false}'
+          class="llm-param-input font-mono text-xs leading-5"
+        />
       </div>
     </div>
   </div>
@@ -80,14 +54,6 @@
 
 <script setup lang="ts">
 import type { ModelParams } from './llmSettingsTypes'
-
-defineProps<{
-  isQwenLike: boolean
-  isDeepSeekLike: boolean
-  isGlmLike: boolean
-  isGeminiLike: boolean
-  isClaudeLike: boolean
-}>()
 
 const model = defineModel<ModelParams>('params', { required: true })
 </script>

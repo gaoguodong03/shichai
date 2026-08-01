@@ -108,6 +108,28 @@
 
           <div>
 
+            <label class="block text-sm font-medium text-primary mb-1">LiteLLM Provider</label>
+
+            <input
+
+              v-model="edit.provider"
+
+              type="text"
+
+              placeholder="openai / deepseek / anthropic / gemini / bedrock …"
+
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
+
+            />
+
+            <p class="text-xs text-muted mt-1">用于路由：最终模型 id 为 provider/model；留空则默认按 openai 兼容网关处理。</p>
+
+          </div>
+
+
+
+          <div>
+
             <label class="block text-sm font-medium text-primary mb-1">环境变量名</label>
 
             <input
@@ -128,11 +150,6 @@
 
           <LLMAdvancedParamsPanel
             v-model:params="edit.params"
-            :is-qwen-like="isQwenLike"
-            :is-deep-seek-like="isDeepSeekLike"
-            :is-glm-like="isGlmLike"
-            :is-gemini-like="isGeminiLike"
-            :is-claude-like="isClaudeLike"
           />
 
 
@@ -231,7 +248,7 @@ import { apiRequest } from '@/api/base'
 import { ref, computed, onMounted, watch } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import LLMAdvancedParamsPanel from './LLMAdvancedParamsPanel.vue'
-import type { BoolChoice, ModelParams } from './llmSettingsTypes'
+import type { ModelParams } from './llmSettingsTypes'
 
 
 
@@ -294,18 +311,15 @@ function emptyParams(): ModelParams {
     presence_penalty: '',
     frequency_penalty: '',
     seed: '',
-    enable_thinking: '',
-    thinking_budget: '',
-    thinking: '',
-    do_sample: '',
-    top_k: '',
-    gemini_thinking_level: '',
+    extra_body: '',
   }
 }
 
 const edit = ref({
 
   id: '',
+
+  provider: '',
 
   base_url: '',
 
@@ -317,31 +331,9 @@ const edit = ref({
 
 })
 
-const providerFingerprint = computed(() => `${effectiveLlmName.value || ''} ${edit.value.base_url} ${edit.value.model}`.toLowerCase())
-const isQwenLike = computed(() => /qwen|dashscope|aliyun|百炼|bailian/.test(providerFingerprint.value))
-const isDeepSeekLike = computed(() => isDeepSeekFingerprint(providerFingerprint.value))
-const isGlmLike = computed(() => /glm|zhipu|bigmodel|智谱/.test(providerFingerprint.value))
-const isGeminiLike = computed(() => /gemini|googleapis|generativelanguage|google/.test(providerFingerprint.value))
-const isClaudeLike = computed(() => /claude|anthropic/.test(providerFingerprint.value))
-
-function isDeepSeekFingerprint(fingerprint: string) {
-  return /deepseek/.test(fingerprint.toLowerCase())
-}
-
 function valueToParam(value: unknown): string {
   if (value === undefined || value === null || value === '') return ''
   return String(value)
-}
-
-function boolToChoice(value: unknown): BoolChoice {
-  if (value === true) return 'true'
-  if (value === false) return 'false'
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === 'true') return 'true'
-    if (normalized === 'false') return 'false'
-  }
-  return ''
 }
 
 function paramsFromMeta(meta: Record<string, unknown>): ModelParams {
@@ -352,24 +344,38 @@ function paramsFromMeta(meta: Record<string, unknown>): ModelParams {
   params.presence_penalty = valueToParam(meta.presence_penalty)
   params.frequency_penalty = valueToParam(meta.frequency_penalty)
   params.seed = valueToParam(meta.seed)
-  params.enable_thinking = boolToChoice(meta.enable_thinking)
-  params.thinking_budget = valueToParam(meta.thinking_budget)
-  params.thinking = boolToChoice(meta.thinking)
-  params.do_sample = boolToChoice(meta.do_sample)
-  params.top_k = valueToParam(meta.top_k)
-  params.gemini_thinking_level = meta.gemini_thinking_level === 'low' ? 'low' : ''
 
-  const extraBody = meta.extra_body && typeof meta.extra_body === 'object' && !Array.isArray(meta.extra_body)
-    ? meta.extra_body as Record<string, unknown>
-    : {}
-  params.enable_thinking ||= boolToChoice(extraBody.enable_thinking)
-  params.thinking_budget ||= valueToParam(extraBody.thinking_budget)
-  params.thinking ||= boolToChoice(extraBody.thinking)
-  params.do_sample ||= boolToChoice(extraBody.do_sample)
-  params.top_k ||= valueToParam(extraBody.top_k || extraBody.topK)
-  params.gemini_thinking_level ||= extraBody.thinkingConfig && typeof extraBody.thinkingConfig === 'object'
-    && (extraBody.thinkingConfig as Record<string, unknown>).thinkingLevel === 'low'
-    ? 'low'
+  const extraBody: Record<string, unknown> =
+    meta.extra_body && typeof meta.extra_body === 'object' && !Array.isArray(meta.extra_body)
+      ? { ...(meta.extra_body as Record<string, unknown>) }
+      : {}
+
+  // Migrate legacy flat vendor fields into extra_body for display/edit.
+  if (!('enable_thinking' in extraBody) && typeof meta.enable_thinking === 'boolean') {
+    extraBody.enable_thinking = meta.enable_thinking
+  }
+  if (!('thinking_budget' in extraBody) && meta.thinking_budget !== undefined && meta.thinking_budget !== '') {
+    extraBody.thinking_budget = meta.thinking_budget
+  }
+  if (!('thinking' in extraBody) && meta.thinking !== undefined && meta.thinking !== '') {
+    if (typeof meta.thinking === 'boolean') {
+      extraBody.thinking = { type: meta.thinking ? 'enabled' : 'disabled' }
+    } else {
+      extraBody.thinking = meta.thinking
+    }
+  }
+  if (!('do_sample' in extraBody) && typeof meta.do_sample === 'boolean') {
+    extraBody.do_sample = meta.do_sample
+  }
+  if (!('top_k' in extraBody) && !('topK' in extraBody) && meta.top_k !== undefined && meta.top_k !== '') {
+    extraBody.top_k = meta.top_k
+  }
+  if (!('thinkingConfig' in extraBody) && meta.gemini_thinking_level === 'low') {
+    extraBody.thinkingConfig = { thinkingLevel: 'low' }
+  }
+
+  params.extra_body = Object.keys(extraBody).length
+    ? JSON.stringify(extraBody, null, 2)
     : ''
   return params
 }
@@ -389,12 +395,6 @@ function optionalInteger(raw: string, label: string) {
   return num
 }
 
-function choiceToBool(value: BoolChoice) {
-  if (value === 'true') return true
-  if (value === 'false') return false
-  return undefined
-}
-
 function assignIfPresent(target: Record<string, unknown>, key: string, value: unknown) {
   if (value !== undefined && value !== '') target[key] = value
 }
@@ -409,12 +409,20 @@ function buildAdvancedConfig() {
     assignIfPresent(advanced, 'presence_penalty', optionalNumber(params.presence_penalty, 'presence_penalty'))
     assignIfPresent(advanced, 'frequency_penalty', optionalNumber(params.frequency_penalty, 'frequency_penalty'))
     assignIfPresent(advanced, 'seed', optionalInteger(params.seed, 'seed'))
-    assignIfPresent(advanced, 'enable_thinking', choiceToBool(params.enable_thinking))
-    assignIfPresent(advanced, 'thinking_budget', optionalInteger(params.thinking_budget, 'thinking_budget'))
-    assignIfPresent(advanced, 'thinking', choiceToBool(params.thinking))
-    assignIfPresent(advanced, 'do_sample', choiceToBool(params.do_sample))
-    assignIfPresent(advanced, 'top_k', optionalInteger(params.top_k, 'top_k'))
-    assignIfPresent(advanced, 'gemini_thinking_level', params.gemini_thinking_level)
+
+    const rawExtra = (params.extra_body || '').trim()
+    if (rawExtra) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(rawExtra)
+      } catch {
+        throw new Error('extra_body 需要是合法 JSON 对象')
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('extra_body 需要是 JSON 对象（不能是数组或基础类型）')
+      }
+      advanced.extra_body = parsed
+    }
   } catch (err) {
     void appAlert({ title: '参数不合法', message: err instanceof Error ? err.message : String(err), variant: 'warning' })
     return null
@@ -435,12 +443,10 @@ function applyProviderToEdit(llmName: string) {
   if (!meta) return
 
   const params = paramsFromMeta(meta as Record<string, unknown>)
-  if (isDeepSeekFingerprint(`${llmName} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
-    params.thinking = 'false'
-  }
 
   edit.value = {
     id: llmName,
+    provider: String((meta as Record<string, unknown>).provider ?? ''),
     base_url: meta.base_url ?? '',
     model: meta.model ?? '',
     api_key_env: meta.api_key_env ?? '',
@@ -454,6 +460,7 @@ async function syncEditForProvider(llmName: string | null) {
   if (llmName === '__new__') {
     edit.value = {
       id: '',
+      provider: 'openai',
       base_url: 'https://jeniya.top/v1',
       model: '',
       api_key_env: 'JENIYA_API_KEY',
@@ -570,15 +577,6 @@ watch(
   },
 )
 
-watch(
-  () => providerFingerprint.value,
-  () => {
-    if (isDeepSeekLike.value && edit.value.params.thinking === '') {
-      edit.value.params.thinking = 'false'
-    }
-  },
-)
-
 
 
 async function saveProvider() {
@@ -618,6 +616,8 @@ async function saveProvider() {
     const row: Record<string, unknown> = {
 
       ...advanced,
+
+      provider: (edit.value.provider || '').trim() || undefined,
 
       base_url: (edit.value.base_url || '').trim() || undefined,
 
@@ -660,6 +660,8 @@ async function saveProvider() {
   const nextRow: Record<string, unknown> = {
 
     ...advanced,
+
+    provider: (edit.value.provider || '').trim() || undefined,
 
     base_url: (edit.value.base_url || '').trim() || undefined,
 

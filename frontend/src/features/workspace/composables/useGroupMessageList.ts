@@ -53,7 +53,7 @@ export function useGroupMessageList(args: {
   loadGroupDetail: () => Promise<void> | void
   onSessionForked: (sessionId: string) => void | Promise<void>
   onSessionRolledBack: () => void | Promise<void>
-  previewMessageArtifact: (artifact: { name: string; path: string }) => void | Promise<void>
+  previewMessageArtifact: (artifact: { name: string; path: string; type?: string }) => void | Promise<void>
 }) {
   const {
     groupDetail,
@@ -251,7 +251,7 @@ export function useGroupMessageList(args: {
     })
   }
 
-  async function openMessageArtifact(artifact: { name: string; path: string }) {
+  async function openMessageArtifact(artifact: { name: string; path: string; type?: string }) {
     await previewMessageArtifact(artifact)
   }
 
