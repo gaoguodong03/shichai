@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.request_models import StrictRequestModel
 from app.api.settings_skill_store import _get_skills_dir
+from app.core.user_context import get_current_user_context
+from app.skills.loader import invalidate_skills_cache_for_user
 
 ALLOWED_PART_TYPES = ("references", "assets", "scripts", "other")
 
@@ -29,6 +31,13 @@ class PartDirCreate(StrictRequestModel):
     """在 references/assets/scripts/other 下新建目录"""
 
     path: str
+
+
+def _refresh_skills_cache() -> None:
+    """使当前用户的 SkillsLoader 缓存失效，下次请求重新扫描磁盘。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        invalidate_skills_cache_for_user(user_ctx.user_id)
 
 
 def list_skill_part_dir(skill_dir: Path, part_type: str) -> List[Dict[str, str]]:
@@ -134,6 +143,7 @@ def register_skill_part_routes(router: APIRouter) -> None:
             raise HTTPException(status_code=400, detail="Cannot create SKILL.md in other")
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(body.content or "", encoding="utf-8")
+        _refresh_skills_cache()
         return {"status": "ok", "data": {"path": (body.path or "").strip().lstrip("/").replace("\\", "/")}}
 
     @router.post("/settings/skills/{directory_name}/parts/{part_type}/mkdir")
@@ -147,6 +157,7 @@ def register_skill_part_routes(router: APIRouter) -> None:
         keep = full_dir / ".gitkeep"
         if not keep.exists():
             keep.write_text("", encoding="utf-8")
+        _refresh_skills_cache()
         return {"status": "ok", "data": {"path": (body.path or "").strip().lstrip("/").rstrip("/").replace("\\", "/"), "created": True}}
 
     @router.put("/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}")
@@ -159,6 +170,7 @@ def register_skill_part_routes(router: APIRouter) -> None:
         if not full_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         full_path.write_text(body.content, encoding="utf-8")
+        _refresh_skills_cache()
         return {"status": "ok", "data": {"path": file_path}}
 
     @router.delete("/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}")
@@ -171,4 +183,5 @@ def register_skill_part_routes(router: APIRouter) -> None:
         if not full_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         full_path.unlink()
+        _refresh_skills_cache()
         return {"status": "ok", "data": {"path": file_path, "deleted": True}}

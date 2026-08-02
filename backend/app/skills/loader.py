@@ -249,7 +249,11 @@ def merge_builtin_skills(loader: SkillsLoader) -> None:
 
 
 def _skills_tree_mtime(skills_dir: Path) -> float:
-    """用于缓存失效：目录及下一层各 skill 的 SKILL.md 的最新 mtime。"""
+    """用于缓存失效：目录及所有 skill 目录下全部文件的最新 mtime。
+
+    不只检查 SKILL.md，而是覆盖 references/、assets/、scripts/ 等附加文件，
+    避免新增/修改附加文件后 SkillsLoader 缓存仍是旧文件清单。
+    """
     if not skills_dir.exists():
         return 0.0
     try:
@@ -260,12 +264,12 @@ def _skills_tree_mtime(skills_dir: Path) -> float:
         for child in skills_dir.iterdir():
             if not child.is_dir():
                 continue
-            sf = child / "SKILL.md"
-            if sf.is_file():
-                try:
-                    mt = max(mt, sf.stat().st_mtime)
-                except OSError:
-                    pass
+            try:
+                for p in child.rglob("*"):
+                    if p.is_file() and "__pycache__" not in p.parts:
+                        mt = max(mt, p.stat().st_mtime)
+            except OSError:
+                pass
     except OSError:
         pass
     return mt
