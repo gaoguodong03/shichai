@@ -1,5 +1,6 @@
 """LLM 客户端 - 经 Parameter Mapper + LiteLLM 统一调用，与具体厂商解耦。"""
 from __future__ import annotations
+import logging
 
 import json
 import os
@@ -427,6 +428,7 @@ class LLMClient:
         """获取经 Parameter Mapper + LiteLLM 统一调用的 Chat 客户端。"""
         try:
             import litellm  # noqa: F401
+            logging.getLogger("LiteLLM").setLevel(logging.WARNING)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"litellm is required for LLM client: {e}") from e
 
