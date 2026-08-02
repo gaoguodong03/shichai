@@ -200,7 +200,7 @@ export function useWorkspaceContentProviders(args: {
     await refreshGroupWorkspaceAfterExternalChange()
   }
 
-  async function previewMessageArtifact(artifact: { name: string; path: string }) {
+  async function previewMessageArtifact(artifact: { name: string; path: string; type?: string }) {
     if (!showGroupWorkspace.value) {
       showGroupWorkspace.value = true
       await nextTick()

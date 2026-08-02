@@ -24,29 +24,32 @@ def test_project_messages_cover_agent_runtime_shape():
     assert combined.model_dump()["tool_calls"][0]["name"] == "write_file"
 
 
-def test_openai_chat_client_roundtrips_tool_calls():
-    from app.agent.llm_client import OpenAIChatClient
+def test_litellm_chat_client_roundtrips_tool_calls(monkeypatch):
+    from app.agent.llm_client import LiteLLMChatClient
     from app.agent.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
     captured = {}
 
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            captured.update(kwargs)
-            raw_tool_call = SimpleNamespace(
-                id="tc1",
-                type="function",
-                function=SimpleNamespace(name="write_file", arguments='{"path":"a.md"}'),
-            )
-            message = SimpleNamespace(content="", tool_calls=[raw_tool_call])
-            return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")])
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        raw_tool_call = SimpleNamespace(
+            id="tc1",
+            type="function",
+            function=SimpleNamespace(name="write_file", arguments='{"path":"a.md"}'),
+        )
+        message = SimpleNamespace(content="", tool_calls=[raw_tool_call])
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")])
 
-    fake_completions = FakeCompletions()
-    async_client = SimpleNamespace(chat=SimpleNamespace(completions=fake_completions))
-    client = OpenAIChatClient(
-        async_client=async_client,
-        model="test-model",
-        request_options={"temperature": 0.2},
+    monkeypatch.setattr("litellm.acompletion", fake_acompletion)
+
+    client = LiteLLMChatClient(
+        model_config={
+            "provider": "openai",
+            "model": "test-model",
+            "base_url": "https://example.test/v1",
+            "temperature": 0.2,
+        },
+        api_key="test-key",
     ).bind_tools(
         [
             {
@@ -75,7 +78,7 @@ def test_openai_chat_client_roundtrips_tool_calls():
         )
     )
 
-    assert captured["model"] == "test-model"
+    assert captured["model"] == "openai/test-model"
     assert captured["temperature"] == 0.2
     assert captured["tool_choice"] == "required"
     assert captured["tools"][0]["function"]["name"] == "write_file"

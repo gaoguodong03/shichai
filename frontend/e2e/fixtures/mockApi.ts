@@ -200,14 +200,14 @@ export function createE2eState(): E2eState {
       system_prompt: '全局项目规则',
       llm_providers: {
         'qwen3-max': {
-          provider: 'openai_compatible',
+          provider: 'openai',
           base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
           model: 'qwen3-max',
           temperature: 0.7,
           top_p: 0.8,
           max_tokens: 2000,
           api_key_env: 'QWEN_API_KEY',
-          enable_thinking: false,
+          extra_body: { enable_thinking: false },
         },
       },
     },

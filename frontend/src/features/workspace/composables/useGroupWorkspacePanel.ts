@@ -296,8 +296,25 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     }
   }
 
-  const textExt = ['.md', '.txt', '.json', '.jsonl', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
+  const textExt = ['.md', '.txt', '.json', '.jsonl', '.py', '.js', '.ts', '.vue', '.html', '.htm', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
   const imageExt = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
+  function workspaceEntryBasename(pathOrName: string) {
+    const normalized = String(pathOrName || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+    if (!normalized) return ''
+    return normalized.includes('/') ? normalized.slice(normalized.lastIndexOf('/') + 1) : normalized
+  }
+  function workspaceEntryParentPath(filePath: string) {
+    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+    if (!normalized.includes('/')) return ''
+    return normalized.slice(0, normalized.lastIndexOf('/'))
+  }
+  /** Prefer name when it has an extension; otherwise use path basename (LLM often omits ext in artifact.name). */
+  function previewFileName(e: { name?: string; path?: string }) {
+    const name = String(e.name || '').trim()
+    const base = workspaceEntryBasename(e.path || '')
+    if (name.includes('.')) return name
+    return base || name
+  }
   function isMarkdownFile(name: string) {
     return /\.md$/i.test(name)
   }
@@ -344,21 +361,53 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     }
   }
 
-  async function previewWorkspaceFile(e: { name: string; path: string }) {
+  async function openWorkspaceDirectory(dirPath: string) {
+    const normalized = String(dirPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+    if (!normalized) {
+      groupWorkspaceGoRoot()
+      return
+    }
+    revokeGroupWorkspacePreviewBlob()
+    groupWorkspacePreviewPath.value = ''
+    groupWorkspacePreviewName.value = ''
+    groupWorkspacePreviewContent.value = ''
+    groupWorkspacePreviewImageUrl.value = ''
+    groupWorkspacePreviewEditing.value = false
+    groupWorkspacePath.value = normalized
+    await loadGroupWorkspace()
+  }
+
+  async function previewWorkspaceFile(e: { name: string; path: string; type?: string }) {
+    const filePath = String(e.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+    if (!filePath) return
+    if (String(e.type || '').trim().toLowerCase() === 'directory') {
+      if (groupWorkspacePreviewCollapsed.value) {
+        groupWorkspacePreviewCollapsed.value = false
+        groupWorkspaceWidth.value = lastExpandedWorkspaceWidth.value || 672
+      }
+      await openWorkspaceDirectory(filePath)
+      return
+    }
     if (groupWorkspacePreviewCollapsed.value) {
       groupWorkspacePreviewCollapsed.value = false
       groupWorkspaceWidth.value = lastExpandedWorkspaceWidth.value || 672
     }
+    const parentPath = workspaceEntryParentPath(filePath)
+    if (parentPath !== groupWorkspacePath.value) {
+      groupWorkspacePath.value = parentPath
+      await loadGroupWorkspace()
+    }
+    const displayName = previewFileName({ name: e.name, path: filePath })
     revokeGroupWorkspacePreviewBlob()
-    groupWorkspacePreviewPath.value = e.path
-    groupWorkspacePreviewName.value = e.name
+    groupWorkspacePreviewPath.value = filePath
+    groupWorkspacePreviewName.value = displayName
     groupWorkspacePreviewContent.value = ''
     groupWorkspacePreviewImageUrl.value = ''
     groupWorkspacePreviewEditing.value = false
-    if (isImageFile(e.name)) {
+    if (isImageFile(displayName)) {
       groupWorkspacePreviewLoading.value = true
       try {
-        const url = groupWorkspaceDownloadUrl(e.path)
+        const url = groupWorkspaceDownloadUrl(filePath)
         const r = await fetch(url, { cache: 'no-store' })
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const blob = await r.blob()
@@ -373,15 +422,24 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       }
       return
     }
-    if (!isTextFile(e.name)) {
+    if (!isTextFile(displayName)) {
       groupWorkspacePreviewContent.value = '[ 非文本文件，请点击「下载」查看 ]'
       return
     }
     groupWorkspacePreviewLoading.value = true
     try {
-      const url = groupWorkspaceDownloadUrl(e.path)
+      const url = groupWorkspaceDownloadUrl(filePath)
       const r = await fetch(url, { cache: 'no-store' })
       const text = await r.text()
+      if (!r.ok) {
+        // Directory mistaken as file (common for folder artifacts like web-crawler/) → browse instead
+        if (r.status === 400 && /directory/i.test(text)) {
+          await openWorkspaceDirectory(filePath)
+          return
+        }
+        groupWorkspacePreviewContent.value = '[ 加载失败 ]'
+        return
+      }
       groupWorkspacePreviewContent.value = text || '(空)'
     } catch {
       groupWorkspacePreviewContent.value = '[ 加载失败 ]'

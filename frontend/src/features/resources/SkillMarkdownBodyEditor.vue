@@ -10,10 +10,10 @@
       v-html="previewHtml"
     />
     <textarea
-      v-else
       :value="body"
-      rows="18"
-      class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent themed-scrollbar focus:ring-0 resize-y min-h-[14rem]"
+      rows="12"
+      class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[14rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+      :disabled="!editMode"
       placeholder="SKILL.md 正文内容"
       @input="$emit('update:body', ($event.target as HTMLTextAreaElement).value)"
     />
