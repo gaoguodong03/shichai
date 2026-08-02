@@ -1,0 +1,16 @@
+{
+  "name": "资源共享-搜索资源",
+  "type": "http_api",
+  "description": "按关键词搜索当前用户的历史资源。关键词必须放入 query.q，可选 page 和 perPage。",
+  "config": {
+    "type": "GET",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/query/search",
+    "header": {
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

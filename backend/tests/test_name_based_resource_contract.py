@@ -205,6 +205,66 @@ def test_saved_http_api_tool_executes_with_configured_fields(monkeypatch):
     assert called["timeout_seconds"] == 12
 
 
+def test_saved_http_api_tool_substitutes_encoded_path_params(monkeypatch):
+    from app.tools.http_api_tool import create_http_api_tool
+    import app.tools.http_api_tool as http_api_tool_mod
+
+    called = {}
+
+    def fake_call_api(**kwargs):
+        called.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(http_api_tool_mod, "_call_api_response_impl", fake_call_api)
+    tool = create_http_api_tool(
+        {
+            "name": "资源管理-查询详情",
+            "type": "http_api",
+            "config": {
+                "type": "GET",
+                "base_url": "https://files.example.test",
+                "path": "/api/query/detail/{contentId}",
+            },
+        }
+    )
+
+    assert tool.invoke({"path_params": {"contentId": "中文/../?x=1#fragment"}}) == "ok"
+    assert called["url"] == "https://files.example.test/api/query/detail/%E4%B8%AD%E6%96%87%2F..%2F%3Fx%3D1%23fragment"
+    path_params_schema = tool.args_schema["properties"]["path_params"]
+    assert path_params_schema["required"] == ["contentId"]
+    assert set(path_params_schema["properties"]) == {"contentId"}
+    assert path_params_schema["additionalProperties"] is False
+
+
+@pytest.mark.parametrize(
+    ("path_params", "error"),
+    [
+        ({}, "缺少路径参数"),
+        ({"contentId": "content-1", "extra": "value"}, "未声明的路径参数"),
+        ({"contentId": ""}, "不能为空"),
+        ({"contentId": ".."}, "不能是相对路径段"),
+        ({"contentId": ["content-1"]}, "必须是字符串、数字或布尔值"),
+    ],
+)
+def test_saved_http_api_tool_rejects_invalid_path_params(path_params, error):
+    from app.tools.http_api_tool import create_http_api_tool
+
+    tool = create_http_api_tool(
+        {
+            "name": "资源管理-查询详情",
+            "type": "http_api",
+            "config": {
+                "type": "GET",
+                "base_url": "https://files.example.test",
+                "path": "/api/query/detail/{contentId}",
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match=error):
+        tool.invoke({"path_params": path_params})
+
+
 def test_saved_http_api_tool_encodes_current_workspace_file_for_upload(tmp_path, monkeypatch):
     from app.tools.http_api_tool import create_http_api_tool
     import app.tools.http_api_tool as http_api_tool_mod
@@ -559,7 +619,20 @@ def test_normalize_scenario_row_keeps_minimal_prompt_host_and_agent_names():
             "skill_directory": "skill_tywretmy",
         },
         "agent_names": ["图片生成专家v1.0", "信息检索专家v1.0"],
+        "allow_agent_recruitment": True,
     }
+
+
+def test_normalize_scenario_row_preserves_closed_scene_recruitment_setting():
+    row = normalize_scenario_row(
+        {
+            "name": "封闭场景",
+            "agent_names": ["专家A"],
+            "allow_agent_recruitment": False,
+        }
+    )
+
+    assert row["allow_agent_recruitment"] is False
 
 
 def test_skill_frontmatter_keeps_allowed_tools_mcp_http_api_and_python_only():

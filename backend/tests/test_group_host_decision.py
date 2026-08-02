@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent import group_host_decision as hd
-from app.agent.structured_output_contracts import HostSchedulerDecisionPayload
+from app.agent.structured_output_contracts import HostSchedulerDecisionPayload, StructuredOutputProtocolError
 
 
 def _decision(*, target: str | None = "写作专家", suggestions: list[str] | None = None):
@@ -71,6 +71,39 @@ def test_strict_host_scheduler_rejects_agent_id_target():
     )
 
     assert out["message"] == {"content": hd.HOST_PROTOCOL_ERROR_MESSAGE}
+
+
+def test_scene_host_rejects_delegation_claim_without_target_agent():
+    payload = HostSchedulerDecisionPayload.model_validate(
+        {
+            "current_phase": "等待用户下一步操作",
+            "message": {"content": "用户请求查询资源详情，已转交资源管理专家处理。"},
+        }
+    )
+
+    with pytest.raises(StructuredOutputProtocolError, match="delegation claim requires message.target_agent_name"):
+        hd.host_scheduler_decision_from_payload(
+            payload,
+            agent_profiles=[{"name": "资源管理专家"}],
+            host_mode="scene",
+        )
+
+
+def test_scene_host_allows_actual_user_wait_without_target_agent():
+    payload = HostSchedulerDecisionPayload.model_validate(
+        {
+            "current_phase": "等待用户选择发布方式",
+            "message": {"content": "请明确选择：保留为原文件上传，或渲染为网页正文。"},
+        }
+    )
+
+    out = hd.host_scheduler_decision_from_payload(
+        payload,
+        agent_profiles=[{"name": "资源管理专家"}],
+        host_mode="scene",
+    )
+
+    assert out["message"] == {"content": "请明确选择：保留为原文件上传，或渲染为网页正文。"}
 
 
 def test_finalize_host_decision_suppresses_unsolicited_recruitment_with_existing_members():

@@ -85,6 +85,8 @@ def _session_definition_snapshot(session_id: str) -> Dict[str, Any]:
         "title_auto_generated",
         "agent_names",
         "host",
+        "scenario_prompt",
+        "allow_agent_recruitment",
         "created_at",
         "updated_at",
     }

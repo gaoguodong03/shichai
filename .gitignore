@@ -125,6 +125,9 @@ backend/data/agent-outputs/workspaces/*/错误文字.md
 # 公开分享场景包（体积大，registry.json 可提交）
 backend/data/scenario_shares/*.zip
 
+# Generated scenario bundle artifacts; keep source resources under version control.
+/examples/resource-manager-test/*.zip
+
 # -----------------------------------------------------------------------------
 # Docker / deployment / 1Panel local outputs
 # -----------------------------------------------------------------------------

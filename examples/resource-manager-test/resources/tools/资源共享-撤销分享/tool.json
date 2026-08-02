@@ -1,0 +1,17 @@
+{
+  "name": "资源共享-撤销分享",
+  "type": "http_api",
+  "description": "撤销可靠来源中的 contentId 的有效分享，使资源恢复私密。已私密时不要调用。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/share/revoke",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

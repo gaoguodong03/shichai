@@ -102,6 +102,7 @@ def session_preset_item_to_disk_row(item: Any) -> Optional[Dict[str, Any]]:
         "agent_names": agent_names,
         "description": str(_item_value(item, "description", "") or ""),
         "system_prompt": str(_item_value(item, "system_prompt", "") or ""),
+        "allow_agent_recruitment": bool(_item_value(item, "allow_agent_recruitment", True)),
     }
     if host_norm is not None:
         row["host"] = host_norm

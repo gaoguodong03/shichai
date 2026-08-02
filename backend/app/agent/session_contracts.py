@@ -30,6 +30,7 @@ class SessionCreateRequest(StrictApiModel):
     agent_names: list[str] = Field(default_factory=list)
     host: HostSnapshot | None = None
     scenario_prompt: str = ""
+    allow_agent_recruitment: bool = True
 
     @model_validator(mode="after")
     def _dedupe_agent_names(self) -> "SessionCreateRequest":
@@ -44,6 +45,7 @@ class SessionUpdateRequest(StrictApiModel):
     remove_agent_names: list[str] = Field(default_factory=list)
     host: HostSnapshot | None = None
     scenario_prompt: str | None = None
+    allow_agent_recruitment: bool | None = None
 
     @model_validator(mode="after")
     def _dedupe_name_lists(self) -> "SessionUpdateRequest":

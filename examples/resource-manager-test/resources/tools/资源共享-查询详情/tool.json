@@ -1,0 +1,16 @@
+{
+  "name": "资源共享-查询详情",
+  "type": "http_api",
+  "description": "按可靠来源中的资源 ID 查询当前用户资源详情。仅传 path_params.contentId，不要传完整 URL、contentHash 或 shareHash。回复仅展示标题、资源 ID、类型、公开状态和实际返回的 `ownerUrl`；不展示正文、`accessUrl` 或 `shareUrl`，并提示用户可通过 `ownerUrl` 查看完整内容。",
+  "config": {
+    "type": "GET",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/query/detail/{contentId}",
+    "header": {
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

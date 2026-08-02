@@ -75,6 +75,7 @@ async def create_session(body: SessionCreateRequest):
         agent_names=body.agent_names,
         host=host,
         scenario_prompt=body.scenario_prompt,
+        allow_agent_recruitment=body.allow_agent_recruitment,
     )
     return {"status": "ok", "data": data}
 

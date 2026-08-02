@@ -1,0 +1,16 @@
+{
+  "name": "资源共享-查询列表",
+  "type": "http_api",
+  "description": "查询当前用户的资源列表。可通过 query 传 page 和 perPage。",
+  "config": {
+    "type": "GET",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/query/list",
+    "header": {
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

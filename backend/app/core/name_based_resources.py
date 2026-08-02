@@ -208,10 +208,12 @@ def normalize_scenario_row(raw: Dict[str, Any]) -> Dict[str, Any]:
     agent_names = _agent_names_from_row(row)
     if not agent_names:
         raise ValueError("scenario agent_names required")
+    allow_agent_recruitment = row.get("allow_agent_recruitment")
     return {
         "name": name,
         "description": str(row.get("description") or ""),
         "system_prompt": str(row.get("system_prompt") or "") if row.get("system_prompt") is not None else "",
         "host": _normalize_scenario_host_snapshot(row.get("host")),
         "agent_names": agent_names,
+        "allow_agent_recruitment": allow_agent_recruitment if isinstance(allow_agent_recruitment, bool) else True,
     }

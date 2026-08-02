@@ -453,6 +453,7 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
             "title": "问答验收场景",
             "agent_names": ["场景专家"],
             "scenario_prompt": "这是会话内所有角色共享的问答任务契约。",
+            "allow_agent_recruitment": False,
         },
     )
     assert update_resp.status_code == 200
@@ -461,6 +462,7 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
     assert updated["title"] == "问答验收场景"
     assert updated["agent_names"] == ["场景专家"]
     assert updated["scenario_prompt"] == "这是会话内所有角色共享的问答任务契约。"
+    assert updated["allow_agent_recruitment"] is False
 
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
@@ -474,16 +476,19 @@ def test_create_session_persists_scenario_prompt_snapshot(client: TestClient):
             "title": "场景快照会话",
             "agent_names": [],
             "scenario_prompt": "创建会话时保存，之后不回读场景资源。",
+            "allow_agent_recruitment": False,
         },
     )
 
     assert create_resp.status_code == 200
     created = create_resp.json()["data"]
     assert created["scenario_prompt"] == "创建会话时保存，之后不回读场景资源。"
+    assert created["allow_agent_recruitment"] is False
 
     detail_resp = client.get(f"/api/sessions/{created['id']}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["data"]["scenario_prompt"] == "创建会话时保存，之后不回读场景资源。"
+    assert detail_resp.json()["data"]["allow_agent_recruitment"] is False
 
 
 def test_update_session_title_is_always_manual_contract(client: TestClient):

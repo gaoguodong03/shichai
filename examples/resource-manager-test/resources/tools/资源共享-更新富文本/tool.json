@@ -1,0 +1,28 @@
+{
+  "name": "资源共享-更新富文本",
+  "type": "http_api",
+  "description": "更新富文本标题或用完整 Markdown 覆盖正文。直接更新时 body 传 contentId 及完整字段；工作区 Markdown 传 workspace_file.path，并在 body 中传可靠 contentId 和当前标题。只支持 .md，最大 10 MiB。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/update",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {
+      "bodyFormat": "markdown"
+    },
+    "timeout_seconds": 60,
+    "workspace_text": {
+      "content_field": "body",
+      "title_field": "title",
+      "allowed_extensions": [
+        ".md"
+      ],
+      "max_bytes": 10485760,
+      "encoding": "utf-8"
+    }
+  }
+}

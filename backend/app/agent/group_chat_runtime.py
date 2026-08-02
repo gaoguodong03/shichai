@@ -92,6 +92,16 @@ def _is_duplicate_host_followup(messages: List[Dict[str, Any]], host_message: Di
     return False
 
 
+def _has_successful_tool_action(tool_results: List[Dict[str, Any]]) -> bool:
+    """Return whether an expert already completed a real tool action this turn."""
+    return any(
+        isinstance(item, dict)
+        and str(item.get("execution_status") or "").strip() == "succeeded"
+        and isinstance(item.get("tool_call"), dict)
+        for item in tool_results or []
+    )
+
+
 def _record_host_message_execution_log(
     group_session_id: str,
     *,
@@ -223,7 +233,13 @@ async def _run_contract_events(
 ) -> AsyncIterator[str]:
     """Produce the contract SSE sequence for host routing and expert execution."""
     agent_profiles = [agent_map[name] for name in agent_names if name in agent_map]
-    available_to_add = [item for item in agent_map.values() if str(item.get("name") or "").strip() not in agent_names]
+    allow_agent_recruitment = bool(session_item.get("allow_agent_recruitment", True))
+    host_mode = "recruitment" if allow_agent_recruitment else "scene"
+    available_to_add = (
+        [item for item in agent_map.values() if str(item.get("name") or "").strip() not in agent_names]
+        if allow_agent_recruitment
+        else []
+    )
     host_agent = _host_snapshot_to_agent(session_item)
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
     if not agent_names:
@@ -305,6 +321,7 @@ async def _run_contract_events(
             messages=messages,
             app_settings=app_settings,
             user_message=user_text,
+            host_mode=host_mode,
             session_item=session_item,
             host_scheduler_state=host_scheduler,
             skill_sessions_state=orchestration_state.get("skill_sessions"),
@@ -536,6 +553,7 @@ async def _run_contract_events(
             if isinstance(latest_state.get("host_scheduler"), dict)
             else host_scheduler
         )
+        completed_expert_name = next_speaker
         decision = await _host_decide_by_agent(
             _get_llm_for_agent(host_agent, app_settings),
             host_agent,
@@ -549,6 +567,7 @@ async def _run_contract_events(
             messages=messages,
             app_settings=app_settings,
             user_message=user_text,
+            host_mode=host_mode,
             session_item=session_item,
             host_scheduler_state=host_scheduler,
             skill_sessions_state=latest_state.get("skill_sessions"),
@@ -564,6 +583,22 @@ async def _run_contract_events(
         next_action = str(applied_decision["next_action"])
         suggested_add = list(applied_decision["suggested_add_agent_names"])
         host_scheduler = dict(applied_decision["host_scheduler"])
+        if (
+            next_speaker == completed_expert_name
+            and _has_successful_tool_action(expert_outcome.tool_results)
+        ):
+            logger.warning(
+                "suppressing repeated expert tool turn session=%s agent=%s",
+                group_session_id,
+                completed_expert_name,
+            )
+            next_speaker = "user"
+            suggested_add = []
+            host_scheduler = {
+                "current_phase": str(host_scheduler.get("current_phase") or "").strip(),
+                "message": {},
+            }
+            suppress_host_message = True
         latest_state["host_scheduler"] = host_scheduler
         write_group_orchestration_state(group_session_id, latest_state)
         save_session_definitions(session_definitions)

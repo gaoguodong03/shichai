@@ -26,6 +26,7 @@ export type ShortcutPreset = {
   host?: ShortcutHostConfig
   description?: string
   system_prompt?: string
+  allow_agent_recruitment?: boolean
 }
 
 type ShortcutExpert = {
@@ -117,6 +118,7 @@ export function useShortcutPresets(args: {
         host: hc,
         description: String(raw?.description || '').trim(),
         system_prompt: String(raw?.system_prompt || '').trim(),
+        allow_agent_recruitment: raw?.allow_agent_recruitment !== false,
       })
     }
     return out
@@ -181,6 +183,7 @@ export function useShortcutPresets(args: {
         agent_names: p.agent_names,
         description: p.description || '',
         system_prompt: p.system_prompt || '',
+        allow_agent_recruitment: p.allow_agent_recruitment !== false,
       }
       if (p.host) row.host = p.host
       return row
@@ -233,6 +236,7 @@ export function useShortcutPresets(args: {
       agent_names: targetExperts,
       host: sessionHostFromScenarioPreset(p.host),
       scenario_prompt: String(p.system_prompt || '').trim(),
+      allow_agent_recruitment: p.allow_agent_recruitment !== false,
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {

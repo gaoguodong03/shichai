@@ -8,7 +8,7 @@ import mimetypes
 import os
 import re
 from typing import Any, Dict
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_spec import ToolSpec
@@ -17,6 +17,7 @@ from app.api.files import get_workspace_root_path
 from app.tools.call_api import _call_api_response_impl
 
 _TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
+_PATH_PARAM_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _runtime_tool_name(display_name: str) -> str:
@@ -60,6 +61,52 @@ def _append_path(base_url: str, path: str) -> str:
     if not suffix:
         return base
     return base.rstrip("/") + "/" + suffix.lstrip("/")
+
+
+def _substitute_path_params(path: str, path_params: Dict[str, Any] | None) -> str:
+    template = str(path or "")
+    declared = list(dict.fromkeys(_PATH_PARAM_RE.findall(template)))
+    supplied = path_params if isinstance(path_params, dict) else {}
+    if path_params is not None and not isinstance(path_params, dict):
+        raise ValueError("path_params 必须是对象。")
+
+    missing = [name for name in declared if name not in supplied]
+    if missing:
+        raise ValueError(f"缺少路径参数：{', '.join(missing)}。")
+    extra = [str(name) for name in supplied if str(name) not in declared]
+    if extra:
+        raise ValueError(f"包含未声明的路径参数：{', '.join(extra)}。")
+
+    encoded: Dict[str, str] = {}
+    for name in declared:
+        value = supplied[name]
+        if not isinstance(value, (str, int, float, bool)):
+            raise ValueError(f"路径参数 {name} 必须是字符串、数字或布尔值。")
+        text = str(value).strip()
+        if not text:
+            raise ValueError(f"路径参数 {name} 不能为空。")
+        if text in {".", ".."}:
+            raise ValueError(f"路径参数 {name} 不能是相对路径段。")
+        encoded[name] = quote(text, safe="")
+    return _PATH_PARAM_RE.sub(lambda match: encoded[match.group(1)], template)
+
+
+def _path_params_schema(path: str) -> Dict[str, Any]:
+    declared = list(dict.fromkeys(_PATH_PARAM_RE.findall(str(path or ""))))
+    scalar_schema = {
+        "anyOf": [
+            {"type": "string"},
+            {"type": "number"},
+            {"type": "boolean"},
+        ]
+    }
+    return {
+        "type": "object",
+        "description": render_platform_prompt("tool.schema.saved_http_api.path_params.v1", {}),
+        "properties": {name: dict(scalar_schema) for name in declared},
+        "required": declared,
+        "additionalProperties": False,
+    }
 
 
 def _append_query(url: str, query: Dict[str, Any]) -> str:
@@ -199,8 +246,10 @@ def create_http_api_tool(
     name = str((row or {}).get("name") or "").strip()
     cfg = (row or {}).get("config") if isinstance((row or {}).get("config"), dict) else {}
     env_vars = env_vars or {}
+    configured_path = _subst_placeholders(str(cfg.get("path") or ""), env_vars)
 
     def _execute(
+        path_params: Dict[str, Any] | None = None,
         query: Dict[str, Any] | None = None,
         body: Any = None,
         headers: Dict[str, Any] | None = None,
@@ -221,8 +270,9 @@ def create_http_api_tool(
             payload = _workspace_file_payload(payload, workspace_file, file_upload_config, workspace_id)
         if not isinstance(payload, str):
             payload = json.dumps(payload, ensure_ascii=False)
+        resolved_path = _substitute_path_params(configured_path, path_params)
         url = _append_query(
-            _append_path(_subst_placeholders(str(cfg.get("base_url") or ""), env_vars), str(cfg.get("path") or "")),
+            _append_path(_subst_placeholders(str(cfg.get("base_url") or ""), env_vars), resolved_path),
             merged_query,
         )
         return _call_api_response_impl(
@@ -240,6 +290,7 @@ def create_http_api_tool(
         args_schema={
             "type": "object",
             "properties": {
+                "path_params": _path_params_schema(configured_path),
                 "query": {"type": "object", "description": render_platform_prompt("tool.schema.saved_http_api.query.v1", {})},
                 "headers": {"type": "object", "description": render_platform_prompt("tool.schema.saved_http_api.headers.v1", {})},
                 "body": {"description": render_platform_prompt("tool.schema.saved_http_api.body.v1", {})},

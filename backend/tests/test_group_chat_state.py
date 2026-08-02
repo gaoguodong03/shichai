@@ -25,6 +25,7 @@ def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
             "title": "会话",
             "agent_names": ["专家A"],
             "scenario_prompt": "场景共享任务契约",
+            "allow_agent_recruitment": False,
             "created_at": TS1,
             "updated_at": TS1,
         }
@@ -46,7 +47,9 @@ def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     loaded = state.load_session_definitions()["s1"]
     assert loaded["title"] == "会话"
     assert loaded["scenario_prompt"] == "场景共享任务契约"
+    assert loaded["allow_agent_recruitment"] is False
     assert json.loads((tmp_path / "s1" / "session.json").read_text(encoding="utf-8"))["scenario_prompt"] == "场景共享任务契约"
+    assert json.loads((tmp_path / "s1" / "session.json").read_text(encoding="utf-8"))["allow_agent_recruitment"] is False
     assert (tmp_path / "s1" / "session.json").exists()
     assert not (tmp_path / "s1" / "meta.json").exists()
     assert state.load_group_history("s1")[0]["message"]["content"] == "你好"

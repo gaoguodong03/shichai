@@ -51,10 +51,16 @@ def host_scheduler_decision_from_payload(
     scene_mode = str(host_mode or "").strip().lower() == "scene"
     message = payload.message.model_dump(exclude_none=True, exclude_defaults=True)
     target = str(message.get("target_agent_name") or "").strip()
+    content = str(message.get("content") or "").strip()
     suggested = list(payload.suggested_add_agent_names or [])
     if scene_mode and suggested:
         raise StructuredOutputProtocolError(
             "scene mode forbids suggested_add_agent_names",
+            schema_name="HostSchedulerDecisionPayload",
+        )
+    if scene_mode and not target and any(marker in content for marker in ("已转交", "已派发", "已交给")):
+        raise StructuredOutputProtocolError(
+            "scene delegation claim requires message.target_agent_name",
             schema_name="HostSchedulerDecisionPayload",
         )
     if target:

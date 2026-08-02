@@ -1,0 +1,17 @@
+{
+  "name": "资源共享-管理开启分享",
+  "type": "http_api",
+  "description": "为可靠来源中的 contentId 开启分享或取得现有有效分享链接。服务端对同一 contentId 幂等；不得用 URL hash 代替 contentId。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/share",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60
+  }
+}

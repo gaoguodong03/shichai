@@ -85,6 +85,7 @@ class SessionPresetItem(StrictRequestModel):
     description: Optional[str] = ""
     system_prompt: Optional[str] = ""
     host: Optional[Dict[str, Any]] = None
+    allow_agent_recruitment: bool = True
 
 
 class SessionPresetsBody(StrictRequestModel):

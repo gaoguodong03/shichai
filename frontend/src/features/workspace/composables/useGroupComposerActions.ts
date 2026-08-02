@@ -24,13 +24,39 @@ type StreamState = {
 type StreamContent = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
 
-const RESOURCE_PUBLISHER_AGENT_NAME = '资源发布专家'
-const PASTE_TO_WORKSPACE_THRESHOLD = 32 * 1024
+const RESOURCE_WORKFLOW_AGENT_NAMES = new Set(['资源发布专家', '资源管理专家'])
+const RESOURCE_MANAGER_AGENT_NAME = '资源管理专家'
+// Keep publishable bodies below the expert-history clipping boundary.
+const PASTE_TO_WORKSPACE_THRESHOLD = 1024
+const RESOURCE_COMMAND_WINDOW = 512
+const STAGED_RESOURCE_REQUEST_LIMIT = 140
 
-function shouldStageResourcePublisherPaste(detail: GroupDetail, message: string, attachmentCount: number): boolean {
+function resourceCommandText(message: string): string {
+  if (message.length <= RESOURCE_COMMAND_WINDOW * 2) return message
+  return `${message.slice(0, RESOURCE_COMMAND_WINDOW)}\n${message.slice(-RESOURCE_COMMAND_WINDOW)}`
+}
+
+function stagedResourceRequestSummary(message: string): string {
+  const command = resourceCommandText(message).replace(/\s+/g, ' ').trim()
+  if (command.length <= STAGED_RESOURCE_REQUEST_LIMIT) return command
+
+  const tailLength = 48
+  const headLength = STAGED_RESOURCE_REQUEST_LIMIT - tailLength - 3
+  return `${command.slice(0, headLength).trimEnd()} … ${command.slice(-tailLength).trimStart()}`
+}
+
+function stagedResourcePasteMessage(message: string): string {
+  return `完整内容已暂存为附带 Markdown 文件。用户原始请求摘要：${stagedResourceRequestSummary(message)}`
+}
+
+function shouldStageResourceWorkflowPaste(detail: GroupDetail, message: string, attachmentCount: number): boolean {
   if (attachmentCount > 0 || message.length <= PASTE_TO_WORKSPACE_THRESHOLD) return false
-  if (!(detail.agent_names || []).includes(RESOURCE_PUBLISHER_AGENT_NAME)) return false
-  return /发布|共享|上传/.test(message)
+  const agentNames = detail.agent_names || []
+  if (!agentNames.some((name) => RESOURCE_WORKFLOW_AGENT_NAMES.has(name))) return false
+  const actionPattern = agentNames.includes(RESOURCE_MANAGER_AGENT_NAME)
+    ? /发布|共享|上传|保存|公开/
+    : /发布|共享|上传|公开/
+  return actionPattern.test(resourceCommandText(message))
 }
 
 async function stageResourcePublisherPaste(workspaceId: string, content: string): Promise<{ path: string; name: string }> {
@@ -170,10 +196,10 @@ export function useGroupComposerActions(args: {
     let msg = base
     let attachments = requestAttachments()
     try {
-      if (shouldStageResourcePublisherPaste(detail, base, attachments.length)) {
+      if (shouldStageResourceWorkflowPaste(detail, base, attachments.length)) {
         const staged = await stageResourcePublisherPaste(detail.id, base)
         attachments = [...attachments, { type: 'workspace_file', path: staged.path, name: staged.name }]
-        msg = `请将附带的 Markdown 渲染为网页正文发布。`
+        msg = stagedResourcePasteMessage(base)
       }
     } catch (error) {
       console.error('暂存长文本失败', error)

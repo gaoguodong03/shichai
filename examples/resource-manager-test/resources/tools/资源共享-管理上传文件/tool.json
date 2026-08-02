@@ -1,0 +1,23 @@
+{
+  "name": "资源共享-管理上传文件",
+  "type": "http_api",
+  "description": "上传当前会话工作区中的一个文件，默认保持私密，不会自动开启分享。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/file",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {},
+    "timeout_seconds": 60,
+    "file_upload": {
+      "content_base64_field": "contentBase64",
+      "filename_field": "filename",
+      "mime_type_field": "mimeType",
+      "max_bytes": 10485760
+    }
+  }
+}

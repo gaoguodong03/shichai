@@ -150,6 +150,19 @@ async def _host_decide_by_agent(
 
     def _validate_host_payload(payload: HostSchedulerDecisionPayload) -> None:
         host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
+        message = payload.message.model_dump(exclude_none=True, exclude_defaults=True)
+        target = str(message.get("target_agent_name") or "").strip()
+        content = str(message.get("content") or "").strip()
+        if (
+            str(host_mode or "").strip().lower() == "scene"
+            and not last_speaker_agent_name
+            and not target
+            and any(marker in content for marker in ("专家已完成", "专家已处理", "操作已完成"))
+        ):
+            raise StructuredOutputProtocolError(
+                "scene completion claim requires a preceding expert reply",
+                schema_name="HostSchedulerDecisionPayload",
+            )
 
     try:
         payload = await invoke_pydantic_llm_output(

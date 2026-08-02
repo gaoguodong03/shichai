@@ -440,3 +440,47 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
     assert "主持人调度输出未通过平台 JSON 协议校验" in retry_prompt
     assert '"suggested_add_agent_names"' not in retry_prompt
     assert "主持人长期提示词" in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_scene_host_retries_when_it_claims_completion_before_any_expert_reply(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeClient:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return FakeResponse(
+                    '{"current_phase":"等待用户下一步操作","message":{"content":"资源管理专家已完成处理，请告知下一步操作。"}}'
+                )
+            return FakeResponse(
+                '{"current_phase":"资源查询","message":{"content":"用户请求查询资源详情，请处理。","target_agent_name":"资源管理专家"}}'
+            )
+
+    class FakeLlm:
+        def get_client(self):
+            return FakeClient()
+
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._request_skills_loader", lambda: None)
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+
+    out = await _host_decide_by_agent(
+        llm=FakeLlm(),
+        host_agent={"name": "四九"},
+        agent_profiles=[{"name": "资源管理专家", "description": "资源管理"}],
+        discussion_goal="查询资源详情",
+        recent_messages="用户：帮我查询资源详情",
+        last_speaker_agent_name=None,
+        extra_system_prompt="",
+        group_session_id="group-scene",
+        app_settings={},
+        user_message="帮我查询资源详情",
+        host_mode="scene",
+    )
+
+    assert len(calls) == 2
+    assert out["message"] == {"content": "用户请求查询资源详情，请处理。", "target_agent_name": "资源管理专家"}

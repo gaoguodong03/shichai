@@ -102,6 +102,7 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         "agent_names",
         "host",
         "scenario_prompt",
+        "allow_agent_recruitment",
         "created_at",
         "updated_at",
     }
@@ -458,6 +459,7 @@ def build_session_payload(session_id: str, session_item: Dict[str, Any]) -> Dict
         "agent_names": names,
         "host": dict(clean_item.get("host") or {}),
         "scenario_prompt": str(clean_item.get("scenario_prompt") or ""),
+        "allow_agent_recruitment": bool(clean_item.get("allow_agent_recruitment", True)),
         "created_at": clean_item.get("created_at", ""),
         "updated_at": clean_item.get("updated_at", ""),
         "runtime": runtime_for_session(session_id, clean_item),

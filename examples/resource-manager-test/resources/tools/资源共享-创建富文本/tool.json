@@ -1,0 +1,28 @@
+{
+  "name": "资源共享-创建富文本",
+  "type": "http_api",
+  "description": "创建默认私密的 Markdown 富文本。直接创建时 body 传 title、body、bodyFormat=markdown；工作区 Markdown 只传 workspace_file.path。不要传 accessMode，不会自动开启分享。",
+  "config": {
+    "type": "POST",
+    "base_url": "http://10.129.236.188:8787",
+    "path": "/api/write/content",
+    "header": {
+      "content-type": "application/json",
+      "x-shutong49-api-key": "${env:STATIC_CONTENT_API_KEY}"
+    },
+    "query": {},
+    "body": {
+      "bodyFormat": "markdown"
+    },
+    "timeout_seconds": 60,
+    "workspace_text": {
+      "content_field": "body",
+      "title_field": "title",
+      "allowed_extensions": [
+        ".md"
+      ],
+      "max_bytes": 10485760,
+      "encoding": "utf-8"
+    }
+  }
+}

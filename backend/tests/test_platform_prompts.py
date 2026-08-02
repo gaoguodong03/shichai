@@ -13,6 +13,7 @@ PROMPT_TEMPLATE_FILE = ROOT / "backend/app/agent/platform_prompt_templates.json"
 def test_platform_prompts_are_registered_by_prompt_id():
     assert "host.select_next_speaker.v1" in PLATFORM_PROMPTS
     assert get_platform_prompt("host.select_next_speaker.v1").prompt_id == "host.select_next_speaker.v1"
+    assert "tool.schema.saved_http_api.path_params.v1" in PLATFORM_PROMPTS
 
 
 def test_shared_session_prompt_orders_project_before_scenario_once():

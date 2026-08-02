@@ -252,6 +252,60 @@ async def test_host_handoff_message_precedes_expert_route(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_closed_scene_hides_non_member_agents_from_host_catalog(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    session_id = "s-closed-scene"
+    session_item = {
+        "title": "封闭场景",
+        "agent_names": ["资源管理专家"],
+        "allow_agent_recruitment": False,
+        "host": {"name": "四九"},
+        "created_at": "2026071100000000",
+        "updated_at": "2026071100000000",
+    }
+    state.save_session_definitions({session_id: session_item})
+    state.save_group_history(session_id, [])
+    captured_available = []
+
+    async def _host_decision(*args, **_kwargs):
+        captured_available.append(args[7])
+        return {
+            "current_phase": "等待用户",
+            "message": {"content": "请补充资源操作。"},
+            "suggested_add_agent_names": [],
+        }
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id=session_id,
+            request=GroupChatRequest(message="发布文件", message_id="msg-user-1"),
+            run_id="run-closed-scene",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()[session_id],
+            app_settings={},
+            agent_map={
+                "资源管理专家": {"name": "资源管理专家", "description": "管理资源"},
+                "资源发布专家": {"name": "资源发布专家", "description": "发布资源"},
+            },
+            agent_names=["资源管理专家"],
+            messages=[],
+            discussion_goal="发布文件",
+            user_text="发布文件",
+        )
+    ]
+
+    assert events
+    assert captured_available == [[]]
+
+
+@pytest.mark.asyncio
 async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
@@ -334,6 +388,104 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
     assert parsed[-1][0] == "end"
     assert parsed[-1][1]["phase"] == "awaiting_user"
     assert decisions == []
+
+
+@pytest.mark.asyncio
+async def test_successful_tool_action_cannot_be_immediately_reassigned_to_same_expert(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-tool-repeat-guard": {
+                "title": "工具防重复",
+                "agent_names": ["资源管理专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-tool-repeat-guard", [])
+    decisions = [
+        {
+            "current_phase": "上传资源",
+            "message": {"content": "请上传文件。", "target_agent_name": "资源管理专家"},
+            "suggested_add_agent_names": [],
+        },
+        {
+            "current_phase": "上传资源",
+            "message": {"content": "请再次上传文件。", "target_agent_name": "资源管理专家"},
+            "suggested_add_agent_names": [],
+        },
+    ]
+    expert_calls = 0
+
+    async def _host_decision(*_args, **_kwargs):
+        return decisions.pop(0)
+
+    async def _expert_turn(**kwargs):
+        nonlocal expert_calls
+        expert_calls += 1
+        kwargs["outcome"].tool_results.append(
+            {
+                "tool_call": {
+                    "id": "call-upload-1",
+                    "name": "http_api_tool_upload",
+                    "kind": "api",
+                    "arguments": {"workspace_file": {"path": "test.txt"}},
+                },
+                "execution_status": "succeeded",
+                "output": {"content": "ok"},
+            }
+        )
+        kwargs["outcome"].succeed()
+        expert_msg = {
+            "message_id": "msg-expert-upload",
+            "speaker": {
+                "type": "expert",
+                "agent_name": kwargs["agent_name"],
+                "skill": "resource-manager",
+            },
+            "message": {"content": "文件已上传。"},
+            "created_at": "2026071100000100",
+            "skill_result": {"execution_status": "succeeded"},
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-tool-repeat-guard",
+            request=GroupChatRequest(message="上传这个文件", message_id="msg-user-1"),
+            run_id="run-1",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-tool-repeat-guard"],
+            app_settings={},
+            agent_map={"资源管理专家": {"name": "资源管理专家", "description": "管理资源"}},
+            agent_names=["资源管理专家"],
+            messages=[],
+            discussion_goal="上传这个文件",
+            user_text="上传这个文件",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    assert expert_calls == 1
+    assert decisions == []
+    assert [
+        payload["message"]["content"]
+        for event_type, payload in parsed
+        if event_type == "message"
+    ] == ["请上传文件。", "文件已上传。"]
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "awaiting_user"
 
 
 @pytest.mark.asyncio

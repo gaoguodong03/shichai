@@ -1,0 +1,16 @@
+{
+  "bundle_type": "scenario",
+  "root_resources": [
+    {
+      "type": "scenario",
+      "name": "资源管理测试"
+    }
+  ],
+  "resource_counts": {
+    "scenarios": 1,
+    "agents": 1,
+    "skills": 2,
+    "tools": 9,
+    "models": 0
+  }
+}
