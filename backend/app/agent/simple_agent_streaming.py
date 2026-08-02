@@ -13,10 +13,7 @@ from app.agent.simple_agent_finalization import (
     _tool_budget_finalization_instruction,
     _tool_budget_structured_finalization_instruction,
 )
-from app.agent.simple_agent_introspection import (
-    _bound_skill_introspection_message,
-    _user_text_for_bound_skill_introspection,
-)
+
 from app.agent.simple_agent_messages import (
     _ai_response_hit_output_limit,
     _continuation_instruction,
@@ -58,23 +55,6 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
 
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [SystemMessage(content=agent.system_prompt)] + messages
-
-    introspection_message = _bound_skill_introspection_message(
-        agent.system_prompt,
-        _user_text_for_bound_skill_introspection(messages),
-    )
-    if introspection_message is not None:
-        tool_attempt_debug = [
-            {
-                "source": "bound_skill_introspection_direct_final",
-                "matched": True,
-                "content_preview": _extract_text_content(introspection_message)[:240],
-            }
-        ]
-        messages.append(introspection_message)
-        yield {"type": "agent_step", "step": 1, "message": introspection_message}
-        yield {"type": "final_step", "messages": messages, "tool_attempt_debug": tool_attempt_debug}
-        return
 
     client = agent.llm.get_client()
     if tools:
