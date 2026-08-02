@@ -84,6 +84,7 @@ export function useGroupMessageList(args: {
   const copiedMessageActionKey = ref('')
   const messageExecutionLogs = ref<Record<string, MessageExecutionLogSummary[]>>({})
   const messageExecutionLogsLoading = ref<Record<string, boolean>>({})
+  const messageExecutionLogRequestSeq: Record<string, number> = {}
   const expandedExecutionLogMessageId = ref('')
   const expandedExecutionLogKey = ref('')
   let checkpointFetchSeq = 0
@@ -405,36 +406,64 @@ export function useGroupMessageList(args: {
     }
     expandedExecutionLogMessageId.value = messageId
     expandedExecutionLogKey.value = ''
-    if (Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) return
-    await loadMessageExecutionLogs(msg, true)
+    // Always revalidate when opening: first load can race with tool-log write / stream refresh.
+    await loadMessageExecutionLogs(msg, { notifyOnError: true, force: true })
   }
 
-  async function loadMessageExecutionLogs(msg: MsgExt & { message_id?: string }, notifyOnError = false) {
+  async function loadMessageExecutionLogs(
+    msg: MsgExt & { message_id?: string },
+    options: { notifyOnError?: boolean; force?: boolean } = {},
+  ) {
+    const notifyOnError = !!options.notifyOnError
+    const force = !!options.force
     const sessionId = String(groupDetail.value?.id || '').trim()
     const messageId = String(msg?.message_id || '').trim()
     if (!sessionId || !messageId) return
-    if (Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) return
-    if (messageExecutionLogsLoading.value[messageId]) return
+    if (!force && Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) return
+    if (!force && messageExecutionLogsLoading.value[messageId]) return
+    const requestSeq = (messageExecutionLogRequestSeq[messageId] || 0) + 1
+    messageExecutionLogRequestSeq[messageId] = requestSeq
     messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: true }
     try {
       const response = await fetchMessageExecutionLogs(sessionId, messageId)
+      if (messageExecutionLogRequestSeq[messageId] !== requestSeq) return
       if (String(groupDetail.value?.id || '').trim() !== sessionId) return
+      if (response.status !== 'ok') {
+        // Keep previous successful data when a refresh fails; only seed empty on first miss.
+        if (!Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) {
+          messageExecutionLogs.value = { ...messageExecutionLogs.value, [messageId]: [] }
+        }
+        if (notifyOnError) await appAlert({ title: '日志加载失败', message: '工具日志加载失败', variant: 'danger' })
+        return
+      }
       messageExecutionLogs.value = {
         ...messageExecutionLogs.value,
         [messageId]: Array.isArray(response.data?.logs) ? response.data.logs : [],
       }
     } catch {
-      messageExecutionLogs.value = { ...messageExecutionLogs.value, [messageId]: [] }
+      if (messageExecutionLogRequestSeq[messageId] !== requestSeq) return
+      if (!Object.prototype.hasOwnProperty.call(messageExecutionLogs.value, messageId)) {
+        messageExecutionLogs.value = { ...messageExecutionLogs.value, [messageId]: [] }
+      }
       if (notifyOnError) await appAlert({ title: '日志加载失败', message: '工具日志加载失败', variant: 'danger' })
     } finally {
-      messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: false }
+      if (messageExecutionLogRequestSeq[messageId] === requestSeq) {
+        messageExecutionLogsLoading.value = { ...messageExecutionLogsLoading.value, [messageId]: false }
+      }
     }
   }
 
-  function preloadMessageExecutionLogs(messages: GroupMessage[]) {
+  function preloadMessageExecutionLogs(messages: GroupMessage[], options: { force?: boolean } = {}) {
     for (const msg of messages) {
-      if (canShowMessageExecutionLogs(msg)) void loadMessageExecutionLogs(msg)
+      if (canShowMessageExecutionLogs(msg)) void loadMessageExecutionLogs(msg, { force: !!options.force })
     }
+  }
+
+  /** Called when a streamed expert/host bubble becomes a durable history message. */
+  function syncMessageExecutionLogs(msg: GroupMessage | Record<string, unknown> | null | undefined) {
+    if (!msg || typeof msg !== 'object') return
+    if (!canShowMessageExecutionLogs(msg as MsgExt & { message_id?: string })) return
+    void loadMessageExecutionLogs(msg as MsgExt & { message_id?: string }, { force: true })
   }
 
   function scrollGroupToBottom() {
@@ -534,6 +563,7 @@ export function useGroupMessageList(args: {
     (sessionId) => {
       messageExecutionLogs.value = {}
       messageExecutionLogsLoading.value = {}
+      for (const key of Object.keys(messageExecutionLogRequestSeq)) delete messageExecutionLogRequestSeq[key]
       expandedExecutionLogMessageId.value = ''
       expandedExecutionLogKey.value = ''
       if (sessionId) loadSessionCheckpoints()
@@ -603,6 +633,8 @@ export function useGroupMessageList(args: {
     toggleExecutionLogDetail,
     isExecutionLogDetailOpen,
     toggleMessageExecutionLogs,
+    syncMessageExecutionLogs,
+    preloadMessageExecutionLogs,
     forkMessageState,
     rollbackMessageState,
     canMessageStateAction,

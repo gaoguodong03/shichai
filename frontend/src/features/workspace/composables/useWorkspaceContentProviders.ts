@@ -231,6 +231,7 @@ export function useWorkspaceContentProviders(args: {
     isMessageCopied,
     deleteGroupMessage,
     messageExecutionLogs, messageExecutionLogRows, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
+    syncMessageExecutionLogs, preloadMessageExecutionLogs,
     forkMessageState, rollbackMessageState, canMessageStateAction, messageStateActionBusy,
     scrollGroupToBottom,
     scrollLatestAssistantRowToLowerMiddle,
@@ -391,6 +392,7 @@ export function useWorkspaceContentProviders(args: {
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
+    syncMessageExecutionLogs,
   })
   const {
     showStreamingRoutePlaceholder,
@@ -426,6 +428,7 @@ export function useWorkspaceContentProviders(args: {
     clearStreamingPlaceholders,
     scrollGroupToBottom,
     refreshGroupWorkspaceAfterExternalChange,
+    preloadMessageExecutionLogs,
     emitMessageSent: () => emit('message-sent'),
   })
 
