@@ -49,6 +49,8 @@ def messages_to_context(
     max_turns: int = 15,
     max_chars: int = 12000,
     max_chars_per_message: int = 1200,
+    *,
+    skip_host: bool = False,
 ) -> str:
     """Render recent group messages into a compact model-readable context."""
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
@@ -57,6 +59,8 @@ def messages_to_context(
         role, agent_name = _message_speaker(m)
         content = _message_content(m)
         if not content:
+            continue
+        if skip_host and role == "host":
             continue
         content = _clip_context_message(content, max_chars_per_message)
         if role == "user":
@@ -128,7 +132,7 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
 def scheduler_memory_prompt(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
     """Host scheduling memory prompt: just the recent conversation excerpt."""
     _ = group_session_id
-    return messages_to_context(messages)
+    return messages_to_context(messages, skip_host=True)
 
 
 def skill_sessions_to_host_context(skill_sessions: Dict[str, Any] | None) -> str:

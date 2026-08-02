@@ -78,19 +78,6 @@ def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _is_duplicate_host_followup(messages: List[Dict[str, Any]], host_message: Dict[str, Any]) -> bool:
-    """Avoid displaying a host bubble that exactly repeats the just-finished expert reply."""
-    host_content = str((host_message or {}).get("content") or "").strip()
-    if not host_content:
-        return False
-    for item in reversed(messages or []):
-        speaker = item.get("speaker") if isinstance(item, dict) and isinstance(item.get("speaker"), dict) else {}
-        if speaker.get("type") != "expert":
-            continue
-        message = item.get("message") if isinstance(item.get("message"), dict) else {}
-        return str(message.get("content") or "").strip() == host_content
-    return False
-
 
 def _record_host_message_execution_log(
     group_session_id: str,
@@ -567,5 +554,3 @@ async def _run_contract_events(
         latest_state["host_scheduler"] = host_scheduler
         write_group_orchestration_state(group_session_id, latest_state)
         save_session_definitions(session_definitions)
-        if next_speaker in {"user", "end"} and _is_duplicate_host_followup(messages, host_scheduler.get("message") or {}):
-            suppress_host_message = True
