@@ -174,7 +174,7 @@ manifest 示例：
 - 没有 `scripts/manifest.json` 时，平台不注入脚本工具；不要回退到默认 `cli_args` 或让模型指定脚本路径。
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
-- 脚本 stdout 应输出完整 `expert_final_state.v2` JSON：`execution_status`、`message`、`next_action`。不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。用户可见产物写入 `message.artifacts`；`next_action` 只含 `agent_turn` 和 `skill_session`。
+- 脚本 stdout 应输出完整 `expert_final_state.v2` JSON：`execution_status`、`message`、`next_action`。不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。用户可见产物写入 `message.artifacts`；`next_action` 只含 `agent_turn` 和 `skill_session`。该 JSON 只表示脚本级结果，供模型汇总；同一轮多个脚本结果可以不同，只有最终模型输出控制本轮专家流程。
 - 脚本 stdout 缺字段、枚举非法、含旧字段或 JSON 结构不合法时，按协议失败处理；保留执行日志，不生成兼容回复。
 - MCP / HTTP / workspace 工具本身不返回 `next_action`；每次 `agent_turn` 内可以连续执行多个依赖工具步骤，每批结果都留在同一模型上下文。模型停止调用工具后输出 `expert_final_state.v2`；`next_action.agent_turn` 只决定是否进入下一次独立业务阶段。
 - 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/skills/skill-standard.md` 的“给 Skill 作者的脚本函数调用建议”。

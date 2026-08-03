@@ -529,11 +529,11 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `skill_session=keep` | 保留当前专家的当前 Skill 绑定；无论是 `agent_turn=continue` 还是主持人后续再次选择该专家，都沿用原 Skill。 |
 | `skill_session=release` | 释放当前专家的当前 Skill 绑定；该专家后续再次被调用时重新选择 Skill。 |
 
-#### 2.5.20 脚本 stdout / 专家 finalizer：`expert_final_state.v2`
+#### 2.5.20 脚本结果 / 专家 finalizer：`expert_final_state.v2`
 
-脚本型 Skill stdout 或非脚本专家 finalizer 都必须直接产出同一个最终状态协议；不再解析隐藏状态块。
+脚本型 Skill stdout 可以使用与最终状态相同的 JSON 结构，但它是模型可见的脚本级结果，不是本轮专家控制信号；同一轮多个脚本结果可以不同。非脚本专家 finalizer 或工具循环结束后的模型输出才是本轮唯一最终状态；不再解析隐藏状态块。
 
-`expert_final_state.v2` 是专家完成结果的唯一模型入口。无论专家使用 MCP、HTTP、workspace、脚本还是不调用工具，最终都必须归一到该结构。平台校验一次后，分别生成专家输出、执行状态、Agent Turn 指令和 Skill Session 指令。
+最终 `expert_final_state.v2` 是专家完成结果的唯一控制入口。无论专家使用 MCP、HTTP、workspace、脚本还是不调用工具，最终都必须归一到该结构。平台校验最终状态一次后，分别生成专家输出、执行状态、Agent Turn 指令和 Skill Session 指令。
 
 | 字段 | 作用 |
 | --- | --- |
@@ -758,7 +758,7 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 4. `agent.astream(...)` 进入一次专家 `agent_turn`。
 5. 本次 `agent_turn` 在最大工具步数内执行零个或多个工具步骤，并聚合结构化 `tool_results`；每批结果留在同一模型上下文，工具 stdout、stderr、退出码和耗时写入执行 trace 或运行日志。
 6. 每批工具返回后回到同一 LLM 上下文，由模型继续选择工具或输出 `expert_final_state.v2`；是否进入下一次独立业务阶段由 `next_action.agent_turn` 决定。
-7. 从脚本 stdout、模型终态或无工具 finalizer 解析 `expert_final_state.v2`，并校验 `message`、`execution_status`、`next_action`。
+7. 脚本 stdout 作为工具结果留在模型上下文；从模型终态或无工具 finalizer 解析唯一的 `expert_final_state.v2`，并校验 `message`、`execution_status`、`next_action`。
 8. 先从 `expert_final_state.v2.message` 发布非空专家消息，并把 `execution_status` 写入消息 `skill_result`。
 9. 再把 `next_action.agent_turn` 交给 Agent Turn 控制器，把 `next_action.skill_session` 交给 Skill Session 管理器。
 
@@ -1106,9 +1106,9 @@ run_skill_script_<skill>
 }
 ```
 
-脚本 stdout 必须显式输出 `execution_status`、`message` 和 `next_action`，不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。`next_action.agent_turn` 控制下一次执行权是否继续给当前专家；`next_action.skill_session` 控制同一专家后续被调用时是否沿用当前 Skill。`agent_turn=respond` 时 `message.content` 必须非空；`agent_turn=continue` 时非空 `message` 仍先发布，再继续同一专家。
+脚本 stdout 必须显式输出 `execution_status`、`message` 和 `next_action`，不得输出旧协议顶层 `content`、顶层 `artifacts` 或 `schema_version`。这些字段仅描述脚本级结果，多个脚本可输出不同内容；只有最终模型或无工具 finalizer 输出的同名字段控制本轮专家执行与 Skill 会话。最终 `agent_turn=respond` 时 `message.content` 必须非空；最终 `agent_turn=continue` 时非空 `message` 仍先发布，再继续同一专家。
 
-脚本 stdout 缺少 `message` 或 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按脚本协议失败处理：不合成专家回复，保留执行日志，并返回稳定协议错误。
+脚本 stdout 缺少 `message` 或 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按该次脚本工具协议失败处理：保留执行日志并返回稳定协议错误。最终模型或无工具 finalizer 的终态不合法时，才不合成专家回复。
 
 ### 5.4 MCP 与 HTTP
 
