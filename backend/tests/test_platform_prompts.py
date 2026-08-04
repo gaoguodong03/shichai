@@ -81,7 +81,7 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
     assert "你是书童四九平台的会话主持人" not in rendered
 
 
-def test_host_prompts_preserve_confirmation_causality_across_expert_returns():
+def test_host_prompts_route_from_the_skill_table_without_restoring_old_host_duties():
     runtime_prompt = render_platform_prompt(
         "host.select_next_speaker.v1",
         {
@@ -95,13 +95,13 @@ def test_host_prompts_preserve_confirmation_causality_across_expert_returns():
     retry_prompt = render_platform_prompt("host.select_next_speaker.protocol_retry.v1", {})
 
     assert "触发本轮请求的用户输入" in runtime_prompt
-    assert "不能确认其后才产生的专家成果" in runtime_prompt
-    assert "最近讨论仅用于判断任务是否完成" in runtime_prompt
-    assert "不得复制、改写或续写任何讨论内容" in runtime_prompt
-    assert "只输出主持人自己本轮的自然语言调度指令" in runtime_prompt
-    assert "不得再次调度同一专家完成同一任务" in runtime_prompt
-    assert "该消息之后才产生的专家成果" in retry_prompt
-    assert "必须等待新的用户输入" in retry_prompt
+    assert "不能确认其后才产生的发言或结果" in runtime_prompt
+    assert "最近讨论只用于判断当前阶段下哪一条“判定条件”成立" in runtime_prompt
+    assert "严格执行命中行的“本轮动作”" in runtime_prompt
+    assert "显示在前端的简短主持提示" in runtime_prompt
+    assert "不得扩展成完整任务单或多步骤执行计划" in runtime_prompt
+    assert "current_phase 必须来自命中行的“决策后阶段”" in retry_prompt
+    assert "不要在四列表之外判断任务" in retry_prompt
 
 
 def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():

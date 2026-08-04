@@ -42,12 +42,17 @@ def test_resource_creation_prefills_real_system_prompt_fields():
     assert "/settings/host-profile/defaults" not in scenario
     assert "/settings/host-profile/defaults" not in settings
     for required in (
-        "只负责调度",
+        "只负责根据当前主持人 Skill 的四列表选择下一位发言者",
+        "四列表为唯一依据",
         "决策前阶段",
         "判定条件",
         "本轮动作",
         "决策后阶段",
+        "显示在前端的主持人发言",
+        "不在表格之外单独进行任务完成判断",
+        "不编写完整任务单或多步骤执行计划",
         '"current_phase"',
+        '"target_agent_name"',
         '"suggested_add_agent_names"',
         "职责边界",
         "专业标准",
@@ -57,6 +62,12 @@ def test_resource_creation_prefills_real_system_prompt_fields():
         "respond + release",
     ):
         assert required in defaults
+    for removed_host_responsibility in (
+        "判断用户当前是否存在明确且尚未完成的任务",
+        "任务单应包含本轮目标",
+        "按项目整体系统提示词规定的方式使用工作区函数",
+    ):
+        assert removed_host_responsibility not in defaults
 
 
 def function_block(src: str, name: str) -> str:
