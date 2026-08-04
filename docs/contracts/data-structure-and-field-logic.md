@@ -541,7 +541,7 @@ checkpoints/
 
 ```json
 {
-  "next_speaker": "专家名称 | user | end | invite",
+  "next_speaker": "专家名称 | user | end",
   "next_action": "下一步动作说明",
   "route_source": "empty_group | target_agent | host_scheduler_state | host_scheduler"
 }
@@ -634,7 +634,7 @@ checkpoints/
 | `speaker.agent_name` | 标记主持人或专家发言人；`host`、`expert` 填写，`user` 不填写。 |
 | `speaker.skill` | 本轮主持人或专家实际使用的 Skill；`host`、`expert` 可填写，`user` 不填写。 |
 | `message.content` | 前端展示和后续上下文来源。 |
-| `message.target_agent_name` | 统一路由入口；用户和主持人可以填写，必须是当前会话 `agent_names` 中的专家名称；专家原则上不填写。 |
+| `message.target_agent_name` | 统一路由入口；用户只能填写当前会话专家名，主持人必须填写专家名、`user` 或 `end`；专家原则上不填写。主持人目标来自独立选择阶段，不从 `message.content` 推断。 |
 | `message.attachments` | 本消息携带给后续处理的输入文件；用户、主持人、专家都可以填写，只允许当前会话 `workspace/` 相对路径。 |
 | `message.attachments[].type` | 附件引用类型；当前只允许 `workspace_file`。 |
 | `message.attachments[].path` | 工作区相对路径，是后端读取和工具访问的依据。 |
@@ -664,7 +664,7 @@ Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `
 | 完整字段路径 | 生产方 | 消费方 | 语义边界 |
 | --- | --- | --- | --- |
 | `message.content` | 后端消息落盘 | 前端展示、后续上下文 | 用户或主持人 / 专家的可见正文；不承载工具参数、stdout、路由控制或调试信息。 |
-| `message.target_agent_name` | 用户请求 / 主持人输出 / 后端落盘 | 统一路由 | 用户或主持人指定下一位专家；不同于结束事件 `suggested_next_speaker`。 |
+| `message.target_agent_name` | 用户请求 / 主持人选择阶段 / 后端落盘 | 统一路由 | 用户指定场内专家；主持人显式指定场内专家、`user` 或 `end`。不同于结束事件 `suggested_next_speaker`。 |
 | `message.attachments[].path` | 用户请求 / 主持人或专家输出 / 后端落盘 | 上下文组装、工作区读取 | 本消息携带给后续处理的输入文件 workspace 相对路径。 |
 | `message.artifacts[].path` | 用户请求 / 主持人或专家输出 / 后端落盘 | 前端产物按钮、右侧预览、后续上下文 | 本消息产出或暴露给用户的产物 workspace 相对路径。 |
 | `tool_call.arguments.content` | 工具调用参数 | 工具执行层、运行日志摘要 | 写文件等工具的输入正文；只能进入执行日志摘要，不进入聊天消息正文。 |

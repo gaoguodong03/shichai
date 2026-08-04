@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
+from types import SimpleNamespace
 
 import pytest
 
 from app.agent.expert_completion_contract import ExpertFinalStatePayload
+from app.agent.llm_client import LiteLLMChatClient
 from app.agent.messages import HumanMessage
 from app.agent.llm_prompt_trace import instrument_llm_client
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
@@ -68,6 +71,40 @@ async def test_invoke_pydantic_llm_output_binds_json_object_mode():
     assert out.selected_skill == "research"
     assert state.bind_calls == [{"response_format": {"type": "json_object"}}]
     assert [call["json_mode"] for call in state.calls] == [True]
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_forwards_json_mode_through_traced_litellm(monkeypatch):
+    pytest.importorskip("litellm")
+    captured = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        message = SimpleNamespace(content='{"selected_skill":"research"}', tool_calls=[])
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+
+    monkeypatch.setattr("litellm.acompletion", fake_acompletion)
+    client = instrument_llm_client(
+        LiteLLMChatClient(
+            model_config={
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+                "base_url": "https://api.deepseek.com",
+            },
+            api_key="test-key",
+        ),
+        provider_base_url="https://api.deepseek.com",
+        model_name="deepseek-v4-flash",
+    )
+
+    out = await invoke_pydantic_llm_output(
+        client,
+        [HumanMessage(content="select")],
+        ExpertSkillSelectionPayload,
+    )
+
+    assert out.selected_skill == "research"
+    assert captured["response_format"] == {"type": "json_object"}
 
 
 @pytest.mark.asyncio
@@ -213,3 +250,60 @@ async def test_invoke_pydantic_llm_output_raises_after_retry_protocol_failure():
         )
 
     assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_logs_each_protocol_failure_with_context(caplog):
+    client = _Client(
+        '```json\n{"selected_skill":"research"}\n```',
+        '{"selected_skill":"research","unexpected":true}',
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.agent.structured_llm_output"):
+        with pytest.raises(StructuredOutputProtocolError):
+            await invoke_pydantic_llm_output(
+                client,
+                [HumanMessage(content="select")],
+                ExpertSkillSelectionPayload,
+                retry_messages=[HumanMessage(content="retry with strict JSON")],
+                protocol_log_context={
+                    "operation": "host_scheduler",
+                    "group_session_id": "group-1",
+                    "host_name": "四九",
+                },
+            )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 2
+    assert "attempt=initial" in messages[0]
+    assert "structured output must be a single JSON object" in messages[0]
+    assert 'raw_output=\'```json\\n{"selected_skill":"research"}\\n```\'' in messages[0]
+    assert "attempt=retry" in messages[1]
+    assert "structured output failed schema validation" in messages[1]
+    assert "extra_forbidden" in messages[1]
+    assert '"group_session_id":"group-1"' in messages[1]
+    assert '"host_name":"四九"' in messages[1]
+
+
+@pytest.mark.asyncio
+async def test_invoke_pydantic_llm_output_adds_raw_response_to_post_validation_error(caplog):
+    raw = '{"selected_skill":"missing-member"}'
+    client = _Client(raw)
+
+    def reject_payload(_payload):
+        raise StructuredOutputProtocolError(
+            "selected skill is not available",
+            schema_name="ExpertSkillSelectionPayload",
+        )
+
+    with caplog.at_level(logging.WARNING, logger="app.agent.structured_llm_output"):
+        with pytest.raises(StructuredOutputProtocolError) as exc_info:
+            await invoke_pydantic_llm_output(
+                client,
+                [HumanMessage(content="select")],
+                ExpertSkillSelectionPayload,
+                post_validate=reject_payload,
+            )
+
+    assert exc_info.value.raw_output == raw
+    assert f"raw_output={raw!r}" in caplog.text

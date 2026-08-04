@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from app.agent.structured_output_contracts import (
+    HostMessagePayload,
     HostSchedulerDecisionPayload,
+    HostSpeakerSelectionPayload,
     StructuredOutputProtocolError,
     parse_strict_pydantic_object,
 )
@@ -18,7 +20,7 @@ def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, An
     _ = reason
     return {
         "current_phase": "协议错误",
-        "message": {"content": HOST_PROTOCOL_ERROR_MESSAGE},
+        "message": {"content": HOST_PROTOCOL_ERROR_MESSAGE, "target_agent_name": "user"},
         "suggested_add_agent_names": [],
     }
 
@@ -27,7 +29,7 @@ def is_host_protocol_error_decision(decision: Dict[str, Any]) -> bool:
     message = decision.get("message") if isinstance(decision.get("message"), dict) else {}
     return (
         str(message.get("content") or "").strip() == HOST_PROTOCOL_ERROR_MESSAGE
-        and not str(message.get("target_agent_name") or "").strip()
+        and str(message.get("target_agent_name") or "").strip().casefold() == "user"
         and list(decision.get("suggested_add_agent_names") or []) == []
     )
 
@@ -39,6 +41,65 @@ def _agent_name_map(agent_profiles: List[Dict[str, Any]]) -> Dict[str, str]:
         if name:
             out[name.casefold()] = name
     return out
+
+
+def _canonical_host_target(target: str, agent_profiles: List[Dict[str, Any]], *, schema_name: str) -> str:
+    """Accept explicit user/end sentinels or canonicalize one current expert name."""
+    value = str(target or "").strip()
+    folded = value.casefold()
+    if folded in {"user", "end"}:
+        return folded
+    canonical = _agent_name_map(agent_profiles).get(folded)
+    if not canonical:
+        raise StructuredOutputProtocolError(
+            "target_agent_name is not user, end, or an allowed participant",
+            schema_name=schema_name,
+        )
+    return canonical
+
+
+def host_speaker_selection_from_payload(
+    payload: HostSpeakerSelectionPayload,
+    agent_profiles: List[Dict[str, Any]],
+    *,
+    host_mode: str = "recruitment",
+) -> Dict[str, Any]:
+    """Validate the selector-only LLM result without deriving a route from prose."""
+    scene_mode = str(host_mode or "").strip().lower() == "scene"
+    suggested = list(payload.suggested_add_agent_names or [])
+    if scene_mode and suggested:
+        raise StructuredOutputProtocolError(
+            "scene mode forbids suggested_add_agent_names",
+            schema_name="HostSpeakerSelectionPayload",
+        )
+    return {
+        "current_phase": payload.current_phase,
+        "target_agent_name": _canonical_host_target(
+            payload.target_agent_name,
+            agent_profiles,
+            schema_name="HostSpeakerSelectionPayload",
+        ),
+        "suggested_add_agent_names": suggested or None,
+    }
+
+
+def compose_host_scheduler_decision(
+    selection: HostSpeakerSelectionPayload | Dict[str, Any],
+    message_payload: HostMessagePayload,
+) -> Dict[str, Any]:
+    """Combine a fixed speaker selection with target-free host presentation fields."""
+    selected = (
+        selection.model_dump(exclude_none=True)
+        if isinstance(selection, HostSpeakerSelectionPayload)
+        else dict(selection)
+    )
+    message = message_payload.model_dump(exclude_none=True, exclude_defaults=True)
+    message["target_agent_name"] = str(selected.get("target_agent_name") or "").strip()
+    return {
+        "current_phase": str(selected.get("current_phase") or "").strip(),
+        "message": message,
+        "suggested_add_agent_names": list(selected.get("suggested_add_agent_names") or []),
+    }
 
 
 def host_scheduler_decision_from_payload(
@@ -57,14 +118,11 @@ def host_scheduler_decision_from_payload(
             "scene mode forbids suggested_add_agent_names",
             schema_name="HostSchedulerDecisionPayload",
         )
-    if target:
-        canonical = _agent_name_map(agent_profiles).get(target.casefold())
-        if not canonical:
-            raise StructuredOutputProtocolError(
-                "message.target_agent_name is not in allowed participants",
-                schema_name="HostSchedulerDecisionPayload",
-            )
-        message["target_agent_name"] = canonical
+    message["target_agent_name"] = _canonical_host_target(
+        target,
+        agent_profiles,
+        schema_name="HostSchedulerDecisionPayload",
+    )
     return {
         "current_phase": payload.current_phase,
         "message": message,
@@ -100,7 +158,7 @@ def finalize_host_scheduler_decision(
     if suggested and agent_names and not _user_requests_recruitment(user_text):
         suggested = []
     if suggested:
-        message.pop("target_agent_name", None)
+        message["target_agent_name"] = "user"
     out["message"] = message
     out["suggested_add_agent_names"] = suggested
     return out
@@ -111,10 +169,12 @@ def _apply_decision_to_ctx(decision: Dict[str, Any], *, default_next_action: str
     message = dict(decision.get("message") or {}) if isinstance(decision.get("message"), dict) else {}
     content = str(message.get("content") or "").strip() or str(default_next_action or "").strip()
     target = str(message.get("target_agent_name") or "").strip()
+    if not target:
+        raise ValueError("host decision requires explicit message.target_agent_name")
     current_phase = str(decision.get("current_phase") or "").strip()
     suggested = [str(item).strip() for item in decision.get("suggested_add_agent_names") or [] if str(item).strip()]
     return {
-        "next_speaker": target or ("end" if current_phase.casefold() == "end" else "user"),
+        "next_speaker": target,
         "next_action": content,
         "suggested_add_agent_names": suggested,
         "host_scheduler": {"current_phase": current_phase, "message": message},

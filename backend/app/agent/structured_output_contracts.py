@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, field_validator, model_validator
 
 from app.agent.workspace_visibility import WorkspacePathError, normalize_public_workspace_path
 
@@ -114,9 +114,60 @@ class ExpertFinalMessageBody(StrictModel):
     target_agent_name: str | None = Field(default=None, min_length=1)
 
 
+class HostMessagePayload(StrictModel):
+    content: str = Field(min_length=1)
+    attachments: list[WorkspaceAttachmentRef] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+
+
+class HostSpeakerSelectionPayload(StrictModel):
+    current_phase: str = Field(min_length=1)
+    target_agent_name: str = Field(min_length=1)
+    suggested_add_agent_names: list[str] = Field(default_factory=list)
+
+    @field_validator("current_phase", "target_agent_name", mode="before")
+    @classmethod
+    def _routing_values_must_be_strings(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            raise ValueError("must be a string")
+        return value
+
+    @field_validator("suggested_add_agent_names")
+    @classmethod
+    def _suggested_names_are_nonempty_strings(cls, value: list[str]) -> list[str]:
+        return _dedupe_nonempty_strings(value)
+
+    @model_validator(mode="after")
+    def _validate_target_shape(self) -> "HostSpeakerSelectionPayload":
+        target = self.target_agent_name.casefold()
+        phase_is_end = self.current_phase.casefold() == "end"
+        if phase_is_end != (target == "end"):
+            raise ValueError("target_agent_name=end requires current_phase=end and vice versa")
+        if self.suggested_add_agent_names and target != "user":
+            raise ValueError("suggested_add_agent_names requires target_agent_name=user")
+        return self
+
+
+def build_host_speaker_selection_model(
+    allowed_target_agent_names: list[str],
+) -> type[HostSpeakerSelectionPayload]:
+    """Create the selector schema with an exact target enum for this session."""
+    allowed = _dedupe_nonempty_strings(allowed_target_agent_names)
+    target_type = Literal.__getitem__(tuple(allowed))
+    return create_model(
+        "HostSpeakerSelectionPayload",
+        __base__=HostSpeakerSelectionPayload,
+        target_agent_name=(target_type, ...),
+    )
+
+
+class HostSchedulerMessageBody(HostMessagePayload):
+    target_agent_name: str = Field(min_length=1)
+
+
 class HostSchedulerDecisionPayload(StrictModel):
     current_phase: str = Field(min_length=1)
-    message: ExpertFinalMessageBody
+    message: HostSchedulerMessageBody
     suggested_add_agent_names: list[str] = Field(default_factory=list)
 
     @field_validator("current_phase", mode="before")
@@ -133,10 +184,12 @@ class HostSchedulerDecisionPayload(StrictModel):
 
     @model_validator(mode="after")
     def _validate_recruitment_shape(self) -> "HostSchedulerDecisionPayload":
-        if self.suggested_add_agent_names and self.message.target_agent_name:
-            raise ValueError("suggested_add_agent_names requires message.target_agent_name to be empty")
-        if not self.message.content.strip():
-            raise ValueError("message.content must be non-empty")
+        target = self.message.target_agent_name.casefold()
+        phase_is_end = self.current_phase.casefold() == "end"
+        if phase_is_end != (target == "end"):
+            raise ValueError("message.target_agent_name=end requires current_phase=end and vice versa")
+        if self.suggested_add_agent_names and target != "user":
+            raise ValueError("suggested_add_agent_names requires message.target_agent_name=user")
         return self
 
 

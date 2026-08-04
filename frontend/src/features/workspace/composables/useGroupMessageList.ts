@@ -235,7 +235,8 @@ export function useGroupMessageList(args: {
   }
 
   function messageTargetAgentName(msg: MsgExt): string {
-    return String(msg?.message?.target_agent_name || '').trim()
+    const target = String(msg?.message?.target_agent_name || '').trim()
+    return ['user', 'end'].includes(target.toLowerCase()) ? '' : target
   }
 
   function messageArtifactItems(msg: MsgExt): Array<{ type: string; name: string; path: string }> {

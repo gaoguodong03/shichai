@@ -277,7 +277,10 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
         },
         {
             "current_phase": "等待确认",
-            "message": {"content": "大纲已完成，请确认是否继续写正文。"},
+            "message": {
+                "content": "大纲已完成，请确认是否继续写正文。",
+                "target_agent_name": "user",
+            },
             "suggested_add_agent_names": [],
         },
     ]
@@ -363,7 +366,7 @@ async def test_agent_turn_continue_schedules_same_expert_without_host_decision(m
         if host_calls > 1:
             return {
                 "current_phase": "等待确认",
-                "message": {"content": "请确认是否继续。"},
+                "message": {"content": "请确认是否继续。", "target_agent_name": "user"},
                 "suggested_add_agent_names": [],
             }
         return {

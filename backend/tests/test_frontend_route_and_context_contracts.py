@@ -50,6 +50,8 @@ def test_resource_creation_prefills_real_system_prompt_fields():
         "决策后阶段",
         "显示在前端的主持人发言",
         "不在表格之外单独进行任务完成判断",
+        "尚未被回答、明确要求用户确认、选择、补充信息或决定下一步的问题",
+        "不得只凭问号",
         "不编写完整任务单或多步骤执行计划",
         '"current_phase"',
         '"target_agent_name"',
@@ -487,6 +489,12 @@ def test_frontend_does_not_parse_file_references_from_message_content():
         "detectHostTakeoverIntent",
     ]:
         assert forbidden not in combined
+
+
+def test_frontend_hides_host_user_and_end_route_sentinels():
+    message_list = read("frontend/src/features/workspace/composables/useGroupMessageList.ts")
+
+    assert "['user', 'end'].includes(target.toLowerCase()) ? '' : target" in message_list
 
 
 def test_frontend_user_message_display_does_not_strip_legacy_discussion_goal_marker():

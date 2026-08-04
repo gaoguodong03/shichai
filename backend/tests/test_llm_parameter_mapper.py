@@ -336,6 +336,20 @@ class TestMapModelConfigToLiteLLM:
         assert "tools" not in kwargs
         assert "tool_choice" not in kwargs
 
+    # -- structured response format --
+
+    def test_response_format_forwarded(self):
+        response_format = {"type": "json_object"}
+        kwargs = self._map(
+            {
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+                "response_format": response_format,
+            }
+        )
+
+        assert kwargs["response_format"] == response_format
+
     # -- runtime_overrides --
 
     def test_runtime_overrides_merge(self):

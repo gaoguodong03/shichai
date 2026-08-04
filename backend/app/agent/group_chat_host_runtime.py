@@ -1,20 +1,29 @@
 """Host scheduler runtime for the strict group-chat contract."""
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
 from app.agent.group_host_decision import (
+    compose_host_scheduler_decision,
     heuristic_recommend_agents,
     host_protocol_error_decision,
     host_scheduler_decision_from_payload,
+    host_speaker_selection_from_payload,
 )
 from app.agent.group_context import skill_sessions_to_host_context
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
-from app.agent.structured_output_contracts import HostSchedulerDecisionPayload, StructuredOutputProtocolError
+from app.agent.structured_output_contracts import (
+    HostMessagePayload,
+    HostSchedulerDecisionPayload,
+    HostSpeakerSelectionPayload,
+    StructuredOutputProtocolError,
+    build_host_speaker_selection_model,
+)
 from app.api.settings_app import load_app_settings
 from app.core.security import get_current_user
 from app.skills.loader import get_skills_loader_for_user
@@ -110,7 +119,7 @@ async def _host_decide_by_agent(
     if credential_notice:
         return {
             "current_phase": "awaiting_user",
-            "message": {"content": credential_notice},
+            "message": {"content": credential_notice, "target_agent_name": "user"},
             "suggested_add_agent_names": None,
         }
 
@@ -127,10 +136,16 @@ async def _host_decide_by_agent(
     current_phase = ""
     if isinstance(host_scheduler_state, dict):
         current_phase = str(host_scheduler_state.get("current_phase") or "").strip()
-    prompt = render_platform_prompt(
+    allowed_target_agent_names = ["user", "end"] + [
+        str(profile.get("name") or "").strip()
+        for profile in agent_profiles or []
+        if str(profile.get("name") or "").strip()
+    ]
+    selection_prompt = render_platform_prompt(
         "host.select_next_speaker.v1",
         {
             "agent_names": _agent_catalog(agent_profiles, available_to_add),
+            "allowed_target_agent_names": json.dumps(allowed_target_agent_names, ensure_ascii=False),
             "current_phase": current_phase or "（无）",
             "user_message": user_message or discussion_goal or "（无）",
             "recent_history": recent_messages or "（无）",
@@ -138,29 +153,130 @@ async def _host_decide_by_agent(
         },
     )
     if last_speaker_agent_name:
-        prompt += "\n\n" + render_platform_prompt(
+        selection_prompt += "\n\n" + render_platform_prompt(
             "host.previous_speaker.v1",
             {"last_speaker_agent_name": last_speaker_agent_name},
         )
 
     client = llm.get_client()
-    messages_for_llm = [SystemMessage(content=system_content), HumanMessage(content=prompt)]
-    retry_prompt = prompt + "\n\n" + render_platform_prompt("host.select_next_speaker.protocol_retry.v1", {})
-    retry_messages = [SystemMessage(content=system_content), HumanMessage(content=retry_prompt)]
+    selection_system_content = "\n\n".join(
+        part
+        for part in (
+            system_content,
+            render_platform_prompt("host.select_next_speaker.system_protocol.v1", {}),
+        )
+        if part
+    )
+    selection_messages = [SystemMessage(content=selection_system_content), HumanMessage(content=selection_prompt)]
+    selection_retry_prompt = selection_prompt + "\n\n" + render_platform_prompt(
+        "host.select_next_speaker.protocol_retry.v1",
+        {"allowed_target_agent_names": json.dumps(allowed_target_agent_names, ensure_ascii=False)},
+    )
+    selection_retry_messages = [
+        SystemMessage(content=selection_system_content),
+        HumanMessage(content=selection_retry_prompt),
+    ]
+    selection_model = build_host_speaker_selection_model(allowed_target_agent_names)
 
-    def _validate_host_payload(payload: HostSchedulerDecisionPayload) -> None:
-        host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
+    def _validate_selection_payload(payload: HostSpeakerSelectionPayload) -> None:
+        host_speaker_selection_from_payload(payload, agent_profiles, host_mode=host_mode)
 
     try:
-        payload = await invoke_pydantic_llm_output(
+        selection_payload = await invoke_pydantic_llm_output(
             client,
-            messages_for_llm,
-            HostSchedulerDecisionPayload,
-            retry_messages=retry_messages,
-            post_validate=_validate_host_payload,
+            selection_messages,
+            selection_model,
+            retry_messages=selection_retry_messages,
+            post_validate=_validate_selection_payload,
+            protocol_log_context={
+                "operation": "host_speaker_selection",
+                "group_session_id": group_session_id,
+                "host_name": host_name,
+                "host_mode": host_mode,
+                "current_phase": current_phase or "（无）",
+                "allowed_agent_names": [
+                    str(profile.get("name") or "").strip()
+                    for profile in agent_profiles or []
+                    if str(profile.get("name") or "").strip()
+                ],
+            },
         )
-        decision = host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
+        selection = host_speaker_selection_from_payload(selection_payload, agent_profiles, host_mode=host_mode)
+        logger.info(
+            "host_speaker_selection session=%s host=%s target_agent_name=%s current_phase=%s "
+            "suggested_add_agent_names=%s",
+            group_session_id,
+            host_name,
+            selection["target_agent_name"],
+            selection["current_phase"],
+            selection.get("suggested_add_agent_names") or [],
+        )
+        message_prompt = render_platform_prompt(
+            "host.write_scheduler_message.v1",
+            {
+                "target_agent_name": selection["target_agent_name"],
+                "current_phase": selection["current_phase"],
+                "suggested_add_agent_names": json.dumps(
+                    selection.get("suggested_add_agent_names") or [],
+                    ensure_ascii=False,
+                ),
+                "user_message": user_message or discussion_goal or "（无）",
+                "recent_history": recent_messages or "（无）",
+            },
+        )
+        message_system_content = "\n\n".join(
+            part
+            for part in (
+                system_content,
+                render_platform_prompt("host.write_scheduler_message.system_protocol.v1", {}),
+            )
+            if part
+        )
+        message_messages = [SystemMessage(content=message_system_content), HumanMessage(content=message_prompt)]
+        message_retry_prompt = message_prompt + "\n\n" + render_platform_prompt(
+            "host.write_scheduler_message.protocol_retry.v1",
+            {},
+        )
+        message_retry_messages = [
+            SystemMessage(content=message_system_content),
+            HumanMessage(content=message_retry_prompt),
+        ]
+        message_payload = await invoke_pydantic_llm_output(
+            client,
+            message_messages,
+            HostMessagePayload,
+            retry_messages=message_retry_messages,
+            protocol_log_context={
+                "operation": "host_message_generation",
+                "group_session_id": group_session_id,
+                "host_name": host_name,
+                "host_mode": host_mode,
+                "current_phase": selection["current_phase"],
+                "target_agent_name": selection["target_agent_name"],
+            },
+        )
+        logger.info(
+            "host_message_generation_complete session=%s host=%s fixed_target_agent_name=%s "
+            "content_chars=%s attachment_count=%s artifact_count=%s",
+            group_session_id,
+            host_name,
+            selection["target_agent_name"],
+            len(message_payload.content),
+            len(message_payload.attachments),
+            len(message_payload.artifacts),
+        )
+        combined = compose_host_scheduler_decision(selection, message_payload)
+        decision_payload = HostSchedulerDecisionPayload.model_validate(combined)
+        decision = host_scheduler_decision_from_payload(decision_payload, agent_profiles, host_mode=host_mode)
     except StructuredOutputProtocolError as exc:
+        logger.warning(
+            "host_scheduler_protocol_fallback session=%s host=%s host_mode=%s current_phase=%s reason=%s",
+            group_session_id,
+            host_name,
+            host_mode,
+            current_phase or "（无）",
+            str(exc),
+        )
         decision = host_protocol_error_decision(str(exc))
     state = {"current_phase": str(decision.get("current_phase") or "").strip()}
     message = decision.get("message") if isinstance(decision.get("message"), dict) else {}

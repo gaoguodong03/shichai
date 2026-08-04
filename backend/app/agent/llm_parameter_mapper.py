@@ -232,6 +232,10 @@ def map_model_config_to_litellm_kwargs(
     if extra_body:
         kwargs["extra_body"] = extra_body
 
+    response_format = cfg.get("response_format")
+    if isinstance(response_format, dict) and response_format:
+        kwargs["response_format"] = dict(response_format)
+
     if tools:
         kwargs["tools"] = list(tools)
     if tool_choice is not None:

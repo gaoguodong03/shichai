@@ -12,6 +12,9 @@ PROMPT_TEMPLATE_FILE = ROOT / "backend/app/agent/platform_prompt_templates.json"
 
 def test_platform_prompts_are_registered_by_prompt_id():
     assert "host.select_next_speaker.v1" in PLATFORM_PROMPTS
+    assert "host.select_next_speaker.system_protocol.v1" in PLATFORM_PROMPTS
+    assert "host.write_scheduler_message.v1" in PLATFORM_PROMPTS
+    assert "host.write_scheduler_message.system_protocol.v1" in PLATFORM_PROMPTS
     assert "tool.schema.saved_http_api.path_params.v1" in PLATFORM_PROMPTS
     assert get_platform_prompt("host.select_next_speaker.v1").prompt_id == "host.select_next_speaker.v1"
 
@@ -64,6 +67,7 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
         "host.select_next_speaker.v1",
         {
             "agent_names": "写作专家",
+            "allowed_target_agent_names": '["user", "end", "写作专家"]',
             "current_phase": "资料收集",
             "user_message": "写一篇文章",
             "recent_history": "无",
@@ -73,8 +77,8 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
 
     for runtime_value in ["写作专家", "资料收集", "写一篇文章", '{"信息检索专家":{"skill":"research"}}']:
         assert runtime_value in rendered
-    assert '"message"' not in rendered
-    assert '"target_agent_name"' not in rendered
+    assert "不要生成 message 或主持话术" in rendered
+    assert "target_agent_name" in rendered
     assert '"next_speaker"' not in rendered
     assert '"next_action"' not in rendered
     assert "只允许输出上述字段" not in rendered
@@ -86,22 +90,31 @@ def test_host_prompts_route_from_the_skill_table_without_restoring_old_host_duti
         "host.select_next_speaker.v1",
         {
             "agent_names": "图片生成专家",
+            "allowed_target_agent_names": '["user", "end", "图片生成专家"]',
             "current_phase": "图片生成",
             "user_message": "同意",
             "recent_history": "用户同意方案后，专家才生成图片并请求确认",
             "skill_sessions": "（无）",
         },
     )
-    retry_prompt = render_platform_prompt("host.select_next_speaker.protocol_retry.v1", {})
+    retry_prompt = render_platform_prompt(
+        "host.select_next_speaker.protocol_retry.v1",
+        {"allowed_target_agent_names": '["user", "end", "图片生成专家"]'},
+    )
 
     assert "触发本轮请求的用户输入" in runtime_prompt
     assert "不能确认其后才产生的发言或结果" in runtime_prompt
     assert "最近讨论只用于判断当前阶段下哪一条“判定条件”成立" in runtime_prompt
     assert "严格执行命中行的“本轮动作”" in runtime_prompt
-    assert "显示在前端的简短主持提示" in runtime_prompt
-    assert "不得扩展成完整任务单或多步骤执行计划" in runtime_prompt
-    assert "current_phase 必须来自命中行的“决策后阶段”" in retry_prompt
-    assert "不要在四列表之外判断任务" in retry_prompt
+    assert "尚未被用户回答的明确问题" in runtime_prompt
+    assert "确认、选择、补充信息或决定下一步" in runtime_prompt
+    assert "优先选择 target_agent_name=user" in runtime_prompt
+    assert "不得只凭问号" in runtime_prompt
+    assert "只选择下一位发言者，不生成主持话术" in runtime_prompt
+    assert "命中询问用户的动作时 target_agent_name 填 user" in runtime_prompt
+    assert "字段只能是 current_phase、target_agent_name、suggested_add_agent_names" in retry_prompt
+    assert "询问用户填 user" in retry_prompt
+    assert "等待用户条件成立的强证据" in retry_prompt
 
 
 def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():
@@ -109,6 +122,7 @@ def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():
         "host.select_next_speaker.v1",
         {
             "agent_names": "信息检索专家",
+            "allowed_target_agent_names": '["user", "end", "信息检索专家"]',
             "current_phase": "等待用户确认",
             "user_message": "用户可以用任意方式表达当前意图",
             "recent_history": "信息检索专家已经整理过资料",
@@ -174,6 +188,10 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         assert phrase not in combined
     for prompt_id in [
         "host.select_next_speaker.protocol_retry.v1",
+        "host.select_next_speaker.system_protocol.v1",
+        "host.write_scheduler_message.v1",
+        "host.write_scheduler_message.system_protocol.v1",
+        "host.write_scheduler_message.protocol_retry.v1",
         "expert.select_skill.user_prompt.v1",
         "expert.select_skill.protocol_retry.v1",
         "expert.action.default.v1",

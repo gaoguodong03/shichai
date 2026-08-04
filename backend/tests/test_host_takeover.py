@@ -1,6 +1,8 @@
 """Strict host-routing tests for the current runtime contract."""
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE, parse_strict_host_scheduler_output
@@ -12,14 +14,20 @@ from app.api import group_chat_state as state
 def test_strict_host_response_rejects_extra_fields():
     raw = '{"current_phase": "补充信息", "next_speaker": "专家甲", "next_action": "请补充要点", "extra_note": "继续"}'
     out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], host_mode="scene")
-    assert out["message"] == {"content": HOST_PROTOCOL_ERROR_MESSAGE}
+    assert out["message"] == {
+        "content": HOST_PROTOCOL_ERROR_MESSAGE,
+        "target_agent_name": "user",
+    }
     assert "interrupt_reason" not in out
 
 
 def test_strict_host_response_accepts_wait_message():
-    raw = '{"current_phase": "补充信息", "message": {"content": "请补充信息"}}'
+    raw = (
+        '{"current_phase": "补充信息", '
+        '"message": {"content": "请补充信息", "target_agent_name": "user"}}'
+    )
     out = parse_strict_host_scheduler_output(raw, [], host_mode="recruitment")
-    assert out["message"] == {"content": "请补充信息"}
+    assert out["message"] == {"content": "请补充信息", "target_agent_name": "user"}
 
 
 def test_group_chat_request_keeps_at_mention_as_plain_text():
@@ -91,7 +99,7 @@ async def test_skill_session_does_not_route_owner_without_host_target(monkeypatc
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待确认",
-            "message": {"content": "请确认是否继续。"},
+            "message": {"content": "请确认是否继续。", "target_agent_name": "user"},
             "suggested_add_agent_names": [],
         }
 
@@ -125,7 +133,10 @@ async def test_skill_session_does_not_route_owner_without_host_target(monkeypatc
         )
     ]
 
-    assert any('"message": {"content": "请确认是否继续。"}' in event for event in events)
+    assert any(
+        '"message": {"content": "请确认是否继续。", "target_agent_name": "user"}' in event
+        for event in events
+    )
     assert any('"phase": "awaiting_user"' in event for event in events)
     assert captured == {}
     assert state.load_group_orchestration_state("s-skill-session")["skill_sessions"]["文书专员"]["skill"] == "writer-skill"
@@ -148,7 +159,7 @@ async def test_host_takeover_text_does_not_execute_skill_session_route(monkeypat
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "等待确认",
-            "message": {"content": "请确认是否继续旧 Skill。"},
+            "message": {"content": "请确认是否继续旧 Skill。", "target_agent_name": "user"},
             "suggested_add_agent_names": [],
         }
 
@@ -180,7 +191,10 @@ async def test_host_takeover_text_does_not_execute_skill_session_route(monkeypat
     ]
 
     assert expert_calls == 0
-    assert any('"message": {"content": "请确认是否继续旧 Skill。"}' in event for event in events)
+    assert any(
+        '"message": {"content": "请确认是否继续旧 Skill。", "target_agent_name": "user"}' in event
+        for event in events
+    )
     assert state.load_group_orchestration_state("s-host-takeover-text")["skill_sessions"]["文书专员"]["skill"] == "writer-skill"
 
 
@@ -193,7 +207,7 @@ async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, t
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "执行中",
-            "message": {"content": "请补充材料。"},
+            "message": {"content": "请补充材料。", "target_agent_name": "user"},
             "suggested_add_agent_names": ["检索专家"],
         }
 
@@ -235,7 +249,7 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
     async def _host_decision(*_args, **_kwargs):
         return {
             "current_phase": "招募",
-            "message": {"content": "建议先邀请检索专家。"},
+            "message": {"content": "建议先邀请检索专家。", "target_agent_name": "user"},
             "suggested_add_agent_names": ["检索专家"],
         }
 
@@ -320,7 +334,7 @@ async def test_zero_member_session_uses_host_only_recommendation_branch(monkeypa
 
 @pytest.mark.asyncio
 async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
-    calls = {}
+    calls = []
     session_item = {}
 
     class FakeSkillsLoader:
@@ -329,12 +343,18 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
             return "网文专用主持 Skill 正文"
 
     class FakeResponse:
-        content = '{"current_phase":"阶段2","message":{"content":"请写大纲","target_agent_name":"写作专家"}}'
+        def __init__(self, content: str):
+            self.content = content
 
     class FakeClient:
         async def ainvoke(self, messages):
-            calls["messages"] = messages
-            return FakeResponse()
+            calls.append(messages)
+            if len(calls) == 1:
+                return FakeResponse(
+                    '{"current_phase":"阶段2","target_agent_name":"写作专家",'
+                    '"suggested_add_agent_names":[]}'
+                )
+            return FakeResponse('{"content":"请写大纲","attachments":[],"artifacts":[]}')
 
     class FakeLlm:
         def get_client(self):
@@ -363,8 +383,11 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     )
 
     assert out["message"] == {"content": "请写大纲", "target_agent_name": "写作专家"}
-    system_prompt = calls["messages"][0].content
-    user_prompt = calls["messages"][1].content
+    assert len(calls) == 2
+    system_prompt = calls[0][0].content
+    message_system_prompt = calls[1][0].content
+    selection_prompt = calls[0][1].content
+    message_prompt = calls[1][1].content
     assert "主持人系统提示" in system_prompt
     assert "网文专用主持 Skill 正文" in system_prompt
     assert system_prompt.count("项目统一提示词") == 1
@@ -373,10 +396,16 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     assert system_prompt.index("项目统一提示词") < system_prompt.index("场景共享任务契约")
     assert system_prompt.index("场景共享任务契约") < system_prompt.index("主持人系统提示")
     assert system_prompt.index("主持人系统提示") < system_prompt.index("网文专用主持 Skill 正文")
+    assert system_prompt.index("网文专用主持 Skill 正文") < system_prompt.index("平台内部协议")
+    assert "本次只执行主持人发言人选择阶段" in system_prompt
+    assert "本次只执行主持人展示话术生成阶段" in message_system_prompt
     assert "书童四九平台主持人" not in system_prompt
-    assert "只允许输出上述字段" not in user_prompt
-    assert '"target_agent_name"' not in user_prompt
-    assert '"next_action"' not in user_prompt
+    assert "只允许输出上述字段" not in selection_prompt
+    assert "允许的 target_agent_name 值" in selection_prompt
+    assert '["user", "end", "写作专家"]' in selection_prompt
+    assert "下一位发言者已经固定" in message_prompt
+    assert "写作专家" in message_prompt
+    assert '"next_action"' not in selection_prompt
     assert "scheduler_state" not in session_item
 
 
@@ -393,9 +422,15 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
             calls.append(messages)
             if len(calls) == 1:
                 return FakeResponse(
-                    '安排如下：\n```json\n{"current_phase":"阶段1","message":{"content":"请写大纲","target_agent_name":"写作专家"}}\n```'
+                    '安排如下：\n```json\n{"current_phase":"阶段1",'
+                    '"target_agent_name":"写作专家","suggested_add_agent_names":[]}\n```'
                 )
-            return FakeResponse('{"current_phase":"阶段1","message":{"content":"请写大纲","target_agent_name":"写作专家"}}')
+            if len(calls) == 2:
+                return FakeResponse(
+                    '{"current_phase":"阶段1","target_agent_name":"写作专家",'
+                    '"suggested_add_agent_names":[]}'
+                )
+            return FakeResponse('{"content":"请写大纲","attachments":[],"artifacts":[]}')
 
     class FakeLlm:
         def get_client(self):
@@ -417,9 +452,133 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
         host_scheduler_state={"current_phase": "阶段1"},
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert out["message"] == {"content": "请写大纲", "target_agent_name": "写作专家"}
     retry_prompt = calls[1][1].content
-    assert "主持人调度输出未通过平台 JSON 协议校验" in retry_prompt
-    assert '"suggested_add_agent_names"' not in retry_prompt
+    assert "主持人发言人选择输出未通过平台 JSON 协议校验" in retry_prompt
+    assert "suggested_add_agent_names" in retry_prompt
     assert "主持人长期提示词" in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_host_decide_logs_protocol_evidence_and_fallback_context(monkeypatch, caplog):
+    class FakeResponse:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeClient:
+        def __init__(self):
+            self.responses = iter(
+                [
+                    FakeResponse("first invalid host output"),
+                    FakeResponse(
+                        '{"current_phase":"阶段1","target_agent_name":"不存在的专家",'
+                        '"suggested_add_agent_names":[]}'
+                    ),
+                ]
+            )
+
+        async def ainvoke(self, _messages):
+            return next(self.responses)
+
+    class FakeLlm:
+        def get_client(self):
+            return FakeClient()
+
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._request_skills_loader", lambda: None)
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+
+    with caplog.at_level(logging.WARNING):
+        out = await _host_decide_by_agent(
+            llm=FakeLlm(),
+            host_agent={"name": "四九"},
+            agent_profiles=[{"name": "写作专家", "description": "写作"}],
+            discussion_goal="写文章",
+            recent_messages="用户：写文章",
+            last_speaker_agent_name=None,
+            extra_system_prompt="",
+            group_session_id="group-log-test",
+            app_settings={},
+            host_scheduler_state={"current_phase": "阶段1"},
+            host_mode="scene",
+        )
+
+    assert out["message"] == {
+        "content": HOST_PROTOCOL_ERROR_MESSAGE,
+        "target_agent_name": "user",
+    }
+    messages = [record.getMessage() for record in caplog.records]
+    initial = next(message for message in messages if "attempt=initial" in message)
+    retry = next(message for message in messages if "attempt=retry" in message)
+    fallback = next(message for message in messages if "host_scheduler_protocol_fallback" in message)
+    assert "first invalid host output" in initial
+    assert '"group_session_id":"group-log-test"' in retry
+    assert '"allowed_agent_names":["写作专家"]' in retry
+    assert "不存在的专家" in retry
+    assert "session=group-log-test" in fallback
+    assert "host=四九" in fallback
+    assert "current_phase=阶段1" in fallback
+
+
+@pytest.mark.asyncio
+async def test_host_decide_separates_speaker_selection_from_message_generation(monkeypatch, caplog):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeClient:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return FakeResponse(
+                    '{"current_phase":"文档合著","target_agent_name":"user","suggested_add_agent_names":[]}'
+                )
+            return FakeResponse(
+                '{"content":"请文档合著专家等待用户补充目标篇幅与侧重维度。","attachments":[],"artifacts":[]}'
+            )
+
+    class FakeLlm:
+        def get_client(self):
+            return FakeClient()
+
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._request_skills_loader", lambda: None)
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+
+    with caplog.at_level(logging.INFO):
+        out = await _host_decide_by_agent(
+            llm=FakeLlm(),
+            host_agent={"name": "五九"},
+            agent_profiles=[{"name": "文档合著专家", "description": "写作"}],
+            discussion_goal="写沈腾演艺生涯介绍",
+            recent_messages="文档合著专家：请用户补充目标篇幅。",
+            last_speaker_agent_name="文档合著专家",
+            extra_system_prompt="",
+            group_session_id="group-two-stage",
+            app_settings={},
+            host_scheduler_state={"current_phase": "文档合著"},
+        )
+
+    assert len(calls) == 2
+    assert "HostSpeakerSelectionPayload" in str(calls[0][-1].content)
+    assert "HostMessagePayload" in str(calls[1][-1].content)
+    assert out == {
+        "current_phase": "文档合著",
+        "message": {
+            "content": "请文档合著专家等待用户补充目标篇幅与侧重维度。",
+            "target_agent_name": "user",
+        },
+        "suggested_add_agent_names": None,
+    }
+    logs = [record.getMessage() for record in caplog.records]
+    assert any(
+        "host_speaker_selection session=group-two-stage" in message
+        and "target_agent_name=user" in message
+        for message in logs
+    )
+    assert any(
+        "host_message_generation_complete session=group-two-stage" in message
+        and "fixed_target_agent_name=user" in message
+        for message in logs
+    )
