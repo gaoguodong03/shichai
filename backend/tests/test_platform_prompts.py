@@ -95,8 +95,9 @@ def test_host_prompts_preserve_confirmation_causality_across_expert_returns():
 
     assert "触发本轮请求的用户输入" in runtime_prompt
     assert "不能确认其后才产生的专家成果" in runtime_prompt
-    assert "专家正文只作为判断任务是否完成的证据" in runtime_prompt
-    assert "不能复制、改写或续写到主持人的 message.content" in runtime_prompt
+    assert "最近讨论仅用于判断任务是否完成" in runtime_prompt
+    assert "不得复制、改写或续写任何讨论内容" in runtime_prompt
+    assert "只输出主持人自己本轮的自然语言调度指令" in runtime_prompt
     assert "不得再次调度同一专家完成同一任务" in runtime_prompt
     assert "该消息之后才产生的专家成果" in retry_prompt
     assert "必须等待新的用户输入" in retry_prompt

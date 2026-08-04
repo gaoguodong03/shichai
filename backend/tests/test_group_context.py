@@ -51,6 +51,24 @@ def test_messages_to_context_preserves_tail_when_truncating_long_messages():
     assert "材料包已整理到这里，交给教师做材料引导" in text
 
 
+def test_scheduler_memory_prompt_keeps_only_latest_host_message():
+    messages = [
+        {"speaker": {"type": "user"}, "message": {"content": "请开始梳理事实"}},
+        {"speaker": {"type": "host", "agent_name": "主持人"}, "message": {"content": "旧的主持人问题"}},
+        {"speaker": {"type": "expert", "agent_name": "事实专家"}, "message": {"content": "请确认状态推断"}},
+        {"speaker": {"type": "user"}, "message": {"content": "确认"}},
+        {"speaker": {"type": "host", "agent_name": "主持人"}, "message": {"content": "请回答当前事实问题"}},
+        {"speaker": {"type": "user"}, "message": {"content": "再次确认"}},
+    ]
+
+    text = group_context.scheduler_memory_prompt("session-1", messages)
+
+    assert "旧的主持人问题" not in text
+    assert "【主持人】请回答当前事实问题" in text
+    assert "【事实专家】请确认状态推断" in text
+    assert text.count("【主持人】") == 1
+
+
 def test_normalize_discussion_goal_removes_frontend_prefix():
     assert group_context.normalize_discussion_goal("【讨论目标】\n写一份方案") == "写一份方案"
 

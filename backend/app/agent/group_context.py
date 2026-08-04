@@ -49,8 +49,6 @@ def messages_to_context(
     max_turns: int = 15,
     max_chars: int = 12000,
     max_chars_per_message: int = 1200,
-    *,
-    skip_host: bool = False,
 ) -> str:
     """Render recent group messages into a compact model-readable context."""
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
@@ -59,8 +57,6 @@ def messages_to_context(
         role, agent_name = _message_speaker(m)
         content = _message_content(m)
         if not content:
-            continue
-        if skip_host and role == "host":
             continue
         content = _clip_context_message(content, max_chars_per_message)
         if role == "user":
@@ -130,9 +126,23 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
 
 
 def scheduler_memory_prompt(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
-    """Host scheduling memory prompt: just the recent conversation excerpt."""
+    """Build scheduler context while retaining only the latest host message."""
     _ = group_session_id
-    return messages_to_context(messages, skip_host=True)
+    history = messages or []
+    latest_host_index = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if _message_speaker(history[index])[0] == "host"
+        ),
+        -1,
+    )
+    visible_messages = [
+        message
+        for index, message in enumerate(history)
+        if _message_speaker(message)[0] != "host" or index == latest_host_index
+    ]
+    return messages_to_context(visible_messages)
 
 
 def skill_sessions_to_host_context(skill_sessions: Dict[str, Any] | None) -> str:
@@ -186,14 +196,6 @@ def normalize_compare_text(text: str) -> str:
     s = re.sub(r"[\s\r\n\t]+", "", s)
     s = re.sub(r"[`~!@#$%^&*()_\-+=\[\]{}\\|;:'\",.<>/?，。！？；：、“”‘’（）《》【】…·]", "", s)
     return s
-
-
-def looks_like_conclusion_text(text: str) -> bool:
-    s = (text or "").lower()
-    keys = (
-        "结论", "总结", "综上", "最终", "已完成", "完成了", "没有更多", "无法继续", "请用户补充", "建议用户",
-    )
-    return any(k in s for k in keys)
 
 
 def has_tool_failure(tool_results: List[Any], full_content: str) -> bool:
