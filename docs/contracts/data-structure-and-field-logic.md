@@ -647,7 +647,7 @@ checkpoints/
 
 模型终态中的 `next_action.agent_turn` 和 `next_action.skill_session` 是两个维度。平台校验后分别投影给 Agent Turn 控制器和 Skill Session 管理器，不写入消息 `skill_result`。主持人仍是跨专家调度入口；当 `agent_turn=respond` 交回主持人后，如果主持人再次选择同一专家，`skill_session=keep` 仍然要求沿用原 Skill。
 
-脚本型 Skill 的 `next_action` 可以来自脚本 stdout。非脚本 Skill、MCP / HTTP / workspace 工具在同一次 `agent_turn` 内按标准多步工具循环执行：模型发出结构化 `tool_calls`，平台执行并把对应 `ToolMessage` 回灌同一上下文，模型随后可以继续调用其他工具或停止调用并产出 `expert_final_state.v2`。平台不自动重试失败工具，也不自动切换同类工具；重复调用守卫和最大工具步数只负责终止死循环。模型停止调用工具后若输出不符合终态协议，或工具步数耗尽，平台才使用无工具 finalizer 规范化终态。平台先发布非空 `message`，再应用两个控制指令。脚本 stdout 或 finalizer 缺少 `message` 或 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理，不合成专家回复。
+脚本 stdout 可以使用完整 `expert_final_state.v2` 结构描述脚本级结果，但只作为模型可见的 `tool_result`，不直接控制本轮专家流程。多个脚本结果可以不同。MCP / HTTP / workspace 和脚本工具都在同一次 `agent_turn` 内按标准多步工具循环执行：模型发出结构化 `tool_calls`，平台执行并把对应 `ToolMessage` 回灌同一上下文，模型随后可以继续调用其他工具或停止调用并产出唯一的本轮 `expert_final_state.v2`。平台不自动重试失败工具，也不自动切换同类工具；重复调用守卫和最大工具步数只负责终止死循环。模型停止调用工具后若输出不符合终态协议，或工具步数耗尽，平台才使用无工具 finalizer 规范化终态。平台先发布非空 `message`，再应用两个控制指令。脚本 stdout 格式非法时，该次脚本工具按协议失败；最终模型或 finalizer 的终态字段非法时，本轮不合成专家回复。
 
 Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `tool_result`、再返回 `message` 的持久化数据结构。每次工具调用只产生 `tool_result`，并回到当前专家、当前 Skill、当前 `agent_turn` 的 LLM 上下文，供模型选择下一工具或生成最终状态。只有合法 `expert_final_state.v2` 通过终态校验后，平台才把 `message` 投影给输出发布器、把 `execution_status` 写入 `ChatMessageRecord.skill_result`、把两个 `next_action` 字段投影给独立控制模块。`agent_turn=continue` 不能吞掉非空消息。工具执行器、MCP、HTTP、workspace 和脚本适配层都不得越过该边界直接构造聊天消息。
 
@@ -672,12 +672,12 @@ Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `
 | `tool_result.output.json_data` | 工具执行层 | LLM 后续决策、专家 finalizer、执行日志详情 | 工具结构化返回；不得进入消息核心字段。 |
 | `tool_result.output.artifacts` | 工具执行层 | 专家 finalizer、执行日志详情 | 工具级产物引用；只有 finalizer 显式写入 `message.artifacts` 后才成为聊天消息产物。 |
 | `tool_result.error_log` | 工具执行层 | 执行日志、排障 | 工具失败诊断；不得作为聊天正文或路由事实。 |
-| `expert_final_state.v2.message` | 脚本 stdout / 专家 finalizer | `ChatMessageRecord.message` | 专家消息落盘的唯一入口。 |
-| `expert_final_state.v2.execution_status` | 脚本 stdout / 专家 finalizer | `skill_result.execution_status` | 专家 / Skill 本步最终状态。 |
-| `expert_final_state.v2.next_action` | 脚本 stdout / 专家 finalizer | Agent Turn 控制器、Skill Session 管理器 | 当前专家回合和跨轮 Skill 会话控制；不进入消息。 |
+| `expert_final_state.v2.message` | 专家最终模型输出 / 无工具 finalizer | `ChatMessageRecord.message` | 专家消息落盘的唯一入口。脚本 stdout 中的同名字段仅是工具结果。 |
+| `expert_final_state.v2.execution_status` | 专家最终模型输出 / 无工具 finalizer | `skill_result.execution_status` | 专家 / Skill 本步最终状态。脚本 stdout 中的同名字段不直接写入。 |
+| `expert_final_state.v2.next_action` | 专家最终模型输出 / 无工具 finalizer | Agent Turn 控制器、Skill Session 管理器 | 当前专家回合和跨轮 Skill 会话控制；不进入消息。 |
 | `skill_result.execution_status` | Skill / 专家结果归一化 | Skill 会话状态判断 | 只表示 Skill 本步结果；不等于接口 `status`、SSE `phase` 或工具日志 `status`。 |
-| `expert_final_state.v2.next_action.agent_turn` | 脚本 stdout / 后端 finalizer | Agent Turn 控制器 | 只控制 `continue` 或 `respond`，不决定 Skill 是否复用或消息是否发布。 |
-| `expert_final_state.v2.next_action.skill_session` | 脚本 stdout / 后端 finalizer | Skill Session 管理器 | 只控制同一专家后续被调用时是否沿用当前 Skill，不决定下一次执行权归属。 |
+| `expert_final_state.v2.next_action.agent_turn` | 专家最终模型输出 / 无工具 finalizer | Agent Turn 控制器 | 只控制 `continue` 或 `respond`，不决定 Skill 是否复用或消息是否发布。 |
+| `expert_final_state.v2.next_action.skill_session` | 专家最终模型输出 / 无工具 finalizer | Skill Session 管理器 | 只控制同一专家后续被调用时是否沿用当前 Skill，不决定下一次执行权归属。 |
 | `tool_execution.status` | 工具运行日志 | 日志面板、排障 | 只表示一次工具调用结果；不得驱动主持人路由或 Skill 会话状态。 |
 | `runtime.phase` / `progress.phase` / `end.phase` | 后端运行态 | 前端运行状态 | 只表示当前回复运行阶段；不得与接口 `status` 或 Skill `execution_status` 混用。 |
 

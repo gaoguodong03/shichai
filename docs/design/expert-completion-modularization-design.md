@@ -2,6 +2,8 @@
 
 ## 1. 背景与问题
 
+> 实现更新（2026-08-03）：脚本 stdout 仍使用 `expert_final_state.v2` 结构作为模型可见的脚本级结果，但不再参与本轮最终状态选择。多个脚本结果可以不同，只有最终模型或无工具 finalizer 的输出控制专家回合。
+
 当前模型最终输出使用一个严格 JSON 对象，同时提供：
 
 - `execution_status`：本次专家执行结果；
@@ -34,7 +36,7 @@
 
 ## 4. 外部模型协议保持不变
 
-模型、Skill 脚本 stdout 和 finalizer 继续输出：
+模型 finalizer 与 Skill 脚本 stdout 保持相同字段结构：
 
 ```json
 {
@@ -51,7 +53,7 @@
 }
 ```
 
-平台仍然只接受一个严格 JSON 对象。字段缺失、额外字段、非法枚举或非法 workspace 路径继续按协议错误处理。平台不得要求模型改为新的嵌套结构，也不得要求模型调用平台内部提交工具。
+脚本适配层仍严格校验 stdout JSON；脚本结果进入模型上下文，但不作为本轮最终状态。平台只接受最终模型或无工具 finalizer 的一个严格 JSON 对象作为专家回合控制状态。字段缺失、额外字段、非法枚举或非法 workspace 路径继续按协议错误处理。平台不得要求模型改为新的嵌套结构，也不得要求模型调用平台内部提交工具。
 
 ## 5. 平台内部领域对象
 
@@ -103,8 +105,7 @@ ParsedExpertCompletion
 
 - 保存 `ExpertFinalStatePayload` 及其严格子模型；
 - 解析 finalizer JSON；
-- 解析脚本 stdout；
-- 检测同一轮多个终态是否冲突；
+- 明确脚本 stdout 只是模型可见的工具结果，不参与专家回合控制状态选择；
 - 返回 `ParsedExpertCompletion`。
 
 该模块不落盘、不发送 SSE、不修改编排状态。
@@ -262,7 +263,7 @@ ParsedExpertCompletion
 - 现有模型 JSON 继续通过校验；
 - 模型无需输出新的内部模块结构；
 - 非法字段、额外字段和非法枚举继续失败；
-- 脚本 stdout 与 finalizer 冲突时失败。
+- 多个脚本 stdout 可以不同，最终状态以模型或 finalizer 输出为准。
 
 ### 11.2 输出测试
 

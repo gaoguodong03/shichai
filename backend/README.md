@@ -63,12 +63,12 @@ backend/
 
 ### Skill 会话退出协议
 
-- 固定字段：脚本型 Skill 的 stdout JSON 必须输出 `execution_status`、`content`、`artifacts`、`next_action`。
-- 会话字段：`next_action.agent_turn` 只允许 `respond` 或 `continue`；`next_action.skill_session` 只允许 `keep` 或 `release`。
-- 字段含义：`skill_session=release` 表示下一条用户消息不再锁定当前 Skill；`skill_session=keep` 表示下一条用户消息优先接回同一专家和 Skill。`agent_turn` 只控制当前专家本轮是否继续行动，两个维度互不替代。
+- 固定字段：脚本型 Skill 的 stdout JSON 必须输出 `execution_status`、`message`、`next_action`；用户可见产物写入 `message.artifacts`。
+- 最终状态的会话字段：`next_action.agent_turn` 只允许 `respond` 或 `continue`；`next_action.skill_session` 只允许 `keep` 或 `release`。
+- 最终状态字段含义：`skill_session=release` 表示下一条用户消息不再锁定当前 Skill；`skill_session=keep` 表示下一条用户消息优先接回同一专家和 Skill。`agent_turn` 只控制当前专家本轮是否继续行动，两个维度互不替代。
 - 专家正文状态块：非脚本 Skill、MCP / HTTP / workspace 工具后的流程判断来自专家最终回复末尾的 `[[SKILL_SESSION_STATE]] ... [[/SKILL_SESSION_STATE]]` 隐藏状态块，状态块会被后端解析并从展示正文中移除。
 - 严格协议：旧字段和旧标记不再参与会话锁控制；正文中的 `[[SKILL_SESSION_END]]`、`【技能会话结束】` 只会被当作普通文本。
-- 注意：脚本 stdout 中的 `done` / `final` 只表示“本轮工具循环可以收束并生成最终答复”，不会释放群聊 Skill 会话锁。
+- 注意：脚本 stdout 的 `execution_status`、`message`、`next_action` 仅表示脚本级结果；同一轮多个脚本结果可以不同，只有最终模型输出才控制专家回合与 Skill 会话。
 - 主持人接管：用户明确要求主持人接管时，运行时清理短期接续状态并重新进入主持人调度。
 
 ## Skill 脚本执行（run_skill_script）
@@ -79,7 +79,7 @@ backend/
 - 调用协议：当前运行时工具使用结构化参数调用脚本；脚本 stdout 必须遵守当前 Skill 结果契约。
 - 相对路径手册：`docs/skills/skill-script-paths.md`
 - 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
-- stdout JSON 字段：`execution_status`、`content`、`artifacts`、`next_action`。成功完成且不需要同一 Skill 继续处理时设 `next_action.skill_session: "release"`；仍需用户补充或确认时设 `"keep"`。
+- stdout JSON 字段：`execution_status`、`message`、`next_action`，其中用户可见产物写入 `message.artifacts`。脚本中的 `next_action` 只供最终模型汇总，不直接控制本轮 Skill 会话。
 
 ### Skill 协议校验
 

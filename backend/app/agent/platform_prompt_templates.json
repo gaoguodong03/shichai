@@ -112,7 +112,7 @@
   "image_generation.default_user_prompt.v1": "{description}\n\n请生成尺寸约为 {pic_size} 的图片，输出图像内容。",
   "skill.execution.script_tool_rules.v1": "## 技能脚本工具\n\n用结构化工具调用执行当前技能脚本。脚本入口由平台从 `scripts/manifest.json` 读取；你只填写工具 schema 中列出的业务参数，不传脚本路径、命令行数组或宿主机路径。\n\n{script_tool_names}",
   "skill.execution.mcp_tool_rules.v1": "## 本技能绑定的 MCP 工具\n\n以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，必须优先使用这些 MCP 工具完成步骤，不要用无关工具替代或仅靠猜测。参数以该工具 schema 为准，不要把所有参数塞进 `__arg1`，除非该工具本身只接受单字符串参数。\n\n{mcp_tool_names}",
-  "skill.execution.script_done_instruction.v1": "{prefix}请基于上方工具返回中面向用户可见的结果摘要生成 expert_final_state.v2 JSON。脚本结果已经由平台解析并记录；不要尝试读取内部运行字段或 scripts/<脚本名>，也不要再次调用同一个脚本和相同参数。",
+  "skill.execution.script_done_instruction.v1": "{prefix}上方脚本的 expert_final_state.v2 仅表示该脚本的结果，不控制本轮专家流程；同一轮多个脚本结果可以不同。需要结束本轮时，请综合全部工具结果生成唯一的 expert_final_state.v2 JSON；不要尝试读取内部运行字段或 scripts/<脚本名>，也不要再次调用同一个脚本和相同参数。",
   "skill.execution.tool_message_content.v1": "工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}",
   "skill.execution.tool_error_message.v1": "工具 {tool_name} 执行错误: {error}",
   "skill.execution.tool_missing_message.v1": "工具 {tool_name} 不存在。可用: {available_tools}",

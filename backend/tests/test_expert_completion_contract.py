@@ -41,18 +41,21 @@ def test_existing_model_json_projects_to_four_internal_objects():
     assert completion.skill_session.action == "keep"
 
 
-def test_script_stdout_takes_precedence_over_conflicting_finalizer():
+def test_finalizer_completion_wins_over_different_script_results():
     completion = select_expert_completion(
         final_content=json.dumps(_payload(content="finalizer"), ensure_ascii=False),
         tool_results=[
             {
                 "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
                 "execution_status": "succeeded",
-                "output": {
-                    "stdout": json.dumps(_payload(content="script"), ensure_ascii=False),
-                },
-            }
+                "output": {"stdout": json.dumps(_payload(content="script-a"), ensure_ascii=False)},
+            },
+            {
+                "tool_call": {"id": "call-2", "name": "run_skill_script", "kind": "script"},
+                "execution_status": "succeeded",
+                "output": {"stdout": json.dumps(_payload(content="script-b"), ensure_ascii=False)},
+            },
         ],
     )
 
-    assert completion.output.message.content == "script"
+    assert completion.output.message.content == "finalizer"
