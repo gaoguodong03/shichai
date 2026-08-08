@@ -316,6 +316,11 @@ export function useWorkspaceContentProviders(args: {
     pendingSuggestedAgentItems,
     inviteSuggestedAgents,
     inviteOneSuggestedAgent,
+    suggestedNamesInsertToInput,
+    selectedSuggestedAgentNames,
+    toggleSuggestedAgentSelection,
+    inviteSelectedSuggestedAgents,
+    dismissSuggestedAgents,
     ignoreAutoSwitchAndPause,
     currentActiveStreamingMessage,
     activeStreamingSpeakerName,
@@ -525,6 +530,7 @@ export function useWorkspaceContentProviders(args: {
         groupWaitingForUser.value = false
         groupSuggestedNextSpeaker.value = null
         groupSuggestedAddAgentNames.value = []
+        selectedSuggestedAgentNames.value = []
         loadGroupDetail()
       } else {
         closeGroupSessionEventsStream()
@@ -605,6 +611,11 @@ export function useWorkspaceContentProviders(args: {
     currentGroupStreamingPhase,
     inviteOneSuggestedAgent,
     inviteSuggestedAgents,
+    suggestedNamesInsertToInput,
+    selectedSuggestedAgentNames,
+    toggleSuggestedAgentSelection,
+    inviteSelectedSuggestedAgents,
+    dismissSuggestedAgents,
     groupSuggestedAddAgentNames,
     ignoreAutoSwitchAndPause,
     attachedFiles,

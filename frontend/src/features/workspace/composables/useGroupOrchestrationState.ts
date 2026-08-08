@@ -94,6 +94,7 @@ export function useGroupOrchestrationState(args: {
   const groupWaitingForUser = ref(false)
   const groupSuggestedNextSpeaker = ref<string | null>(null)
   const groupSuggestedAddAgentNames = ref<string[]>([])
+  const selectedSuggestedAgentNames = ref<string[]>([])
   const suggestedInviteLoading = ref(false)
   const autoSwitchHint = ref<{ sessionId: string; expertName?: string; expertDisplayName?: string; skill?: string; skillName?: string } | null>(null)
   const autoSwitchIgnoreLoading = ref(false)
@@ -373,26 +374,57 @@ export function useGroupOrchestrationState(args: {
     const direct = extractSuggestedAddNames(payload)
     const available = new Set((agentInstances() || []).map((item) => String(item.name || '').trim()).filter(Boolean))
     const inGroup = new Set(groupDetail.value?.agent_names || [])
-    const normalize = (ids: string[]) => {
-      const uniq = [...new Set((ids || [])
-        .map((id) => String(id || '').trim())
-        .filter((id) => !!id && available.has(id) && !inGroup.has(id)))]
-      return uniq.slice(0, 3)
+    return [...new Set((direct || [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => !!id && available.has(id) && !inGroup.has(id)))]
+  }
+
+  const suggestedNamesInsertToInput = computed(() => !(groupDetail.value?.agent_names || []).length)
+
+  function toggleSuggestedAgentSelection(agentName: string) {
+    const name = String(agentName || '').trim()
+    if (!name) return
+    if (!pendingSuggestedAddAgentNames.value.includes(name)) return
+    if (selectedSuggestedAgentNames.value.includes(name)) {
+      selectedSuggestedAgentNames.value = selectedSuggestedAgentNames.value.filter((item) => item !== name)
+      return
     }
-    if (direct.length) return normalize(direct)
-    return []
+    selectedSuggestedAgentNames.value = [...selectedSuggestedAgentNames.value, name]
+  }
+
+  async function inviteSelectedSuggestedAgents() {
+    const matched = selectedSuggestedAgentNames.value.filter((name) => (
+      pendingSuggestedAddAgentNames.value.includes(name)
+    ))
+    if (!matched.length) {
+      await appAlert({
+        title: '未选择专家',
+        message: '请先点击专家名字选中，再邀请。',
+        variant: 'danger',
+      })
+      return
+    }
+    await addSuggestedAgent(matched, { clearAll: false })
+    selectedSuggestedAgentNames.value = selectedSuggestedAgentNames.value.filter((name) => !matched.includes(name))
+  }
+
+  function dismissSuggestedAgents() {
+    groupSuggestedAddAgentNames.value = []
+    selectedSuggestedAgentNames.value = []
   }
 
   function resetOrchestrationForSessionSwitch() {
     groupWaitingForUser.value = false
     groupSuggestedNextSpeaker.value = null
     groupSuggestedAddAgentNames.value = []
+    selectedSuggestedAgentNames.value = []
   }
 
   return {
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
     groupSuggestedAddAgentNames,
+    selectedSuggestedAgentNames,
     suggestedInviteLoading,
     currentAutoSwitchHint,
     autoSwitchHintText,
@@ -404,6 +436,10 @@ export function useGroupOrchestrationState(args: {
     pendingSuggestedAgentItems,
     inviteSuggestedAgents,
     inviteOneSuggestedAgent,
+    suggestedNamesInsertToInput,
+    toggleSuggestedAgentSelection,
+    inviteSelectedSuggestedAgents,
+    dismissSuggestedAgents,
     ignoreAutoSwitchAndPause,
     currentActiveStreamingMessage,
     activeStreamingAgentName,
