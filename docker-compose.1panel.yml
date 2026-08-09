@@ -99,6 +99,7 @@ services:
     environment:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:8100}
       - AUTH_SECRET=${AUTH_SECRET:-please_change_to_a_long_random_secret}
+      - CALL_API_DISABLE_SSRF_GUARD=1
       # 认证库必须放在挂载卷内；否则镜像重建/重拉后账号库会回到镜像内默认路径。
       - AUTH_DB_PATH=${AUTH_DB_PATH:-/app/backend/data/auth_users.sqlite}
       - SHUTONG_USER_DATA_ROOT=${SHUTONG_USER_DATA_ROOT:-/app/backend/data/users}
