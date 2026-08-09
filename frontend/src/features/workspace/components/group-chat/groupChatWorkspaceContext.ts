@@ -86,6 +86,11 @@ export interface GroupChatComposerContext {
   currentGroupStreamingPhase: ContextValue
   inviteOneSuggestedAgent: ContextValue
   inviteSuggestedAgents: ContextValue
+  suggestedNamesInsertToInput: ContextValue
+  selectedSuggestedAgentNames: ContextValue
+  toggleSuggestedAgentSelection: ContextValue
+  inviteSelectedSuggestedAgents: ContextValue
+  dismissSuggestedAgents: ContextValue
   groupSuggestedAddAgentNames: ContextValue
   ignoreAutoSwitchAndPause: ContextValue
   attachedFiles: ContextValue

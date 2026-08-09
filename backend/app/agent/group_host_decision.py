@@ -1,7 +1,7 @@
 """Strict host decision parsing and message-based route derivation."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.agent.structured_output_contracts import (
     HostMessagePayload,
@@ -192,29 +192,3 @@ def parse_strict_host_scheduler_output(
         return host_scheduler_decision_from_payload(payload, agent_profiles, host_mode=host_mode)
     except StructuredOutputProtocolError as exc:
         return host_protocol_error_decision(str(exc))
-
-
-def heuristic_recommend_agents(
-    discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
-) -> List[str]:
-    """Recommend Agent names with simple keyword matching."""
-    goal = (discussion_goal or "").strip().lower()
-    scored = []
-    for item in all_instances or []:
-        name_raw = str(item.get("name") or "").strip()
-        if not name_raw:
-            continue
-        hay = f"{name_raw.lower()} {str(item.get('description') or '').lower()}"
-        score = sum(3 for token in goal.replace("，", " ").replace("。", " ").replace(",", " ").split() if token in hay)
-        if any(k in goal for k in ("写", "文案", "文章", "标题")) and any(k in hay for k in ("写作", "文案", "编辑", "内容")):
-            score += 5
-        if any(k in goal for k in ("图", "封面", "配图", "海报")) and any(k in hay for k in ("设计", "封面", "配图", "图像")):
-            score += 5
-        if any(k in goal for k in ("数据", "报表", "分析", "表格")) and any(k in hay for k in ("数据", "分析", "报表")):
-            score += 5
-        scored.append((score, name_raw))
-    scored.sort(key=lambda row: row[0], reverse=True)
-    picked = [name for score, name in scored if score > 0]
-    if not picked:
-        picked = [str(item.get("name") or "").strip() for item in all_instances or [] if str(item.get("name") or "").strip()]
-    return picked[: max(0, int(max_n))] if max_n is not None else picked

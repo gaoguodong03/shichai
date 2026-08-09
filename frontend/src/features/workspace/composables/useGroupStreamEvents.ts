@@ -68,6 +68,7 @@ export function useGroupStreamEvents(args: {
   isExpertAssistantMessagePayload: (data: Record<string, unknown> | null | undefined) => boolean
   clearAttachedFiles: () => void
   clearAutoSwitchHint: () => void
+  syncMessageExecutionLogs?: (msg: GroupMessage | Record<string, unknown> | null | undefined) => void
 }) {
   const {
     selectedGroupSessionId,
@@ -85,6 +86,7 @@ export function useGroupStreamEvents(args: {
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
+    syncMessageExecutionLogs,
   } = args
 
   function activeSessionId(sessionId = selectedGroupSessionId() || ''): string {
@@ -159,6 +161,7 @@ export function useGroupStreamEvents(args: {
     } else {
       groupDisplayMessages.value = [...list, displayData]
     }
+    syncMessageExecutionLogs?.(displayData)
     nextTick(() => {
       scheduleHydrateAuthImages()
       if (replacedStreamingPlaceholder) {
@@ -220,7 +223,9 @@ export function useGroupStreamEvents(args: {
           state.sawExpertAssistantMessageThisRun = true
         }
       } else {
-        groupDisplayMessages.value = [...groupDisplayMessages.value, toDisplayMessage(data)]
+        const displayData = toDisplayMessage(data)
+        groupDisplayMessages.value = [...groupDisplayMessages.value, displayData]
+        syncMessageExecutionLogs?.(displayData)
         if (type === 'user' && (data as { message_id?: string }).message_id) {
           nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
         }

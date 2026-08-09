@@ -1592,6 +1592,16 @@
 .group-chat-invite-inline-btn:hover {
   background: var(--color-list-hover);
 }
+.group-chat-invite-inline-btn.is-selected {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.group-chat-invite-inline-btn.is-selected:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
 .group-chat-invite-inline-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;

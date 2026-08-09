@@ -5,6 +5,7 @@
                 :suggested-agents="pendingSuggestedAgentItems"
                 :host-display-name="hostDisplayName"
                 :suggested-invite-loading="suggestedInviteLoading"
+                :selected-agent-ids="selectedSuggestedAgentNames"
                 :auto-switch-visible="Boolean(currentAutoSwitchHint)"
                 :auto-switch-text="autoSwitchHintText"
                 :auto-switch-ignore-loading="autoSwitchIgnoreLoading"
@@ -15,9 +16,9 @@
                 :interrupt-hint="orchestrationInterruptHint"
                 :current-streaming="currentGroupStreaming"
                 :streaming-phase="currentGroupStreamingPhase"
-                @invite-one-suggested="inviteOneSuggestedAgent"
-                @invite-suggested="inviteSuggestedAgents"
-                @dismiss-suggested="groupSuggestedAddAgentNames = []"
+                @toggle-suggested-agent="toggleSuggestedAgentSelection"
+                @invite-selected-suggested="inviteSelectedSuggestedAgents"
+                @dismiss-suggested="dismissSuggestedAgents"
                 @ignore-auto-switch="ignoreAutoSwitchAndPause"
               />
               <div class="group-chat-input-blocks">
@@ -385,9 +386,10 @@ const {
   orchestrationInterruptHint,
   currentGroupStreaming,
   currentGroupStreamingPhase,
-  inviteOneSuggestedAgent,
-  inviteSuggestedAgents,
-  groupSuggestedAddAgentNames,
+  selectedSuggestedAgentNames,
+  toggleSuggestedAgentSelection,
+  inviteSelectedSuggestedAgents,
+  dismissSuggestedAgents,
   ignoreAutoSwitchAndPause,
   attachedFiles,
   removeAttachedFile,

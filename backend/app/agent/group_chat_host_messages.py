@@ -9,6 +9,14 @@ from typing import Any, Mapping, Sequence
 HOST_ZERO_EXPERT_RECOMMENDATION = "当前会话还没有专家，请先邀请专家后继续。"
 
 
+def build_zero_expert_selection_prompt(agent_names: Sequence[str]) -> str:
+    """Compose the empty-session host prompt; names are offered via UI, not inline text."""
+    names = [str(name or "").strip() for name in agent_names or [] if str(name or "").strip()]
+    if not names:
+        return HOST_ZERO_EXPERT_RECOMMENDATION
+    return "当前会话还没有专家。请从下述专家中选择并邀请进入。"
+
+
 def _now_storage_timestamp() -> str:
     dt = datetime.now(timezone.utc)
     return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"

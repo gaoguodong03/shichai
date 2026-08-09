@@ -76,6 +76,7 @@ export function useGroupComposerActions(args: {
   clearStreamingPlaceholders: () => void
   scrollGroupToBottom: () => void
   refreshGroupWorkspaceAfterExternalChange: () => Promise<unknown>
+  preloadMessageExecutionLogs?: (messages: GroupMessage[], options?: { force?: boolean }) => void
   emitMessageSent: () => void
 }) {
   const runGroupStream = createGroupChatStreamRunner({
@@ -147,6 +148,7 @@ export function useGroupComposerActions(args: {
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
+        args.preloadMessageExecutionLogs?.(args.groupDisplayMessages.value, { force: true })
         args.emitMessageSent()
       }
     } catch (e) {
@@ -220,6 +222,7 @@ export function useGroupComposerActions(args: {
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
+        args.preloadMessageExecutionLogs?.(args.groupDisplayMessages.value, { force: true })
         args.emitMessageSent()
       }
     } catch (e) {

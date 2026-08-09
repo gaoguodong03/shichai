@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
+from app.agent.group_chat_host_messages import build_zero_expert_selection_prompt
 from app.agent.group_host_decision import (
     compose_host_scheduler_decision,
-    heuristic_recommend_agents,
     host_protocol_error_decision,
     host_scheduler_decision_from_payload,
     host_speaker_selection_from_payload,
@@ -298,7 +298,13 @@ async def _host_only_respond_and_recommend(
     extra_system_prompt: str,
     group_session_id: str = "",
 ) -> tuple[str, Optional[List[str]]]:
-    """Return a no-expert host notice; expert invitation is controlled by end payload."""
-    _ = (recent_messages, extra_system_prompt, group_session_id)
-    picked = heuristic_recommend_agents(discussion_goal, all_instances, max_n=3)
-    return "当前会话还没有专家，请先邀请专家后继续。", picked
+    """List every invitable expert for empty sessions; invitation stays user-confirmed."""
+    _ = (discussion_goal, recent_messages, extra_system_prompt, group_session_id)
+    picked: list[str] = []
+    for item in all_instances or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and name not in picked:
+            picked.append(name)
+    return build_zero_expert_selection_prompt(picked), picked or None

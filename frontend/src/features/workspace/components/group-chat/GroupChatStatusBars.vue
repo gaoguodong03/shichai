@@ -4,27 +4,27 @@
     class="group-chat-suggested-invite-bar"
   >
     <span class="group-chat-suggested-invite-text">
-      {{ hostDisplayName }} 建议邀请
+      {{ hostDisplayName }}：点击专家名字选中
       <template v-for="(agent, idx) in suggestedAgents" :key="agent.id">
         <button
           type="button"
           class="group-chat-invite-inline-btn"
+          :class="{ 'is-selected': isSelected(agent.id) }"
           :disabled="suggestedInviteLoading"
-          @click="$emit('invite-one-suggested', agent.id)"
+          @click="$emit('toggle-suggested-agent', agent.id)"
         >
           {{ agent.name }}
         </button>
         <span v-if="idx < suggestedAgents.length - 1" class="group-chat-suggested-sep">、</span>
       </template>
-      加入讨论
     </span>
     <button
       type="button"
       class="group-chat-invite-suggested-btn"
-      :disabled="suggestedInviteLoading"
-      @click="$emit('invite-suggested')"
+      :disabled="suggestedInviteLoading || !selectedAgentIds.length"
+      @click="$emit('invite-selected-suggested')"
     >
-      全部邀请
+      邀请已填入的专家
     </button>
     <button type="button" class="group-chat-dismiss-suggested-btn" @click="$emit('dismiss-suggested')">忽略</button>
   </div>
@@ -67,10 +67,11 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+const props = withDefaults(defineProps<{
   suggestedAgents: Array<{ id: string; name: string }>
   hostDisplayName: string
   suggestedInviteLoading: boolean
+  selectedAgentIds?: string[]
   autoSwitchVisible: boolean
   autoSwitchText: string
   autoSwitchIgnoreLoading: boolean
@@ -81,12 +82,18 @@ defineProps<{
   interruptHint: string
   currentStreaming: boolean
   streamingPhase: string
-}>()
+}>(), {
+  selectedAgentIds: () => [],
+})
 
 defineEmits<{
-  'invite-one-suggested': [id: string]
-  'invite-suggested': []
+  'toggle-suggested-agent': [id: string]
+  'invite-selected-suggested': []
   'dismiss-suggested': []
   'ignore-auto-switch': []
 }>()
+
+function isSelected(id: string): boolean {
+  return (props.selectedAgentIds || []).includes(id)
+}
 </script>
