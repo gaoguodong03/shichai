@@ -157,13 +157,23 @@
                         v-for="dep in pythonDependencies"
                         :key="dep"
                         class="inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-mono transition-colors"
-                        :class="isPythonDependencyMissing(dep)
+                        :class="isPythonDependencyProblem(dep)
                           ? 'border-red-300 bg-red-50 text-red-700'
                           : 'border-border bg-input-bg text-primary'"
                         :title="pythonDependencyTitle(dep)"
                       >
                         {{ dep }}
                       </span>
+                    </div>
+                    <div
+                      v-if="pythonDependencyStatusLoading"
+                      class="inline-flex items-center gap-2 text-xs text-muted"
+                    >
+                      <span
+                        class="inline-block h-3.5 w-3.5 rounded-full border-2 border-muted border-t-transparent animate-spin"
+                        aria-hidden="true"
+                      />
+                      <span>正在解析 Python 依赖…</span>
                     </div>
                     <button
                       v-if="missingPythonDependencies.length"
@@ -178,9 +188,6 @@
                   <div v-else class="text-xs text-muted">未声明 Python 依赖，本技能会话不安装额外 Python 依赖。</div>
                   <p v-if="!editMode && missingPythonDependencies.length" class="mt-2 text-xs text-red-600">
                     红色依赖未被设置-沙箱-requirements.txt 的 pip 解析闭包覆盖，可一键添加缺失依赖并等待安装完成。
-                  </p>
-                  <p v-if="!editMode && pythonDependencyStatusLoading" class="mt-2 text-xs text-muted">
-                    正在解析 Python 依赖状态...
                   </p>
                   <p v-if="sandboxDependencyMessage" class="mt-2 text-xs" :class="sandboxDependencyError ? 'text-red-600' : 'text-accent'">
                     {{ sandboxDependencyMessage }}
@@ -320,6 +327,7 @@ const sandboxDependencyMessage = ref('')
 const sandboxDependencyError = ref(false)
 const pythonDependencyStatusLoading = ref(false)
 const pythonDependencyStatuses = ref<PythonDependencyStatus[]>([])
+let pythonDependencyStatusRequestId = 0
 const partMarkdownPreviewMode = ref(true)
 function hasLoadedSkillContent() {
   return Boolean(
@@ -447,14 +455,16 @@ function normalizePythonRequirements(raw: unknown): string[] {
   return Array.from(new Set(lines.map((x) => x.trim()).filter(Boolean)))
 }
 
-function isPythonDependencyMissing(dep: string) {
-  const status = pythonDependencyStatusByRequirement.value.get(dep)?.status || 'unknown'
-  return !['satisfied', 'skipped'].includes(status)
+function isPythonDependencyProblem(dep: string) {
+  const status = pythonDependencyStatusByRequirement.value.get(dep)?.status
+  return status === 'missing' || status === 'conflict' || status === 'invalid'
 }
 
 function pythonDependencyTitle(dep: string) {
   const item = pythonDependencyStatusByRequirement.value.get(dep)
-  if (!item) return '依赖状态尚未解析'
+  if (!item) {
+    return pythonDependencyStatusLoading.value ? '正在解析依赖状态…' : '依赖状态尚未解析'
+  }
   if (item.status === 'satisfied') return '已被设置-沙箱 requirements.txt 的 pip 解析闭包覆盖'
   if (item.status === 'skipped') return '当前环境标记不生效'
   if (item.status === 'missing') {
@@ -681,8 +691,12 @@ async function loadMcpServers() {
 
 async function loadPythonDependencyStatus() {
   const requirements = pythonDependencies.value
+  const requestId = ++pythonDependencyStatusRequestId
   pythonDependencyStatuses.value = []
-  if (!requirements.length || isDraftSkill.value) return
+  if (!requirements.length || isDraftSkill.value) {
+    pythonDependencyStatusLoading.value = false
+    return
+  }
   pythonDependencyStatusLoading.value = true
   try {
     const r = await apiRequest('/settings/sandbox/requirements/status', {
@@ -690,7 +704,9 @@ async function loadPythonDependencyStatus() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ requirements }),
     })
+    if (requestId !== pythonDependencyStatusRequestId) return
     const j = await r.json().catch(() => ({}))
+    if (requestId !== pythonDependencyStatusRequestId) return
     if (j?.status === 'ok' && Array.isArray(j?.data?.requirements)) {
       pythonDependencyStatuses.value = j.data.requirements
     } else {
@@ -701,13 +717,16 @@ async function loadPythonDependencyStatus() {
       }))
     }
   } catch (e) {
+    if (requestId !== pythonDependencyStatusRequestId) return
     pythonDependencyStatuses.value = requirements.map((requirement) => ({
       requirement,
       status: 'unknown',
       message: String(e || '依赖状态解析失败'),
     }))
   } finally {
-    pythonDependencyStatusLoading.value = false
+    if (requestId === pythonDependencyStatusRequestId) {
+      pythonDependencyStatusLoading.value = false
+    }
   }
 }
 
@@ -830,7 +849,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
       resetFormFromLoadedContent()
       editMode.value = false
       draftBaseline.value = ''
-      await loadPythonDependencyStatus()
+      void loadPythonDependencyStatus()
     }
   } finally {
     if (showContentLoading) contentLoading.value = false
