@@ -140,6 +140,17 @@ class HostSchedulerDecisionPayload(StrictModel):
         return self
 
 
+class EmptySessionRecruitmentPayload(StrictModel):
+    """LLM pick of invitable experts for zero-member sessions."""
+
+    suggested_add_agent_names: list[str] = Field(default_factory=list)
+
+    @field_validator("suggested_add_agent_names")
+    @classmethod
+    def _suggested_names_are_nonempty_strings(cls, value: list[str]) -> list[str]:
+        return _dedupe_nonempty_strings(value)
+
+
 class ToolExecutionLogToolCall(StrictModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)

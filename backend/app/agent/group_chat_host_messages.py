@@ -14,7 +14,7 @@ def build_zero_expert_selection_prompt(agent_names: Sequence[str]) -> str:
     names = [str(name or "").strip() for name in agent_names or [] if str(name or "").strip()]
     if not names:
         return HOST_ZERO_EXPERT_RECOMMENDATION
-    return "当前会话还没有专家。请从下述专家中选择并邀请进入。"
+    return "当前会话还没有专家。请从下述专家中选择并邀请。"
 
 
 def _now_storage_timestamp() -> str:

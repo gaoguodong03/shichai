@@ -217,8 +217,12 @@ async def _run_contract_events(
             discussion_goal,
             scheduler_memory_prompt(group_session_id, messages),
             available_to_add,
-            "",
+            build_shared_session_prompt(app_settings, session_item),
             group_session_id,
+            llm=_get_llm_for_agent(host_agent, app_settings),
+            host_agent=host_agent,
+            app_settings=app_settings,
+            user_message=user_text,
         )
         finalized = finalize_host_scheduler_decision(
             {
