@@ -7,7 +7,10 @@ from typing import Any, Dict, List, Optional
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
-from app.agent.group_chat_host_messages import build_zero_expert_selection_prompt
+from app.agent.group_chat_host_messages import (
+    HOST_ZERO_EXPERT_RECOMMENDATION,
+    build_zero_expert_selection_prompt,
+)
 from app.agent.group_host_decision import (
     compose_host_scheduler_decision,
     host_protocol_error_decision,
@@ -18,6 +21,7 @@ from app.agent.group_context import skill_sessions_to_host_context
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.structured_llm_output import invoke_pydantic_llm_output
 from app.agent.structured_output_contracts import (
+    EmptySessionRecruitmentPayload,
     HostMessagePayload,
     HostSchedulerDecisionPayload,
     HostSpeakerSelectionPayload,
@@ -297,14 +301,94 @@ async def _host_only_respond_and_recommend(
     all_instances: List[Dict[str, Any]],
     extra_system_prompt: str,
     group_session_id: str = "",
+    *,
+    llm: Any = None,
+    host_agent: Optional[Dict[str, Any]] = None,
+    app_settings: Optional[Dict[str, Any]] = None,
+    user_message: str = "",
 ) -> tuple[str, Optional[List[str]]]:
-    """List every invitable expert for empty sessions; invitation stays user-confirmed."""
-    _ = (discussion_goal, recent_messages, extra_system_prompt, group_session_id)
-    picked: list[str] = []
+    """Ask the host LLM which invitable experts match; fall back to the full catalog."""
+    name_map: dict[str, str] = {}
+    catalog_lines: list[str] = []
     for item in all_instances or []:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()
-        if name and name not in picked:
-            picked.append(name)
-    return build_zero_expert_selection_prompt(picked), picked or None
+        if not name or name.casefold() in name_map:
+            continue
+        name_map[name.casefold()] = name
+        description = str(item.get("description") or "参与者").strip()
+        catalog_lines.append(f"- {name}: {description}")
+
+    if not name_map:
+        return HOST_ZERO_EXPERT_RECOMMENDATION, None
+
+    all_names = list(name_map.values())
+
+    def _full_catalog_choice() -> tuple[str, list[str]]:
+        return build_zero_expert_selection_prompt(all_names), all_names
+
+    settings = load_app_settings() if app_settings is None else app_settings
+    host = host_agent or {}
+    credential_notice = _llm_credential_notice_for_agent(host, settings)
+    if credential_notice:
+        return credential_notice, None
+    if llm is None:
+        logger.warning("empty_session_recruit missing llm session=%s", group_session_id)
+        return _full_catalog_choice()
+
+    host_system = str(host.get("system_prompt") or "").strip()
+    host_skill_content = _load_host_skill_content(host) if host else ""
+    system_content = "\n\n".join(
+        part
+        for part in (
+            str(extra_system_prompt or "").strip(),
+            host_system,
+            host_skill_content,
+        )
+        if part
+    )
+    prompt = render_platform_prompt(
+        "host.empty_session_recruit.v1",
+        {
+            "user_message": user_message or discussion_goal or "（无）",
+            "discussion_goal": discussion_goal or "（无）",
+            "recent_history": recent_messages or "（无）",
+            "expert_catalog": "\n".join(catalog_lines),
+        },
+    )
+    client = llm.get_client()
+    messages_for_llm = [SystemMessage(content=system_content), HumanMessage(content=prompt)]
+    retry_prompt = prompt + "\n\n" + render_platform_prompt("host.empty_session_recruit.protocol_retry.v1", {})
+    retry_messages = [SystemMessage(content=system_content), HumanMessage(content=retry_prompt)]
+
+    try:
+        payload = await invoke_pydantic_llm_output(
+            client,
+            messages_for_llm,
+            EmptySessionRecruitmentPayload,
+            retry_messages=retry_messages,
+        )
+    except StructuredOutputProtocolError as exc:
+        logger.warning(
+            "empty_session_recruit protocol error session=%s error=%s",
+            group_session_id,
+            exc,
+        )
+        return _full_catalog_choice()
+
+    picked: list[str] = []
+    for raw in payload.suggested_add_agent_names or []:
+        canonical = name_map.get(str(raw or "").strip().casefold())
+        if canonical and canonical not in picked:
+            picked.append(canonical)
+
+    logger.info(
+        "empty_session_recruit session=%s picked=%s catalog_size=%s",
+        group_session_id,
+        picked,
+        len(name_map),
+    )
+    if not picked:
+        return _full_catalog_choice()
+    return build_zero_expert_selection_prompt(picked), picked

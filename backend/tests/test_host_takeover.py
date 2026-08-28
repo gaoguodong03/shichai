@@ -1,6 +1,7 @@
 """Strict host-routing tests for the current runtime contract."""
 from __future__ import annotations
 
+import json
 import logging
 
 import pytest
@@ -9,6 +10,27 @@ from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE, parse_str
 from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_skill_directory
 from app.agent.session_contracts import GroupChatRequest
 from app.api import group_chat_state as state
+
+
+class _RecruitmentResponse:
+    def __init__(self, names: list[str]):
+        self.content = json.dumps({"suggested_add_agent_names": names}, ensure_ascii=False)
+
+
+class _RecruitmentClient:
+    def __init__(self, names: list[str]):
+        self._names = names
+
+    async def ainvoke(self, _messages):
+        return _RecruitmentResponse(self._names)
+
+
+class _RecruitmentLlm:
+    def __init__(self, names: list[str]):
+        self._names = names
+
+    def get_client(self):
+        return _RecruitmentClient(self._names)
 
 
 def test_strict_host_response_rejects_extra_fields():
@@ -242,6 +264,7 @@ async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, t
 
 @pytest.mark.asyncio
 async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatch, tmp_path):
+    from app.agent import group_chat_host_runtime as host_runtime
     from app.agent import group_chat_runtime as runtime
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
@@ -254,7 +277,8 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
         }
 
     monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
-    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(host_runtime, "_llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: _RecruitmentLlm(["检索专家"]))
 
     events = [
         item
@@ -281,6 +305,7 @@ async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatc
 
 @pytest.mark.asyncio
 async def test_zero_member_session_uses_host_only_recommendation_branch(monkeypatch, tmp_path):
+    from app.agent import group_chat_host_runtime as host_runtime
     from app.agent import group_chat_runtime as runtime
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
@@ -301,7 +326,8 @@ async def test_zero_member_session_uses_host_only_recommendation_branch(monkeypa
         raise AssertionError("zero-member sessions must use the host-only recommendation branch")
 
     monkeypatch.setattr(runtime, "_host_decide_by_agent", _scheduler_must_not_run)
-    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(host_runtime, "_llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: _RecruitmentLlm(["写作专家"]))
 
     events = [
         item

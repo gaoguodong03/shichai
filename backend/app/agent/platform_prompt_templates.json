@@ -9,6 +9,8 @@
   "host.write_scheduler_message.protocol_retry.v1": "主持人话术输出未通过平台 JSON 协议校验。下一位发言者已经固定，不得重新选择。请只输出一个 JSON 对象，字段只能是 content、attachments、artifacts；content 必须非空。不得输出 target_agent_name、current_phase、suggested_add_agent_names、Markdown 代码块、解释文本、前后缀或任何额外字段。",
   "host.agent_catalog.members.v1": "当前会话成员：\n{member_lines}",
   "host.agent_catalog.invitable.v1": "可建议邀请的专家：\n{invitable_lines}",
+  "host.empty_session_recruit.v1": "当前会话还没有专家。请根据用户消息，从候选专家中选出与任务相关的专家，供用户确认后邀请。\n\n规则：\n- 只输出与用户消息相关的专家；闲聊、无关或意图不清时返回空列表（平台会改为展示全部候选供用户自选）。\n- suggested_add_agent_names 中的名称必须与候选列表完全一致，不得编造。\n- 有明确相关专家时不要返回全部专家；只选真正相关的。\n\n用户消息：\n{user_message}\n\n讨论目标：\n{discussion_goal}\n\n最近讨论：\n{recent_history}\n\n候选专家：\n{expert_catalog}",
+  "host.empty_session_recruit.protocol_retry.v1": "空会话招募输出未通过平台 JSON 协议校验。请重新输出单个 JSON 对象，字段只能是：\n{{\n  \"suggested_add_agent_names\": [\"专家名称\"]\n}}\n名称必须来自候选专家列表；闲聊、无关或意图不清时返回空数组。不要输出 Markdown 代码块、解释文本、前后缀或任何额外字段。",
   "expert.select_skill.v1": "你是当前专家的 Skill 选择器。请只从候选 Skill 目录名中选择一个最适合本轮任务的 Skill。\n\n专家名称：\n{agent_name}\n\n专家职责：\n{agent_description}\n\n专家配置提示词：\n{agent_prompt}\n\n讨论目标：\n{discussion_goal}\n\n本轮用户输入：\n{user_prompt}\n\n候选 Skill：\n{skill_directories}\n\n主持人下一步动作：\n{next_action}\n\n必须输出单个 JSON 对象，字段只能是：\n{{\n  \"selected_skill\": \"skill-directory\"\n}}",
   "expert.select_skill.protocol_retry.v1": "专家 Skill 选择输出未通过平台 JSON 协议校验。请重新输出单个 JSON 对象，字段只能是：\n{{\n  \"selected_skill\": \"候选 Skill directory_name\"\n}}\n不要输出 Markdown 代码块、解释文本、前后缀或任何额外字段。`selected_skill` 必须来自候选 Skill 的 `skill=\"...\"` directory_name。",
   "title.generate.v1": "请基于用户第一条有效输入生成一个简短会话标题，最多 18 个中文字符，不要解释。\n\n用户输入：\n{user_message}",
