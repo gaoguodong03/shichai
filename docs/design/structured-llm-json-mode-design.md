@@ -53,7 +53,7 @@ Pydantic 校验位于 JSON 文本解析之后。带围栏的响应会在进入 `
 
 ## 专家终态协议重试
 
-主持人调度修复后，真实场景暴露了第二个同类边界：专家业务工具全部执行成功，但专家最终化第一次返回的 JSON 缺少 Pydantic 必填字段时，`simple_agent_streaming.py` 的两个结构化最终化入口没有提供 `retry_messages`，导致整轮直接以 `EXPERT_FINAL_STATE_INVALID` 失败。
+主持人调度修复后，真实场景暴露了第二个同类边界：专家业务工具全部执行成功，但专家最终化第一次返回的 JSON 缺少 Pydantic 必填字段时，`simple_agent_streaming.py` 的两个结构化最终化入口没有提供 `retry_messages`，导致整轮直接以 `LLM_RESPONSE_INVALID` 失败。
 
 专家最终化遵循与主持人一致的一次纠正原则：
 
@@ -61,7 +61,7 @@ Pydantic 校验位于 JSON 文本解析之后。带围栏的响应会在进入 `
 - 第一次终态未通过 `ExpertFinalStatePayload` 时，追加现有 `agent.after_tool_result.decision.v1` 作为严格纠正提示；
 - 第二次调用仍使用 JSON Object 模式和同一个 Pydantic Model；
 - 纠正阶段不再绑定业务工具，不重跑 MCP、HTTP、workspace 或脚本；
-- 第二次仍不合格时保持现有 `EXPERT_FINAL_STATE_INVALID` 失败语义，不补字段、不放宽 Schema。
+- 第二次仍不合格时使用统一的 `LLM_RESPONSE_INVALID` 失败语义，不补字段、不放宽 Schema。
 
 新增测试分别覆盖两个入口，均以第一次缺少 `next_action.skill_session`、第二次返回合法终态为红绿用例。
 

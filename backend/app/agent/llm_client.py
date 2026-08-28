@@ -197,6 +197,48 @@ def _get_value(value: Any, key: str, default: Any = None) -> Any:
     return getattr(value, key, default)
 
 
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _response_token_usage(response: Any) -> dict[str, int]:
+    """Read LiteLLM's normalized Usage object without a provider-side stats call."""
+    usage = _get_value(response, "usage") or {}
+    input_tokens = _optional_int(_get_value(usage, "prompt_tokens"))
+    if input_tokens is None:
+        input_tokens = _optional_int(_get_value(usage, "input_tokens"))
+    output_tokens = _optional_int(_get_value(usage, "completion_tokens"))
+    if output_tokens is None:
+        output_tokens = _optional_int(_get_value(usage, "output_tokens"))
+    total_tokens = _optional_int(_get_value(usage, "total_tokens"))
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+
+    input_details = _get_value(usage, "prompt_tokens_details") or _get_value(usage, "input_tokens_details") or {}
+    output_details = _get_value(usage, "completion_tokens_details") or _get_value(usage, "output_tokens_details") or {}
+    cached_tokens = _optional_int(_get_value(input_details, "cached_tokens"))
+    reasoning_tokens = _optional_int(_get_value(output_details, "reasoning_tokens"))
+    cache_creation_tokens = _optional_int(_get_value(usage, "cache_creation_input_tokens"))
+    cache_read_tokens = _optional_int(_get_value(usage, "cache_read_input_tokens"))
+
+    values = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "cached_tokens": cached_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "cache_creation_tokens": cache_creation_tokens,
+        "cache_read_tokens": cache_read_tokens,
+    }
+    return {key: value for key, value in values.items() if value is not None}
+
+
 def _compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -273,7 +315,13 @@ def _raw_tool_call_to_dict(tool_call: Any, idx: int) -> tuple[dict[str, Any], di
     return raw, {"id": call_id, "name": name, "args": parsed_args}
 
 
-def _openai_message_to_ai_message(message: Any, *, finish_reason: Any = None) -> AIMessage:
+def _openai_message_to_ai_message(
+    message: Any,
+    *,
+    finish_reason: Any = None,
+    token_usage: Optional[Dict[str, int]] = None,
+    response_model: Any = None,
+) -> AIMessage:
     content = _get_value(message, "content") or ""
     raw_tool_calls: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
@@ -282,7 +330,13 @@ def _openai_message_to_ai_message(message: Any, *, finish_reason: Any = None) ->
         raw_tool_calls.append(raw)
         tool_calls.append(normalized)
     additional_kwargs = {"tool_calls": raw_tool_calls} if raw_tool_calls else {}
-    response_metadata = {"finish_reason": finish_reason} if finish_reason else {}
+    response_metadata: dict[str, Any] = {}
+    if finish_reason:
+        response_metadata["finish_reason"] = finish_reason
+    if token_usage:
+        response_metadata["token_usage"] = dict(token_usage)
+    if response_model:
+        response_metadata["model"] = str(response_model)
     return AIMessage(
         content=content,
         additional_kwargs=additional_kwargs,
@@ -378,11 +432,20 @@ class LiteLLMChatClient:
     def _response_to_ai_message(response: Any) -> AIMessage:
         choices = _get_value(response, "choices") or []
         if not choices:
-            return AIMessage(content="")
+            response_metadata: dict[str, Any] = {}
+            token_usage = _response_token_usage(response)
+            if token_usage:
+                response_metadata["token_usage"] = token_usage
+            response_model = _get_value(response, "model")
+            if response_model:
+                response_metadata["model"] = str(response_model)
+            return AIMessage(content="", response_metadata=response_metadata)
         choice = choices[0]
         return _openai_message_to_ai_message(
             _get_value(choice, "message") or {},
             finish_reason=_get_value(choice, "finish_reason"),
+            token_usage=_response_token_usage(response),
+            response_model=_get_value(response, "model"),
         )
 
 

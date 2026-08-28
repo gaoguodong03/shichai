@@ -216,7 +216,7 @@ class ToolExecutionLogRecord(StrictModel):
     log_id: str = Field(min_length=1)
     message_id: str = Field(min_length=1)
     created_at: str = Field(min_length=1)
-    source: Literal["mcp", "script", "workspace", "api", "host", "runtime"]
+    source: Literal["mcp", "script", "workspace", "api", "host", "llm", "runtime"]
     agent_name: str | None = Field(default=None, min_length=1)
     skill: str | None = Field(default=None, min_length=1)
     status: Literal["succeeded", "blocked", "failed"]

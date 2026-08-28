@@ -6,6 +6,8 @@ import logging
 import os
 from typing import Any, Dict
 
+from app.agent.llm_runtime_diagnostics import fail_llm_call, finish_llm_call, start_llm_call
+
 
 logger = logging.getLogger("app.agent.llm_client")
 
@@ -67,20 +69,74 @@ class TracedLLMClient:
 
     async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
         self._log_prompt("ainvoke", inp)
-        return await self._raw_client.ainvoke(inp, *args, **kwargs)
+        record, started_at = self._start_call("ainvoke", inp)
+        try:
+            response = await self._raw_client.ainvoke(inp, *args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            fail_llm_call(record, started_at, exc)
+            raise
+        self._finish_call(record, started_at, response)
+        return response
 
     def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
         self._log_prompt("invoke", inp)
-        return self._raw_client.invoke(inp, *args, **kwargs)
+        record, started_at = self._start_call("invoke", inp)
+        try:
+            response = self._raw_client.invoke(inp, *args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            fail_llm_call(record, started_at, exc)
+            raise
+        self._finish_call(record, started_at, response)
+        return response
 
     async def astream(self, inp: Any, *args: Any, **kwargs: Any):
         self._log_prompt("astream", inp)
-        async for chunk in self._raw_client.astream(inp, *args, **kwargs):
-            yield chunk
+        record, started_at = self._start_call("astream", inp)
+        last_chunk = None
+        try:
+            async for chunk in self._raw_client.astream(inp, *args, **kwargs):
+                last_chunk = chunk
+                yield chunk
+        except Exception as exc:  # noqa: BLE001
+            fail_llm_call(record, started_at, exc)
+            raise
+        self._finish_call(record, started_at, last_chunk)
 
     def stream(self, inp: Any, *args: Any, **kwargs: Any):
         self._log_prompt("stream", inp)
-        yield from self._raw_client.stream(inp, *args, **kwargs)
+        record, started_at = self._start_call("stream", inp)
+        last_chunk = None
+        try:
+            for chunk in self._raw_client.stream(inp, *args, **kwargs):
+                last_chunk = chunk
+                yield chunk
+        except Exception as exc:  # noqa: BLE001
+            fail_llm_call(record, started_at, exc)
+            raise
+        self._finish_call(record, started_at, last_chunk)
+
+    def _start_call(self, method: str, inp: Any):
+        return start_llm_call(
+            method=method,
+            model=self._model_name,
+            provider_base_url=self._provider_base_url,
+            input_metrics=_prompt_payload_stats(inp),
+        )
+
+    @staticmethod
+    def _finish_call(record: dict[str, Any] | None, started_at: float, response: Any) -> None:
+        metadata = getattr(response, "response_metadata", None)
+        content = getattr(response, "content", "")
+        tool_calls = getattr(response, "tool_calls", None) or []
+        finish_llm_call(
+            record,
+            started_at,
+            response_metadata=dict(metadata) if isinstance(metadata, dict) else {},
+            output_metrics={
+                "output_chars": len(str(content or "")),
+                "tool_call_count": len(tool_calls),
+            },
+        )
 
     def _log_prompt(self, method: str, inp: Any) -> None:
         mode = prompt_log_mode()

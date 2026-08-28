@@ -612,14 +612,14 @@ async def test_structured_finalizer_error_uses_stable_expert_error_code(monkeypa
         {
             "type": "error",
             "run_id": "run-finalizer-invalid",
-            "code": "EXPERT_FINAL_STATE_INVALID",
+                "code": "LLM_RESPONSE_INVALID",
             "message": "finalizer schema invalid",
         }
     ]
     assert [event for event, _payload in parsed][-3:] == ["error", "message", "end"]
     assert parsed[-2][1]["speaker"]["agent_name"] == "信息检索专家"
     assert parsed[-2][1]["skill_result"]["execution_status"] == "failed"
-    assert "EXPERT_FINAL_STATE_INVALID" in parsed[-2][1]["message"]["content"]
+    assert "LLM_RESPONSE_INVALID" in parsed[-2][1]["message"]["content"]
     assert parsed[-1][0] == "end"
     assert parsed[-1][1]["phase"] == "failed"
 
@@ -1063,11 +1063,32 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_expert_turn_uses_expert_final_state_as_only_message_source(monkeypatch, tmp_path):
     from app.agent import group_chat_expert_turn as expert_turn
+    from app.agent import expert_output_publisher as output_publisher
     from app.api import group_chat_state as state
+
+    workspace_root = tmp_path / "workspace"
+    artifact_path = workspace_root / "research" / "summary.md"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text("资料摘要", encoding="utf-8")
 
     class FakeAgent:
         async def astream(self, *_args, **_kwargs):
             yield {"type": "agent_step", "message": AIMessage(content="工具已执行完成。以下是本轮工具返回摘要：\n\nTitle: 沈腾")}
+            yield {
+                "type": "tool_step",
+                "tool_results": [
+                    {
+                        "execution_status": "succeeded",
+                        "tool_call": {
+                            "id": "tc-write-summary",
+                            "name": "write_workspace_file",
+                            "kind": "workspace",
+                            "arguments": {"path": "research/summary.md"},
+                        },
+                        "output": {"content": "已写入当前 Chat 工作区文件：research/summary.md"},
+                    }
+                ],
+            }
             yield {"type": "agent_step", "message": AIMessage(content=_expert_final_state_json(
                 "我已经完成资料整理，并保存到工作区。",
                 artifacts=[{"type": "markdown", "name": "资料摘要", "path": "research/summary.md"}],
@@ -1087,6 +1108,8 @@ async def test_expert_turn_uses_expert_final_state_as_only_message_source(monkey
 
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     monkeypatch.setattr(expert_turn, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(expert_turn, "get_workspace_root_path", lambda _session_id: workspace_root)
+    monkeypatch.setattr(output_publisher, "get_workspace_root_path", lambda _session_id: workspace_root)
     monkeypatch.setattr(expert_turn, "update_group_run", _record_update)
     state.save_session_definitions(
         {
@@ -1200,7 +1223,7 @@ async def test_expert_turn_rejects_missing_expert_final_state(monkeypatch, tmp_p
 
     assert [event for event, _payload in events if event == "message"] == []
     error_payloads = [payload for event, payload in events if event == "error"]
-    assert error_payloads[-1]["code"] == "EXPERT_FINAL_STATE_INVALID"
+    assert error_payloads[-1]["code"] == "LLM_RESPONSE_INVALID"
     assert [item["tool_call"]["name"] for item in outcome.tool_results] == ["web_search_exa"]
 
 

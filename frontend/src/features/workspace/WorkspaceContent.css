@@ -742,6 +742,17 @@
 .group-chat-msg-row-other {
   align-self: flex-start;
 }
+.group-chat-msg-row-log-open {
+  width: 100%;
+  max-width: 100%;
+}
+.group-chat-msg-row-log-open .group-chat-message-stack {
+  width: min(620px, calc(100% - 2.5rem));
+}
+.group-chat-msg-row-log-open .group-chat-bubble-agent {
+  width: 100%;
+  box-sizing: border-box;
+}
 .group-chat-msg-row-system {
   align-self: center;
   max-width: 100%;
@@ -1166,9 +1177,17 @@
 .group-chat-action-terminal:hover {
   color: var(--color-accent-text, #2563eb);
 }
+.group-chat-sandbox-token-total {
+  padding-left: 0.35rem;
+  border-left: 1px solid currentColor;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.8;
+}
 .group-chat-execution-log-panel {
   align-self: flex-start;
-  width: min(520px, 100%);
+  width: 100%;
   margin-top: 0.25rem;
   border: 1px solid var(--color-border-light);
   border-radius: 8px;
@@ -1191,7 +1210,7 @@
 .group-chat-execution-log-summary {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 0.5rem;
   align-items: center;
   padding: 0.5rem 0.65rem;
@@ -1213,9 +1232,30 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .group-chat-execution-log-status,
+.group-chat-execution-log-token,
 .group-chat-execution-log-source {
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+.group-chat-execution-log-status {
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-muted) 10%, transparent);
+}
+.group-chat-execution-log-status-succeeded {
+  color: #16794a;
+  background: rgba(22, 121, 74, 0.1);
+}
+.group-chat-execution-log-status-blocked {
+  color: #9a5b00;
+  background: rgba(202, 126, 15, 0.12);
+}
+.group-chat-execution-log-status-failed {
+  color: var(--color-danger-text, #b91c1c);
+  background: var(--color-danger-subtle, rgba(185, 28, 28, 0.1));
+}
+.group-chat-execution-log-token {
+  font-variant-numeric: tabular-nums;
 }
 .group-chat-execution-log-detail {
   display: grid;
@@ -1226,7 +1266,7 @@
 }
 .group-chat-execution-log-detail div {
   display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
+  grid-template-columns: 3.4rem minmax(0, 1fr);
   gap: 0.45rem;
   font-size: 0.76rem;
 }
@@ -1238,6 +1278,15 @@
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.group-chat-execution-log-token-detail {
+  color: var(--color-accent-text, #2563eb);
+  font-variant-numeric: tabular-nums;
+}
+.group-chat-execution-log-fault code {
+  color: var(--color-danger-text, #b91c1c);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
 }
 .group-chat-save-file-btn {
   font-size: 0.75rem;

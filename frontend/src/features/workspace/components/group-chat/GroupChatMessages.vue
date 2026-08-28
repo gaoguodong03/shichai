@@ -4,7 +4,8 @@
                     <div
                       :class="[
                         'group-chat-msg-row',
-                        messageSpeakerType(msg) === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other'
+                        messageSpeakerType(msg) === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other',
+                        isMessageExecutionLogsOpen(msg) && 'group-chat-msg-row-log-open',
                       ]"
                       :data-message-id="msg.message_id || `idx-${i}`"
                     >
@@ -64,6 +65,11 @@
                             <span class="group-chat-sandbox-group-icon group-chat-message-icon-mask" :style="messageIconStyle(terminalIconUrl)" aria-hidden="true" />
                             <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ messageExecutionLogRows(msg).length }}</span>
                             <span
+                              v-if="messageExecutionTokenTotal(msg) != null"
+                              class="group-chat-sandbox-token-total"
+                              aria-hidden="true"
+                            >{{ formatCompactTokenCount(messageExecutionTokenTotal(msg)) }} token</span>
+                            <span
                               class="group-chat-tool-chevron group-chat-message-icon-mask"
                               :style="messageIconStyle(isMessageExecutionLogsOpen(msg) ? chevronUpIconUrl : chevronDownIconUrl)"
                               aria-hidden="true"
@@ -87,11 +93,27 @@
                                 class="group-chat-execution-log-summary"
                                 @click="toggleExecutionLogDetail(msg, logIndex)"
                               >
-                                <span class="group-chat-execution-log-tool">{{ log.tool_name || '工具' }}</span>
-                                <span class="group-chat-execution-log-status">{{ formatExecutionLogStatus(log.status) }}</span>
-                                <span class="group-chat-execution-log-source">{{ log.source || 'runtime' }}</span>
+                                <span class="group-chat-execution-log-tool">{{ executionLogDisplayName(log) }}</span>
+                                <span
+                                  :class="['group-chat-execution-log-status', `group-chat-execution-log-status-${log.status || 'recorded'}`]"
+                                >{{ formatExecutionLogStatus(log.status) }}</span>
+                                <span v-if="log.total_tokens != null" class="group-chat-execution-log-token">{{ formatTokenCount(log.total_tokens) }} token</span>
+                                <span class="group-chat-execution-log-source">{{ formatExecutionLogSource(log.source) }}</span>
                               </button>
                               <div v-if="isExecutionLogDetailOpen(msg, logIndex)" class="group-chat-execution-log-detail">
+                                <div v-if="log.created_at"><span>时间</span><p>{{ formatGroupMsgFullTime(log.created_at) }}</p></div>
+                                <div v-if="log.agent_name"><span>执行者</span><p>{{ log.agent_name }}</p></div>
+                                <div v-if="log.skill"><span>Skill</span><p>{{ formatSkill(log.skill) }}</p></div>
+                                <div v-if="log.model"><span>模型</span><p>{{ log.model }}</p></div>
+                                <div v-if="log.operation || log.phase || log.provider_tool"><span>阶段</span><p>{{ formatExecutionLogOperation(log.operation || log.phase || log.provider_tool) }}</p></div>
+                                <div v-if="formatExecutionLogTokenUsage(log)"><span>Token</span><p class="group-chat-execution-log-token-detail">{{ formatExecutionLogTokenUsage(log) }}</p></div>
+                                <div v-if="formatExecutionLogCacheUsage(log)"><span>缓存</span><p>{{ formatExecutionLogCacheUsage(log) }}</p></div>
+                                <div v-if="formatExecutionLogMetrics(log)"><span>规模</span><p>{{ formatExecutionLogMetrics(log) }}</p></div>
+                                <div v-if="log.finish_reason"><span>结束</span><p>{{ log.finish_reason }}</p></div>
+                                <div v-if="log.error_code" class="group-chat-execution-log-fault"><span>故障码</span><p><code>{{ log.error_code }}</code><template v-if="log.error_name"> · {{ log.error_name }}</template></p></div>
+                                <div v-if="log.error_summary"><span>原因</span><p>{{ log.error_summary }}</p></div>
+                                <div v-else-if="log.error_description"><span>说明</span><p>{{ log.error_description }}</p></div>
+                                <div v-if="log.error_action"><span>建议</span><p>{{ log.error_action }}</p></div>
                                 <div v-if="log.argument_summary"><span>参数</span><p>{{ log.argument_summary }}</p></div>
                                 <div v-if="log.output_summary"><span>输出</span><p>{{ log.output_summary }}</p></div>
                                 <div v-if="log.artifact_paths?.length"><span>产物</span><p>{{ log.artifact_paths.join('\n') }}</p></div>
@@ -257,6 +279,7 @@
 <script setup lang="ts">
 import { useGroupChatMessageContext } from './groupChatWorkspaceContext'
 import type { GroupMessage } from '../../composables/useGroupMessageList'
+import type { MessageExecutionLogSummary } from '@/api/chat'
 import terminalIconUrl from '@/assets/icons/message/terminal.svg'
 import chevronUpIconUrl from '@/assets/icons/message/chevron-up.svg'
 import chevronDownIconUrl from '@/assets/icons/message/chevron-down.svg'
@@ -295,6 +318,7 @@ const {
   isMessageCopied,
   saveAgentMessageToFile,
   messageExecutionLogRows,
+  messageExecutionTokenTotal,
   canShowMessageExecutionLogs,
   isMessageExecutionLogsLoading,
   isMessageExecutionLogsOpen,
@@ -325,5 +349,79 @@ function formatExecutionLogStatus(status?: string) {
   if (status === 'blocked') return '等待'
   if (status === 'failed') return '失败'
   return status || '已记录'
+}
+
+function formatExecutionLogSource(source?: string) {
+  const labels: Record<string, string> = {
+    host: '主持',
+    llm: '大模型',
+    runtime: '运行时',
+    workspace: '工作区',
+    script: '脚本',
+    mcp: 'MCP',
+    api: 'API',
+  }
+  return labels[source || ''] || source || '运行时'
+}
+
+function formatExecutionLogOperation(operation?: string) {
+  const raw = String(operation || '').trim()
+  if (!raw) return ''
+  const retry = raw.endsWith('_retry')
+  const key = retry ? raw.slice(0, -6) : raw
+  const labels: Record<string, string> = {
+    host_speaker_selection: '主持人选择发言者',
+    host_message_generation: '主持人生成交接话术',
+    host_scheduler: '主持人调度',
+    host_recruitment: '主持人推荐专家',
+    expert_turn: '专家生成',
+    ExpertFinalStatePayload: '专家整理最终响应',
+    EmptySessionRecruitmentPayload: '主持人推荐专家',
+  }
+  const label = labels[key] || key
+  return retry ? `${label}（重试）` : label
+}
+
+function executionLogDisplayName(log: MessageExecutionLogSummary) {
+  if (log.source === 'llm') return formatExecutionLogOperation(log.operation || log.provider_tool) || '大模型调用'
+  if (log.tool_name === 'group_chat_failure') return '运行失败'
+  return log.tool_name || '工具'
+}
+
+function formatTokenCount(value: number) {
+  return Math.max(0, Math.round(value)).toLocaleString('zh-CN')
+}
+
+function formatCompactTokenCount(value: number | null) {
+  const normalized = Math.max(0, Math.round(value || 0))
+  if (normalized < 1000) return String(normalized)
+  if (normalized < 1_000_000) return `${(normalized / 1000).toFixed(normalized >= 10_000 ? 0 : 1)}k`
+  return `${(normalized / 1_000_000).toFixed(normalized >= 10_000_000 ? 0 : 1)}m`
+}
+
+function formatExecutionLogTokenUsage(log: MessageExecutionLogSummary) {
+  const parts: string[] = []
+  if (log.input_tokens != null) parts.push(`输入 ${formatTokenCount(log.input_tokens)}`)
+  if (log.output_tokens != null) parts.push(`输出 ${formatTokenCount(log.output_tokens)}`)
+  if (log.total_tokens != null) parts.push(`总计 ${formatTokenCount(log.total_tokens)}`)
+  if (log.reasoning_tokens != null) parts.push(`推理 ${formatTokenCount(log.reasoning_tokens)}`)
+  return parts.join(' · ')
+}
+
+function formatExecutionLogCacheUsage(log: MessageExecutionLogSummary) {
+  const parts: string[] = []
+  if (log.cached_tokens != null) parts.push(`命中 ${formatTokenCount(log.cached_tokens)}`)
+  if (log.cache_read_tokens != null) parts.push(`读取 ${formatTokenCount(log.cache_read_tokens)}`)
+  if (log.cache_creation_tokens != null) parts.push(`写入 ${formatTokenCount(log.cache_creation_tokens)}`)
+  return parts.join(' · ')
+}
+
+function formatExecutionLogMetrics(log: MessageExecutionLogSummary) {
+  const parts: string[] = []
+  if (log.input_messages != null) parts.push(`${formatTokenCount(log.input_messages)} 条输入消息`)
+  if (log.prompt_chars != null) parts.push(`${formatTokenCount(log.prompt_chars)} 输入字符`)
+  if (log.output_chars != null) parts.push(`${formatTokenCount(log.output_chars)} 输出字符`)
+  if (log.tool_call_count != null) parts.push(`${formatTokenCount(log.tool_call_count)} 个历史工具调用`)
+  return parts.join(' · ')
 }
 </script>

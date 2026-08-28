@@ -5,16 +5,18 @@ import json
 import re
 import uuid
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
 from app.agent.structured_output_contracts import ArtifactRef, ToolExecutionLogRecord
+from app.agent.llm_runtime_diagnostics import llm_fault_definition
 from app.api.group_chat_state import ensure_sessions_dir, format_storage_timestamp
 
 
-_ALLOWED_SOURCES = {"mcp", "script", "workspace", "api", "host", "runtime"}
+_ALLOWED_SOURCES = {"mcp", "script", "workspace", "api", "host", "llm", "runtime"}
 _TOOL_EXECUTION_LOG = "tool-execution.jsonl"
-_SUMMARY_LIMIT = 180
+_SUMMARY_LIMIT = 800
 _FAILURE_SUMMARY_LIMIT = 500
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[^\s;,]+")
 _SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
@@ -187,6 +189,115 @@ def append_host_execution_log(
         handle.write(json.dumps(validated, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
+def _safe_provider_endpoint(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return ""
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+
+
+def append_llm_execution_logs(
+    session_id: str,
+    *,
+    message_id: str,
+    agent_name: str,
+    skill: str,
+    calls: list[dict[str, Any]],
+) -> None:
+    """Append LiteLLM call facts already captured for one durable chat message."""
+    records: list[dict[str, Any]] = []
+    for index, call in enumerate(calls or [], start=1):
+        if not isinstance(call, dict):
+            continue
+        status = str(call.get("status") or "failed").strip()
+        if status not in {"succeeded", "failed"}:
+            status = "failed"
+        input_metrics = call.get("input_metrics") if isinstance(call.get("input_metrics"), dict) else {}
+        output_metrics = call.get("output_metrics") if isinstance(call.get("output_metrics"), dict) else {}
+        response_metadata = (
+            call.get("response_metadata") if isinstance(call.get("response_metadata"), dict) else {}
+        )
+        token_usage = (
+            response_metadata.get("token_usage")
+            if isinstance(response_metadata.get("token_usage"), dict)
+            else {}
+        )
+        error_code = str(call.get("error_code") or "").strip()
+        error_summary = sanitize_runtime_failure_summary(call.get("error_summary")) if error_code else ""
+        finish_reason = str(response_metadata.get("finish_reason") or "").strip()
+        output_chars = output_metrics.get("output_chars") if isinstance(output_metrics.get("output_chars"), int) else 0
+        operation = str(call.get("operation") or "llm_completion").strip() or "llm_completion"
+        model = str(response_metadata.get("model") or call.get("model") or "").strip()
+        content_summary = error_summary or (
+            f"模型响应已接收：{output_chars} 字"
+            + (f"；finish_reason={finish_reason}" if finish_reason else "")
+        )
+        json_data = _clean_dict(
+            {
+                "operation": operation,
+                "model": model or None,
+                "finish_reason": finish_reason or None,
+                "token_usage": dict(token_usage),
+                "input_metrics": dict(input_metrics),
+                "output_metrics": dict(output_metrics),
+                "error_code": error_code or None,
+                "error_type": str(call.get("error_type") or "").strip() or None,
+                "error_summary": error_summary or None,
+            }
+        )
+        record = _clean_dict(
+            {
+                "log_id": f"log-{uuid.uuid4().hex[:12]}",
+                "message_id": str(message_id or "").strip() or None,
+                "created_at": format_storage_timestamp(),
+                "source": "llm",
+                "agent_name": str(agent_name or "").strip() or None,
+                "skill": str(skill or "").strip() or None,
+                "status": status,
+                "tool_call": {
+                    "id": f"llm-{uuid.uuid4().hex[:12]}",
+                    "name": "llm_completion",
+                    "provider": "litellm",
+                    "provider_tool": operation,
+                    "arguments": _clean_dict(
+                        {
+                            "call_index": index,
+                            "method": str(call.get("method") or "").strip() or None,
+                            "model": model or None,
+                            "endpoint": _safe_provider_endpoint(call.get("provider_base_url")) or None,
+                            **dict(input_metrics),
+                        }
+                    ),
+                },
+                "output": {
+                    "content": content_summary,
+                    "json_data": json_data,
+                    "artifacts": [],
+                    "stdout": "",
+                    "stderr": "",
+                },
+                "duration_ms": call.get("duration_ms") if isinstance(call.get("duration_ms"), int) else None,
+            }
+        )
+        try:
+            records.append(ToolExecutionLogRecord.model_validate(record).model_dump(exclude_none=True))
+        except ValidationError:
+            continue
+    if not records:
+        return
+    path = _log_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
 def sanitize_runtime_failure_summary(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -342,6 +453,13 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
             continue
         tool_call = row.get("tool_call") if isinstance(row.get("tool_call"), dict) else {}
         output = row.get("output") if isinstance(row.get("output"), dict) else {}
+        json_data = output.get("json_data") if isinstance(output.get("json_data"), dict) else {}
+        token_usage = json_data.get("token_usage") if isinstance(json_data.get("token_usage"), dict) else {}
+        input_metrics = json_data.get("input_metrics") if isinstance(json_data.get("input_metrics"), dict) else {}
+        output_metrics = json_data.get("output_metrics") if isinstance(json_data.get("output_metrics"), dict) else {}
+        arguments = tool_call.get("arguments") if isinstance(tool_call.get("arguments"), dict) else {}
+        error_code = str(json_data.get("error_code") or arguments.get("error_code") or "").strip()
+        error_definition = llm_fault_definition(error_code)
         artifacts = output.get("artifacts") if isinstance(output.get("artifacts"), list) else []
         artifact_paths = [
             str(item.get("path") or "").strip()
@@ -358,11 +476,31 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
                 "tool_name": str(tool_call.get("name") or "").strip() or None,
                 "provider": str(tool_call.get("provider") or "").strip() or None,
                 "provider_tool": str(tool_call.get("provider_tool") or "").strip() or None,
+                "model": str(json_data.get("model") or arguments.get("model") or "").strip() or None,
+                "operation": str(json_data.get("operation") or "").strip() or None,
+                "phase": str(json_data.get("phase") or arguments.get("phase") or "").strip() or None,
                 "argument_summary": _argument_summary(tool_call.get("arguments")),
                 "output_summary": _output_summary(row.get("output")),
                 "artifact_paths": artifact_paths,
                 "status": str(row.get("status") or "").strip() or None,
                 "duration_ms": row.get("duration_ms") if isinstance(row.get("duration_ms"), int) else None,
+                "finish_reason": str(json_data.get("finish_reason") or "").strip() or None,
+                "input_tokens": token_usage.get("input_tokens") if isinstance(token_usage.get("input_tokens"), int) else None,
+                "output_tokens": token_usage.get("output_tokens") if isinstance(token_usage.get("output_tokens"), int) else None,
+                "total_tokens": token_usage.get("total_tokens") if isinstance(token_usage.get("total_tokens"), int) else None,
+                "cached_tokens": token_usage.get("cached_tokens") if isinstance(token_usage.get("cached_tokens"), int) else None,
+                "reasoning_tokens": token_usage.get("reasoning_tokens") if isinstance(token_usage.get("reasoning_tokens"), int) else None,
+                "cache_creation_tokens": token_usage.get("cache_creation_tokens") if isinstance(token_usage.get("cache_creation_tokens"), int) else None,
+                "cache_read_tokens": token_usage.get("cache_read_tokens") if isinstance(token_usage.get("cache_read_tokens"), int) else None,
+                "input_messages": input_metrics.get("input_messages") if isinstance(input_metrics.get("input_messages"), int) else None,
+                "prompt_chars": input_metrics.get("prompt_chars") if isinstance(input_metrics.get("prompt_chars"), int) else None,
+                "output_chars": output_metrics.get("output_chars") if isinstance(output_metrics.get("output_chars"), int) else None,
+                "tool_call_count": input_metrics.get("tool_call_count") if isinstance(input_metrics.get("tool_call_count"), int) else None,
+                "error_code": error_code or None,
+                "error_name": (error_definition or {}).get("name") or None,
+                "error_summary": str(json_data.get("error_summary") or "").strip() or None,
+                "error_description": (error_definition or {}).get("description") or None,
+                "error_action": (error_definition or {}).get("action") or None,
                 "detail_available": True,
             }
         )

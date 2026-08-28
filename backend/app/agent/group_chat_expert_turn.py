@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Literal
 
 from app.agent.messages import AIMessage, HumanMessage  # type: ignore
+from app.agent.llm_runtime_diagnostics import LLM_RESPONSE_INVALID, mark_latest_llm_call_failed
 from app.agent.expert_completion_contract import (
     ExpertFinalStateProtocolError,
     select_expert_completion,
@@ -31,6 +32,7 @@ from app.api.group_chat_state import (
     update_group_run,
     write_group_orchestration_state,
 )
+from app.api.files import get_workspace_root_path
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,7 @@ class ExpertTurnOutcome:
     agent_turn: Literal["continue", "respond"] = "respond"
     skill_session: Literal["keep", "release"] = "release"
     skill: str = ""
+    message_id: str = ""
     tool_results: list[dict[str, Any]] = field(default_factory=list)
 
     def succeed(
@@ -142,6 +145,10 @@ async def run_one_expert_turn(
         "tools": runtime.tools,
         "workspace_id": group_session_id,
     }
+    try:
+        initial_state["workspace_root"] = get_workspace_root_path(group_session_id)
+    except Exception:
+        logger.warning("expert workspace root unavailable session=%s", group_session_id, exc_info=True)
     run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{agent_name}:{uuid.uuid4().hex}"}}
     final_content = ""
     tool_results = outcome.tool_results
@@ -187,6 +194,7 @@ async def run_one_expert_turn(
     try:
         completion = select_expert_completion(final_content=final_content, tool_results=tool_results)
     except ExpertFinalStateProtocolError as exc:
+        mark_latest_llm_call_failed(exc)
         logger.warning(
             "expert_final_state_invalid session=%s agent=%s skill=%s final_content=%r tool_results=%s",
             group_session_id,
@@ -197,11 +205,11 @@ async def run_one_expert_turn(
         )
         await update_group_run(group_session_id, run_id, phase="failed")
         safe_error_message = sanitize_runtime_failure_summary(str(exc))
-        outcome.fail(code="EXPERT_FINAL_STATE_INVALID", message=safe_error_message)
+        outcome.fail(code=LLM_RESPONSE_INVALID, message=safe_error_message)
         error = SseErrorEvent(
             type="error",
             run_id=run_id,
-            code="EXPERT_FINAL_STATE_INVALID",
+            code=LLM_RESPONSE_INVALID,
             message=safe_error_message,
         )
         yield serialize_sse_event("error", error.model_dump(exclude_none=True))
@@ -209,12 +217,13 @@ async def run_one_expert_turn(
 
     skill_session = completion.skill_session.action
     created_at = format_storage_timestamp()
+    published_message_id = f"msg-{uuid.uuid4().hex[:8]}"
     applied = coordinate_expert_completion(
         completion=completion,
         orchestration_state=load_group_orchestration_state(group_session_id),
         agent_name=agent_name,
         skill=str(runtime.skill or ""),
-        message_id=f"msg-{uuid.uuid4().hex[:8]}",
+        message_id=published_message_id,
         created_at=created_at,
         group_session_id=group_session_id,
         messages=messages,
@@ -222,6 +231,7 @@ async def run_one_expert_turn(
         session_item=session_item,
         tool_results=tool_results,
     )
+    outcome.message_id = published_message_id if applied.published is not None else ""
     if applied.published is not None:
         yield serialize_sse_event("message", applied.published.record)
     if applied.agent_turn.value == "continue_expert":

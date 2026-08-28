@@ -230,7 +230,7 @@ export function useWorkspaceContentProviders(args: {
     copyAgentMessageToClipboard,
     isMessageCopied,
     deleteGroupMessage,
-    messageExecutionLogs, messageExecutionLogRows, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
+    messageExecutionLogs, messageExecutionLogRows, messageExecutionTokenTotal, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
     syncMessageExecutionLogs, preloadMessageExecutionLogs,
     forkMessageState, rollbackMessageState, canMessageStateAction, messageStateActionBusy,
     scrollGroupToBottom,
@@ -590,7 +590,7 @@ export function useWorkspaceContentProviders(args: {
     copyAgentMessageToClipboard,
     isMessageCopied,
     saveAgentMessageToFile,
-    messageExecutionLogs, messageExecutionLogRows, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
+    messageExecutionLogs, messageExecutionLogRows, messageExecutionTokenTotal, canShowMessageExecutionLogs, isMessageExecutionLogsLoading, isMessageExecutionLogsOpen, expandedExecutionLogKey, executionLogKey, toggleExecutionLogDetail, isExecutionLogDetailOpen, toggleMessageExecutionLogs,
     forkMessageState, rollbackMessageState, canMessageStateAction, messageStateActionBusy,
   })
 

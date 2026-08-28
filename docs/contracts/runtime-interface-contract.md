@@ -447,7 +447,7 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
 | `log_id` | 日志记录 id。 |
 | `message_id` | 关联的聊天消息 id；右侧终端按该字段拉取日志。 |
 | `created_at` | 日志创建时间。 |
-| `source` | 日志来源，只允许 `mcp`、`script`、`workspace`、`api`、`host`。 |
+| `source` | 日志来源，只允许 `mcp`、`script`、`workspace`、`api`、`host`、`llm`、`runtime`。 |
 | `agent_name` | 产生该日志的主持人或专家名称。 |
 | `skill` | 产生该日志的 Skill 目录名。 |
 | `status` | 执行状态：`succeeded`、`blocked`、`failed`。 |
@@ -461,6 +461,18 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
 | `output.json_data` | 工具结构化返回；前端可在详情中展示。 |
 | `output.artifacts` | 本次工具调用产生的产物引用。 |
 | `duration_ms` | 工具执行耗时。 |
+
+`source=llm` 表示一次经 LiteLLM 发出的模型调用。平台直接读取 LiteLLM 统一响应中的 usage，不额外调用厂商统计接口；日志至少可保存模型、调用阶段、输入消息数、输入/输出字符数、`input_tokens`、`output_tokens`、`total_tokens`、缓存 token、推理 token、结束原因和耗时。上游没有返回某一 usage 字段时，该字段保持缺失，不根据字符数伪造 token。
+
+大模型调用故障统一使用以下稳定故障码；页面显示故障码、中文含义、异常摘要和处理建议：
+
+| 故障码 | 含义 |
+| --- | --- |
+| `LLM_SERVICE_NOT_CONFIGURED` | 模型引用、`api_key_env` 或对应环境变量没有配置。 |
+| `LLM_SERVICE_CONFIG_INVALID` | 密钥、模型名称、Base URL 或请求参数配置错误，模型服务拒绝请求。 |
+| `LLM_SERVICE_UNREACHABLE` | 连接失败、超时、网关错误或模型服务暂时不可用。 |
+| `LLM_RESPONSE_INVALID` | 服务已响应，但响应为空、缺字段或未通过结构协议校验。 |
+| `LLM_SERVICE_ERROR` | 无法归入上述类型的模型服务异常。 |
 
 #### 2.5.16 `message.content` 的组装规则
 
@@ -517,7 +529,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `name` | 用户可读名称。 |
 | `path` | 当前会话 workspace 相对路径。 |
 
-`path` 不得指向 `memory/`、`checkpoints/` 或执行日志目录。前端可以把 `message.artifacts` 渲染为正文前的产物按钮，点击后在右侧预览；工具级产物仍在执行日志详情中展示。
+`path` 不得指向 `memory/`、`checkpoints/` 或执行日志目录。专家终态中的 `message.attachments` 和 `message.artifacts` 在发布前还必须解析到当前 workspace 中真实存在的文件或目录；若模型先声称保存但路径不存在，执行循环允许一次真实产物工具调用纠正，仍未验证时移除无效引用并把该步记为 `failed`。前端可以把验证通过的 `message.artifacts` 渲染为正文前的产物按钮，点击后在右侧预览；工具级产物仍在执行日志详情中展示。
 
 #### 2.5.19 专家下一步控制：内部控制对象
 

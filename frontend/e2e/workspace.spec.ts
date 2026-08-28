@@ -273,8 +273,17 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('heading', { name: '已有验收会话' }).click()
 
     const row = page.locator('[data-message-id="host-log-message"]')
+    await expect(row.locator('.group-chat-sandbox-token-total')).toHaveText('720 token')
     await row.getByRole('button', { name: '查看工具日志' }).click()
     await expect(row.locator('.group-chat-execution-log-panel')).toContainText('write_workspace_file')
+    await expect(row.locator('.group-chat-execution-log-panel')).toContainText('主持人选择发言者')
+    await expect(row.locator('.group-chat-execution-log-panel')).toContainText('720 token')
+    await row.locator('.group-chat-execution-log-summary').first().click()
+    const detail = row.locator('.group-chat-execution-log-detail')
+    await expect(detail).toContainText('输入 640 · 输出 80 · 总计 720')
+    await expect(detail).toContainText('LLM_RESPONSE_INVALID')
+    await expect(detail).toContainText('大模型响应不正确')
+    await expect(detail).toContainText('检查模型是否支持当前 JSON 协议。')
   })
 
   test('mock 后端按 target_agent_name 路由到用户选择的专家', async ({ page }) => {

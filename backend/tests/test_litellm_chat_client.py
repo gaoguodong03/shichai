@@ -1,5 +1,55 @@
 import asyncio
+import sys
 from types import SimpleNamespace
+
+
+def test_traced_llm_client_collects_call_usage():
+    from app.agent.llm_prompt_trace import instrument_llm_client
+    from app.agent.llm_runtime_diagnostics import collect_llm_calls
+    from app.agent.messages import AIMessage, HumanMessage
+
+    class FakeClient:
+        async def ainvoke(self, _messages):
+            return AIMessage(
+                content="完成",
+                response_metadata={
+                    "finish_reason": "stop",
+                    "token_usage": {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+                },
+            )
+
+    client = instrument_llm_client(
+        FakeClient(),
+        provider_base_url="https://example.test/v1",
+        model_name="test-model",
+    )
+
+    async def run():
+        with collect_llm_calls("expert_turn") as calls:
+            await client.ainvoke([HumanMessage(content="你好")])
+        return calls
+
+    calls = asyncio.run(run())
+
+    assert len(calls) == 1
+    assert calls[0]["operation"] == "expert_turn"
+    assert calls[0]["status"] == "succeeded"
+    assert calls[0]["response_metadata"]["token_usage"]["total_tokens"] == 12
+    assert calls[0]["input_metrics"]["input_messages"] == 1
+    assert calls[0]["output_metrics"]["output_chars"] == 2
+
+
+def test_llm_failure_classifier_uses_stable_fault_codes():
+    from app.agent.llm_runtime_diagnostics import classify_llm_failure
+    from app.agent.structured_output_contracts import StructuredOutputProtocolError
+
+    assert classify_llm_failure(ValueError("模型配置不存在：missing-model")) == "LLM_SERVICE_NOT_CONFIGURED"
+    assert classify_llm_failure(RuntimeError("AuthenticationError: invalid api key")) == "LLM_SERVICE_CONFIG_INVALID"
+    assert classify_llm_failure(TimeoutError("upstream timed out")) == "LLM_SERVICE_UNREACHABLE"
+    assert (
+        classify_llm_failure(StructuredOutputProtocolError("missing required field"))
+        == "LLM_RESPONSE_INVALID"
+    )
 
 
 def test_project_messages_cover_agent_runtime_shape():
@@ -38,9 +88,21 @@ def test_litellm_chat_client_roundtrips_tool_calls(monkeypatch):
             function=SimpleNamespace(name="write_file", arguments='{"path":"a.md"}'),
         )
         message = SimpleNamespace(content="", tool_calls=[raw_tool_call])
-        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")])
+        return SimpleNamespace(
+            model="test-model-2026",
+            choices=[SimpleNamespace(message=message, finish_reason="tool_calls")],
+            usage=SimpleNamespace(
+                prompt_tokens=120,
+                completion_tokens=18,
+                total_tokens=138,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=64),
+                completion_tokens_details=SimpleNamespace(reasoning_tokens=7),
+                cache_creation_input_tokens=12,
+                cache_read_input_tokens=64,
+            ),
+        )
 
-    monkeypatch.setattr("litellm.acompletion", fake_acompletion)
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(acompletion=fake_acompletion))
 
     client = LiteLLMChatClient(
         model_config={
@@ -100,3 +162,16 @@ def test_litellm_chat_client_roundtrips_tool_calls(monkeypatch):
     ]
     assert result.tool_calls == [{"id": "tc1", "name": "write_file", "args": {"path": "a.md"}}]
     assert result.additional_kwargs["tool_calls"][0]["function"]["name"] == "write_file"
+    assert result.response_metadata == {
+        "finish_reason": "tool_calls",
+        "token_usage": {
+            "input_tokens": 120,
+            "output_tokens": 18,
+            "total_tokens": 138,
+            "cached_tokens": 64,
+            "reasoning_tokens": 7,
+            "cache_creation_tokens": 12,
+            "cache_read_tokens": 64,
+        },
+        "model": "test-model-2026",
+    }

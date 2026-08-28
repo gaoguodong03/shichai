@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 
 from app.agent.messages import HumanMessage
+from app.agent.llm_runtime_diagnostics import llm_call_operation, mark_latest_llm_call_failed
 from app.agent.structured_output_contracts import StructuredOutputProtocolError, parse_strict_pydantic_object
 
 
@@ -123,18 +124,23 @@ async def invoke_pydantic_llm_output(
     """
     structured_client = _bind_json_object_mode(client)
     schema_instruction = _pydantic_schema_instruction(model)
-    response = await structured_client.ainvoke([*messages, schema_instruction])
+    operation = str((protocol_log_context or {}).get("operation") or model.__name__).strip()
+    with llm_call_operation(operation):
+        response = await structured_client.ainvoke([*messages, schema_instruction])
     raw = response_content_to_text(response)
     try:
         return _parse_and_validate(raw, model, post_validate=post_validate)
     except StructuredOutputProtocolError as exc:
+        mark_latest_llm_call_failed(exc)
         _log_protocol_failure(exc, attempt="initial", context=protocol_log_context)
         if retry_messages is None:
             raise
-    retry_response = await structured_client.ainvoke([*retry_messages, schema_instruction])
+    with llm_call_operation(f"{operation}_retry"):
+        retry_response = await structured_client.ainvoke([*retry_messages, schema_instruction])
     retry_raw = response_content_to_text(retry_response)
     try:
         return _parse_and_validate(retry_raw, model, post_validate=post_validate)
     except StructuredOutputProtocolError as exc:
+        mark_latest_llm_call_failed(exc)
         _log_protocol_failure(exc, attempt="retry", context=protocol_log_context)
         raise

@@ -43,11 +43,31 @@ export interface MessageExecutionLogSummary {
   tool_name?: string
   provider?: string
   provider_tool?: string
+  model?: string
+  operation?: string
+  phase?: string
   argument_summary?: string
   output_summary?: string
   artifact_paths?: string[]
   status?: 'succeeded' | 'blocked' | 'failed' | string
   duration_ms?: number
+  finish_reason?: string
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  cached_tokens?: number
+  reasoning_tokens?: number
+  cache_creation_tokens?: number
+  cache_read_tokens?: number
+  input_messages?: number
+  prompt_chars?: number
+  output_chars?: number
+  tool_call_count?: number
+  error_code?: string
+  error_name?: string
+  error_summary?: string
+  error_description?: string
+  error_action?: string
   detail_available?: boolean
 }
 

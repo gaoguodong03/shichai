@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
+from app.agent.expert_completion_contract import ExpertFinalStatePayload
+from app.agent.expert_delivery_verifier import verify_expert_message_delivery
 from app.agent.llm_client import bind_tools_compat
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from app.agent.platform_prompts import render_platform_prompt
@@ -49,6 +52,48 @@ def _message_matches_output_model(message: AIMessage, output_model: Any) -> bool
     return True
 
 
+def _parse_output_model(message: AIMessage, output_model: Any) -> Any | None:
+    content = getattr(message, "content", None)
+    try:
+        payload = json.loads(content) if isinstance(content, str) else content
+        return output_model.model_validate(payload)
+    except Exception:
+        return None
+
+
+def _workspace_root_from_state(initial_state: dict[str, Any]) -> Path | None:
+    value = initial_state.get("workspace_root")
+    if isinstance(value, Path):
+        return value
+    text = str(value or "").strip()
+    return Path(text) if text else None
+
+
+def _delivery_retry_instruction(paths: tuple[str, ...]) -> HumanMessage:
+    path_lines = "\n".join(f"- {path}" for path in paths) if paths else "- 回复中的文件保存声明"
+    return HumanMessage(
+        content=render_platform_prompt(
+            "agent.unverified_delivery.retry.v1",
+            {"path_lines": path_lines},
+        )
+    )
+
+
+def _failed_delivery_message(
+    payload: ExpertFinalStatePayload,
+    verified_message: Any,
+) -> AIMessage:
+    next_action = payload.next_action.model_copy(update={"agent_turn": "respond"})
+    corrected = payload.model_copy(
+        update={
+            "execution_status": "failed",
+            "message": verified_message,
+            "next_action": next_action,
+        }
+    )
+    return AIMessage(content=json.dumps(corrected.model_dump(mode="json", exclude_none=True), ensure_ascii=False))
+
+
 async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_mode=None, config: dict | None = None):
     messages: list[BaseMessage] = list(initial_state.get("messages") or [])
     tools = agent.tools
@@ -68,6 +113,7 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
     last_tool_signature = ""
     output_continuations = 0
     text_tool_protocol_retries = 0
+    delivery_verification_retries = 0
 
     async def _invoke_structured_finalizer(finalizer_client: Any):
         correction = _post_tool_decision_instruction(
@@ -123,6 +169,37 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
                 continue
             yield {"type": "agent_step", "step": step + 1, "message": protocol_message}
             break
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls and agent.final_output_model is ExpertFinalStatePayload:
+            parsed_output = _parse_output_model(response, agent.final_output_model)
+            if isinstance(parsed_output, ExpertFinalStatePayload):
+                delivery = verify_expert_message_delivery(
+                    parsed_output.message,
+                    tool_results=all_tool_results,
+                    workspace_root=_workspace_root_from_state(initial_state),
+                )
+                if not delivery.is_verified:
+                    can_retry_with_tools = bool(tools) and delivery_verification_retries < 1 and step + 1 < agent.max_steps
+                    if can_retry_with_tools:
+                        delivery_verification_retries += 1
+                        messages.append(response)
+                        messages.append(_delivery_retry_instruction(delivery.unverified_paths))
+                        tool_attempt_debug.append(
+                            {
+                                "source": "unverified_delivery_retry",
+                                "matched": True,
+                                "paths": list(delivery.unverified_paths),
+                            }
+                        )
+                        continue
+                    response = _failed_delivery_message(parsed_output, delivery.message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "unverified_delivery_blocked",
+                            "matched": True,
+                            "paths": list(delivery.unverified_paths),
+                        }
+                    )
         tool_call_id_map = _normalize_ai_tool_call_ids(response)
         messages.append(response)
         yield {"type": "agent_step", "step": step + 1, "message": response}

@@ -27,11 +27,22 @@ from app.agent.group_chat_streaming import end_event_payload, serialize_sse_even
 from app.agent.group_context import normalize_discussion_goal, scheduler_memory_prompt
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
 from app.agent.group_host_decision import _apply_decision_to_ctx, finalize_host_scheduler_decision
+from app.agent.llm_runtime_diagnostics import (
+    LLM_RESPONSE_INVALID,
+    LLM_SERVICE_CONFIG_INVALID,
+    LLM_SERVICE_NOT_CONFIGURED,
+    classify_llm_failure,
+    collect_llm_calls,
+)
 from app.agent.group_entry_router import resolve_group_entry_route
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.session_prompt import build_shared_session_prompt
 from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent
-from app.agent.session_runtime_logs import append_host_execution_log, sanitize_runtime_failure_summary
+from app.agent.session_runtime_logs import (
+    append_host_execution_log,
+    append_llm_execution_logs,
+    sanitize_runtime_failure_summary,
+)
 from app.agent.structured_output_contracts import StructuredOutputProtocolError
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
@@ -53,6 +64,13 @@ from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.security import get_current_user
 
 logger = logging.getLogger(__name__)
+
+
+def _captured_llm_failure_code(calls: List[Dict[str, Any]]) -> str:
+    for call in reversed(calls or []):
+        if isinstance(call, dict) and str(call.get("status") or "") == "failed":
+            return str(call.get("error_code") or "").strip()
+    return ""
 
 
 def _dedupe_names(values: List[Any]) -> List[str]:
@@ -86,6 +104,7 @@ def _record_host_message_execution_log(
     host_agent: Dict[str, Any],
     current_phase: str = "",
     status: str = "succeeded",
+    llm_calls: List[Dict[str, Any]] | None = None,
 ) -> None:
     """Link one persisted host bubble to its scheduler execution-log fact."""
     speaker = host_msg.get("speaker") if isinstance(host_msg.get("speaker"), dict) else {}
@@ -98,6 +117,13 @@ def _record_host_message_execution_log(
         current_phase=current_phase,
         message=message,
         status=status,
+    )
+    append_llm_execution_logs(
+        group_session_id,
+        message_id=str(host_msg.get("message_id") or "").strip(),
+        agent_name=str(speaker.get("agent_name") or host_agent.get("name") or "四九").strip() or "四九",
+        skill=str(speaker.get("skill") or host_agent.get("skill_directory") or "").strip(),
+        calls=list(llm_calls or []),
     )
 
 
@@ -162,7 +188,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield event
         except Exception as exc:  # noqa: BLE001
             logger.exception("group chat stream failed session=%s run_id=%s", group_session_id, run_id)
-            error_code = "GROUP_CHAT_RUNTIME_FAILED"
+            error_code = classify_llm_failure(exc) or "GROUP_CHAT_RUNTIME_FAILED"
             raw_error_summary = str(exc) or exc.__class__.__name__
             safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
             error = SseErrorEvent(type="error", run_id=run_id, code=error_code, message=safe_error_summary)
@@ -214,17 +240,18 @@ async def _run_contract_events(
     host_agent = _host_snapshot_to_agent(session_item)
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
     if not agent_names:
-        content, picked = await _host_only_respond_and_recommend(
-            discussion_goal,
-            scheduler_memory_prompt(group_session_id, messages),
-            available_to_add,
-            build_shared_session_prompt(app_settings, session_item),
-            group_session_id,
-            llm=_get_llm_for_agent(host_agent, app_settings),
-            host_agent=host_agent,
-            app_settings=app_settings,
-            user_message=user_text,
-        )
+        with collect_llm_calls("host_recruitment") as host_llm_calls:
+            content, picked = await _host_only_respond_and_recommend(
+                discussion_goal,
+                scheduler_memory_prompt(group_session_id, messages),
+                available_to_add,
+                build_shared_session_prompt(app_settings, session_item),
+                group_session_id,
+                llm=_get_llm_for_agent(host_agent, app_settings),
+                host_agent=host_agent,
+                app_settings=app_settings,
+                user_message=user_text,
+            )
         finalized = finalize_host_scheduler_decision(
             {
                 "current_phase": "招募",
@@ -249,6 +276,7 @@ async def _run_contract_events(
             host_agent=host_agent,
             current_phase=str(finalized.get("current_phase") or "招募"),
             status="blocked",
+            llm_calls=host_llm_calls,
         )
         messages.append(host_msg)
         save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
@@ -282,24 +310,26 @@ async def _run_contract_events(
         next_action = str(entry_route["next_action"]).strip() or next_action
         route_source = str(entry_route.get("route_source") or "")
     suggested_add: list[str] = []
+    pending_host_llm_calls: list[dict[str, Any]] = []
     if not next_speaker:
-        decision = await _host_decide_by_agent(
-            _get_llm_for_agent(host_agent, app_settings),
-            host_agent,
-            agent_profiles,
-            discussion_goal,
-            scheduler_memory_prompt(group_session_id, messages),
-            None,
-            build_shared_session_prompt(app_settings, session_item),
-            available_to_add,
-            group_session_id=group_session_id,
-            messages=messages,
-            app_settings=app_settings,
-            user_message=user_text,
-            session_item=session_item,
-            host_scheduler_state=host_scheduler,
-            skill_sessions_state=orchestration_state.get("skill_sessions"),
-        )
+        with collect_llm_calls("host_scheduler") as pending_host_llm_calls:
+            decision = await _host_decide_by_agent(
+                _get_llm_for_agent(host_agent, app_settings),
+                host_agent,
+                agent_profiles,
+                discussion_goal,
+                scheduler_memory_prompt(group_session_id, messages),
+                None,
+                build_shared_session_prompt(app_settings, session_item),
+                available_to_add,
+                group_session_id=group_session_id,
+                messages=messages,
+                app_settings=app_settings,
+                user_message=user_text,
+                session_item=session_item,
+                host_scheduler_state=host_scheduler,
+                skill_sessions_state=orchestration_state.get("skill_sessions"),
+            )
         decision = finalize_host_scheduler_decision(
             decision,
             agent_names=agent_names,
@@ -334,7 +364,9 @@ async def _run_contract_events(
                     host_agent=host_agent,
                     current_phase=str(host_scheduler.get("current_phase") or ""),
                     status="succeeded" if next_speaker == "end" else "blocked",
+                    llm_calls=pending_host_llm_calls,
                 )
+                pending_host_llm_calls = []
                 messages.append(host_msg)
                 save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
                 session_item["updated_at"] = format_storage_timestamp()
@@ -374,6 +406,13 @@ async def _run_contract_events(
                 error_summary=error_message,
                 phase="host_scheduler",
             )
+            append_llm_execution_logs(
+                group_session_id,
+                message_id=str(failure_message.get("message_id") or ""),
+                agent_name=host_name,
+                skill=str(host_agent.get("skill_directory") or ""),
+                calls=pending_host_llm_calls,
+            )
             yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
@@ -392,7 +431,9 @@ async def _run_contract_events(
                 host_agent=host_agent,
                 current_phase=str(host_scheduler.get("current_phase") or ""),
                 status="succeeded",
+                llm_calls=pending_host_llm_calls,
             )
+            pending_host_llm_calls = []
             messages.append(host_msg)
             save_group_history(group_session_id, messages)
             session_item["updated_at"] = format_storage_timestamp()
@@ -412,26 +453,28 @@ async def _run_contract_events(
             yield serialize_sse_event("end", end_event_payload(end))
             return
         expert_outcome = ExpertTurnOutcome()
+        expert_llm_calls: list[dict[str, Any]] = []
         try:
-            async for event in run_one_expert_turn(
-                group_session_id=group_session_id,
-                run_id=run_id,
-                session_definitions=session_definitions,
-                session_item=session_item,
-                app_settings=app_settings,
-                agent_map=agent_map,
-                agent_name=next_speaker,
-                messages=messages,
-                discussion_goal=discussion_goal,
-                user_text=user_text,
-                next_action=next_action,
-                outcome=expert_outcome,
-                skills_loader=_request_skills_loader(),
-                llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
-            ):
-                yield event
+            with collect_llm_calls("expert_turn") as expert_llm_calls:
+                async for event in run_one_expert_turn(
+                    group_session_id=group_session_id,
+                    run_id=run_id,
+                    session_definitions=session_definitions,
+                    session_item=session_item,
+                    app_settings=app_settings,
+                    agent_map=agent_map,
+                    agent_name=next_speaker,
+                    messages=messages,
+                    discussion_goal=discussion_goal,
+                    user_text=user_text,
+                    next_action=next_action,
+                    outcome=expert_outcome,
+                    skills_loader=_request_skills_loader(),
+                    llm_resolver=lambda profile: _get_llm_for_agent(profile, app_settings),
+                ):
+                    yield event
         except StructuredOutputProtocolError as exc:
-            error_code = "EXPERT_FINAL_STATE_INVALID"
+            error_code = LLM_RESPONSE_INVALID
             raw_error_summary = str(exc)
             safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
             error = SseErrorEvent(
@@ -456,6 +499,13 @@ async def _run_contract_events(
                 phase="expert_final_state",
                 tool_results=expert_outcome.tool_results,
             )
+            append_llm_execution_logs(
+                group_session_id,
+                message_id=str(failure_message.get("message_id") or ""),
+                agent_name=next_speaker,
+                skill=str(agent_profile.get("skill_directory") or ""),
+                calls=expert_llm_calls,
+            )
             yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
@@ -467,7 +517,11 @@ async def _run_contract_events(
                 run_id,
                 next_speaker,
             )
-            error_code = "EXPERT_TURN_RUNTIME_FAILED"
+            classified_code = classify_llm_failure(exc)
+            error_code = _captured_llm_failure_code(expert_llm_calls)
+            if not error_code and classified_code in {LLM_SERVICE_NOT_CONFIGURED, LLM_SERVICE_CONFIG_INVALID}:
+                error_code = classified_code
+            error_code = error_code or "EXPERT_TURN_RUNTIME_FAILED"
             raw_error_summary = str(exc) or exc.__class__.__name__
             safe_error_summary = sanitize_runtime_failure_summary(raw_error_summary)
             error = SseErrorEvent(
@@ -492,6 +546,13 @@ async def _run_contract_events(
                 phase="expert_turn",
                 tool_results=expert_outcome.tool_results,
             )
+            append_llm_execution_logs(
+                group_session_id,
+                message_id=str(failure_message.get("message_id") or ""),
+                agent_name=next_speaker,
+                skill=expert_outcome.skill or str(agent_profile.get("skill_directory") or ""),
+                calls=expert_llm_calls,
+            )
             yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
@@ -514,10 +575,25 @@ async def _run_contract_events(
                 phase="expert_turn",
                 tool_results=expert_outcome.tool_results,
             )
+            append_llm_execution_logs(
+                group_session_id,
+                message_id=str(failure_message.get("message_id") or ""),
+                agent_name=next_speaker,
+                skill=expert_outcome.skill or str(agent_profile.get("skill_directory") or ""),
+                calls=expert_llm_calls,
+            )
             yield serialize_sse_event("message", failure_message)
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
             yield serialize_sse_event("end", end_event_payload(end))
             return
+        if expert_outcome.message_id:
+            append_llm_execution_logs(
+                group_session_id,
+                message_id=expert_outcome.message_id,
+                agent_name=next_speaker,
+                skill=expert_outcome.skill,
+                calls=expert_llm_calls,
+            )
         if expert_outcome.agent_turn == "continue":
             suppress_host_message = True
             continue
@@ -527,23 +603,24 @@ async def _run_contract_events(
             if isinstance(latest_state.get("host_scheduler"), dict)
             else host_scheduler
         )
-        decision = await _host_decide_by_agent(
-            _get_llm_for_agent(host_agent, app_settings),
-            host_agent,
-            agent_profiles,
-            discussion_goal,
-            scheduler_memory_prompt(group_session_id, messages),
-            next_speaker,
-            build_shared_session_prompt(app_settings, session_item),
-            available_to_add,
-            group_session_id=group_session_id,
-            messages=messages,
-            app_settings=app_settings,
-            user_message=user_text,
-            session_item=session_item,
-            host_scheduler_state=host_scheduler,
-            skill_sessions_state=latest_state.get("skill_sessions"),
-        )
+        with collect_llm_calls("host_scheduler") as pending_host_llm_calls:
+            decision = await _host_decide_by_agent(
+                _get_llm_for_agent(host_agent, app_settings),
+                host_agent,
+                agent_profiles,
+                discussion_goal,
+                scheduler_memory_prompt(group_session_id, messages),
+                next_speaker,
+                build_shared_session_prompt(app_settings, session_item),
+                available_to_add,
+                group_session_id=group_session_id,
+                messages=messages,
+                app_settings=app_settings,
+                user_message=user_text,
+                session_item=session_item,
+                host_scheduler_state=host_scheduler,
+                skill_sessions_state=latest_state.get("skill_sessions"),
+            )
         decision = finalize_host_scheduler_decision(
             decision,
             agent_names=agent_names,

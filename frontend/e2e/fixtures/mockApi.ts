@@ -506,23 +506,56 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     const executionLogsMatch = path.match(/^\/sessions\/([^/]+)\/messages\/([^/]+)\/execution-logs$/)
     if (executionLogsMatch && method === 'GET') {
       const messageId = decodeURIComponent(executionLogsMatch[2])
+      const logs = [
+        ...(messageId === 'host-log-message'
+          ? [{
+              log_id: 'log-e2e-llm',
+              created_at: now,
+              source: 'llm',
+              agent_name: '四九',
+              skill: 'group-host',
+              tool_name: 'llm_completion',
+              provider: 'litellm',
+              provider_tool: 'host_speaker_selection',
+              operation: 'host_speaker_selection',
+              model: 'qwen3-max',
+              argument_summary: 'model=qwen3-max; input_messages=3; prompt_chars=2400',
+              output_summary: '返回的 JSON 缺少 target_agent_name',
+              status: 'failed',
+              duration_ms: 321,
+              finish_reason: 'stop',
+              input_tokens: 640,
+              output_tokens: 80,
+              total_tokens: 720,
+              cached_tokens: 128,
+              input_messages: 3,
+              prompt_chars: 2400,
+              output_chars: 52,
+              error_code: 'LLM_RESPONSE_INVALID',
+              error_name: '大模型响应不正确',
+              error_summary: '返回的 JSON 缺少 target_agent_name',
+              error_description: '模型服务已响应，但返回未通过结构校验。',
+              error_action: '检查模型是否支持当前 JSON 协议。',
+              detail_available: true,
+            }]
+          : []),
+        {
+          log_id: 'log-e2e-1',
+          created_at: now,
+          source: 'workspace',
+          tool_name: 'write_workspace_file',
+          provider: 'workspace',
+          provider_tool: 'write_workspace_file',
+          argument_summary: 'path=demo.md; content=<120 chars>',
+          output_summary: '已写入工作区文件。',
+          artifact_paths: ['demo.md'],
+          status: 'succeeded',
+          detail_available: true,
+        },
+      ]
       return ok(route, {
         message_id: messageId,
-        logs: [
-          {
-            log_id: 'log-e2e-1',
-            created_at: now,
-            source: 'workspace',
-            tool_name: 'write_workspace_file',
-            provider: 'workspace',
-            provider_tool: 'write_workspace_file',
-            argument_summary: 'path=demo.md; content=<120 chars>',
-            output_summary: '已写入工作区文件。',
-            artifact_paths: ['demo.md'],
-            status: 'succeeded',
-            detail_available: true,
-          },
-        ],
+        logs,
       })
     }
     if (path.match(/^\/sessions\/[^/]+\/messages\/[^/]+$/) && method === 'DELETE') {

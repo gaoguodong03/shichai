@@ -3,6 +3,7 @@ import json
 from app.api import group_chat_state as state
 from app.agent.session_runtime_logs import (
     append_host_execution_log,
+    append_llm_execution_logs,
     append_runtime_failure_log,
     append_tool_execution_logs,
     load_tool_execution_logs,
@@ -181,6 +182,63 @@ def test_append_runtime_failure_log_records_sanitized_failure_fact(tmp_path, mon
     summary = message_execution_log_summaries("s1", message_id="failed-1")[0]
     assert summary["source"] == "runtime"
     assert summary["output_summary"].endswith("upstream timeout")
+
+
+def test_append_llm_execution_logs_records_usage_and_canonical_fault(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
+
+    append_llm_execution_logs(
+        "s1",
+        message_id="msg-llm-1",
+        agent_name="四九",
+        skill="group-host",
+        calls=[
+            {
+                "operation": "host_speaker_selection",
+                "method": "ainvoke",
+                "model": "qwen3-max",
+                "provider_base_url": "https://example.test/v1?api_key=must-not-persist",
+                "status": "failed",
+                "duration_ms": 321,
+                "input_metrics": {"input_messages": 3, "prompt_chars": 2400, "tool_call_count": 0},
+                "output_metrics": {"output_chars": 52, "tool_call_count": 0},
+                "response_metadata": {
+                    "finish_reason": "stop",
+                    "token_usage": {
+                        "input_tokens": 640,
+                        "output_tokens": 80,
+                        "total_tokens": 720,
+                        "cached_tokens": 128,
+                    },
+                },
+                "error_code": "LLM_RESPONSE_INVALID",
+                "error_type": "StructuredOutputProtocolError",
+                "error_summary": "返回的 JSON 缺少 target_agent_name",
+            }
+        ],
+    )
+
+    rows = load_tool_execution_logs("s1")
+    assert len(rows) == 1
+    assert rows[0]["source"] == "llm"
+    assert rows[0]["tool_call"]["provider"] == "litellm"
+    assert rows[0]["tool_call"]["provider_tool"] == "host_speaker_selection"
+    assert rows[0]["tool_call"]["arguments"]["endpoint"] == "https://example.test/v1"
+    assert "must-not-persist" not in json.dumps(rows[0], ensure_ascii=False)
+    assert rows[0]["duration_ms"] == 321
+
+    summary = message_execution_log_summaries("s1", message_id="msg-llm-1")[0]
+    assert summary["model"] == "qwen3-max"
+    assert summary["input_tokens"] == 640
+    assert summary["output_tokens"] == 80
+    assert summary["total_tokens"] == 720
+    assert summary["cached_tokens"] == 128
+    assert summary["error_code"] == "LLM_RESPONSE_INVALID"
+    assert summary["error_name"] == "大模型响应不正确"
+    assert "JSON" in summary["error_summary"]
+    assert "结构校验" in summary["error_description"]
+    assert summary["error_action"]
 
 
 def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):

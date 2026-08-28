@@ -55,6 +55,7 @@ export interface GroupChatMessageContext {
   saveAgentMessageToFile: ContextValue
   messageExecutionLogs: ContextValue
   messageExecutionLogRows: ContextValue
+  messageExecutionTokenTotal: ContextValue
   canShowMessageExecutionLogs: ContextValue
   isMessageExecutionLogsLoading: ContextValue
   isMessageExecutionLogsOpen: ContextValue

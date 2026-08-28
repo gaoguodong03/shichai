@@ -369,6 +369,13 @@ export function useGroupMessageList(args: {
     return messageId ? (messageExecutionLogs.value[messageId] || []) : []
   }
 
+  function messageExecutionTokenTotal(msg: { message_id?: string }): number | null {
+    const totals = messageExecutionLogRows(msg)
+      .map((row) => row.total_tokens)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    return totals.length ? totals.reduce((sum, value) => sum + value, 0) : null
+  }
+
   function canShowMessageExecutionLogs(msg: MsgExt & { message_id?: string }) {
     const type = messageSpeakerType(msg)
     return (type === 'expert' || type === 'host') && Boolean(String(msg?.message_id || '').trim())
@@ -626,6 +633,7 @@ export function useGroupMessageList(args: {
     deleteGroupMessage,
     messageExecutionLogs,
     messageExecutionLogRows,
+    messageExecutionTokenTotal,
     canShowMessageExecutionLogs,
     isMessageExecutionLogsLoading,
     isMessageExecutionLogsOpen,
