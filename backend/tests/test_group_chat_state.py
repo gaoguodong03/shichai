@@ -323,6 +323,58 @@ def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, 
     assert "scheduler_state" not in state.load_session_definitions()["s1"]
 
 
+def test_orchestration_state_keeps_last_expert_turn_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})
+
+    state.write_group_orchestration_state(
+        "s1",
+        {
+            "last_expert_turn": {
+                "agent_name": "写作专家",
+                "skill": "article-writer",
+                "execution_status": "succeeded",
+                "agent_turn": "respond",
+                "skill_session": "release",
+                "message_id": "msg-expert-1",
+                "user_message_id": "msg-user-1",
+            }
+        },
+    )
+
+    assert state.load_group_orchestration_state("s1") == {
+        "last_expert_turn": {
+            "agent_name": "写作专家",
+            "skill": "article-writer",
+            "execution_status": "succeeded",
+            "agent_turn": "respond",
+            "skill_session": "release",
+            "message_id": "msg-expert-1",
+            "user_message_id": "msg-user-1",
+        }
+    }
+
+
+def test_orchestration_state_drops_invalid_last_expert_turn_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})
+
+    state.write_group_orchestration_state(
+        "s1",
+        {
+            "last_expert_turn": {
+                "agent_name": "写作专家",
+                "execution_status": "unknown",
+                "agent_turn": "respond",
+                "skill_session": "release",
+                "user_message_id": "msg-user-1",
+            }
+        },
+    )
+
+    assert state.load_group_orchestration_state("s1") == {}
+
+
 def test_orchestration_state_keeps_skill_sessions_independent_from_host_target(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})

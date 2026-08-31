@@ -436,6 +436,70 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_host_decide_uses_structured_last_expert_turn_for_returning_expert(monkeypatch):
+    calls = []
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, skill_id):
+            return ""
+
+    class FakeResponse:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeClient:
+        async def ainvoke(self, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return FakeResponse(
+                    '{"current_phase":"阶段2","target_agent_name":"写作专家",'
+                    '"suggested_add_agent_names":[]}'
+                )
+            return FakeResponse('{"content":"继续写作","attachments":[],"artifacts":[]}')
+
+    class FakeLlm:
+        def get_client(self):
+            return FakeClient()
+
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr("app.agent.group_chat_host_runtime._llm_credential_notice_for_agent", lambda *_args, **_kwargs: None)
+
+    await _host_decide_by_agent(
+        llm=FakeLlm(),
+        host_agent={"name": "四九"},
+        agent_profiles=[{"name": "写作专家", "description": "写作"}],
+        discussion_goal="写网文",
+        recent_messages="写作专家：第一阶段已完成。",
+        last_speaker_agent_name="写作专家",
+        extra_system_prompt="",
+        group_session_id="group-return-expert",
+        app_settings={},
+        user_message="原始用户请求不应重复出现",
+        host_scheduler_state={"current_phase": "阶段1"},
+        last_expert_turn={
+            "agent_name": "写作专家",
+            "skill": "writer",
+            "execution_status": "succeeded",
+            "agent_turn": "respond",
+            "skill_session": "release",
+        },
+        has_new_user_input=False,
+    )
+
+    assert len(calls) == 2
+    selection_prompt = calls[0][1].content
+    message_prompt = calls[1][1].content
+    for prompt in (selection_prompt, message_prompt):
+        assert "最近专家执行事实" in prompt
+        assert "写作专家" in prompt
+        assert "writer" in prompt
+        assert "succeeded" in prompt
+        assert "release" in prompt
+        assert "本轮无新的用户输入" in prompt
+        assert "原始用户请求不应重复出现" not in prompt
+
+
+@pytest.mark.asyncio
 async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
     calls = []
 

@@ -588,6 +588,22 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 `skill_sessions` 不保存消息、不声明下一位专家，也不产生路由。最近专家输出来自 `history.json`；主持人只把 Skill Session 当作结构化上下文，并根据完整用户意图独立决定是否调度该专家。
 
+#### 2.5.21.1 最近专家回合：`orchestration_state.json.last_expert_turn`
+
+平台在每次合法专家终态后保存一份内部结构化快照，作为主持人后续调度的决策事实，不写入聊天历史。
+
+| 字段 | 作用 |
+| --- | --- |
+| `agent_name` | 最近一次专家回合的专家名。 |
+| `skill` | 最近一次专家回合实际使用的 Skill 目录名。 |
+| `execution_status` | `succeeded`、`blocked` 或 `failed`。 |
+| `agent_turn` | `continue` 或 `respond`。 |
+| `skill_session` | `keep` 或 `release`。 |
+| `message_id` | 本次专家最终消息 id。 |
+| `user_message_id` | 本次专家回合所属用户消息 id。 |
+
+`current_phase` 仍是主持人 Skill 定义的场景阶段，平台不把它当作流程状态判断字段。专家 `respond + blocked/failed` 后平台直接等待用户；只有 `respond + succeeded` 才进入主持人决策。专家返回后的同一请求调度不再重复注入最初用户正文，主持人额外读取该结构化快照。
+
 #### 2.5.22 结束事件：SSE `end`
 
 当前回复回合结束时，后端发送 `end`。
@@ -619,6 +635,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `tool_execution.source` / `provider` / `provider_tool` | 日志来源和工具归因 | 路由、Skill 选择或消息事实。 |
 | `artifacts[].path` | workspace 产物路径 | 日志正文替代品。 |
 | `orchestration_state.skill_sessions` | 按专家保存 Skill 绑定 | 当前轮可见消息、下一位专家。 |
+| `orchestration_state.last_expert_turn` | 平台提供给主持人的最近专家事实 | 场景阶段判断、消息可见正文。 |
 
 ## 3. 跳转规则
 
@@ -637,7 +654,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 `message` 正文不再承担路由控制职责。`@专家`、自然语言点名、`host_takeover_requested`、`ignore_auto_agent_name`、`ignore_auto_skill`、`action` 都不是当前请求契约；如出现在请求体顶层，应按非法字段拒绝。
 
-主持人是多专家体系的控制平面。除用户通过 `target_agent_name` 明确指定本轮专家外，用户输入、专家交付、专家等待用户后的继续、阶段推进和结束判断都应先回到主持人。主持人调度到专家时必须生成一条标准主持人消息，例如“信息检索专家，请围绕沈腾演艺生涯搜集资料。”；该消息进入 `history.json`，并使用普通 `message` 事件推给前端。
+主持人是多专家体系的控制平面。除用户通过 `target_agent_name` 明确指定本轮专家外，用户输入、专家交付、专家等待用户后的继续、阶段推进和结束判断都应先回到主持人。专家返回 `respond + blocked/failed` 时平台直接等待用户，不再调用主持人；`respond + succeeded` 回主持人决策，同一次请求内仍可再次选择同一专家，并按 `skill_session` 决定是否复用原 Skill。主持人调度到专家时必须生成一条标准主持人消息，例如“信息检索专家，请围绕沈腾演艺生涯搜集资料。”；该消息进入 `history.json`，并使用普通 `message` 事件推给前端。
 
 统一路由决策的派生结果只允许以下内部字段：
 

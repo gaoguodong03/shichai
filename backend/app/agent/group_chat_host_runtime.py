@@ -112,6 +112,8 @@ async def _host_decide_by_agent(
     session_item: Optional[Dict[str, Any]] = None,
     host_scheduler_state: Optional[Dict[str, Any]] = None,
     skill_sessions_state: Optional[Dict[str, Any]] = None,
+    last_expert_turn: Optional[Dict[str, Any]] = None,
+    has_new_user_input: bool = True,
 ) -> Dict[str, Any]:
     """Ask the host LLM for the next scheduler decision and validate it strictly."""
     _ = (
@@ -140,6 +142,11 @@ async def _host_decide_by_agent(
     current_phase = ""
     if isinstance(host_scheduler_state, dict):
         current_phase = str(host_scheduler_state.get("current_phase") or "").strip()
+    user_message_context = (
+        (str(user_message or "").strip() or discussion_goal.strip() or "（无）")
+        if has_new_user_input
+        else "（本轮无新的用户输入）"
+    )
     allowed_target_agent_names = ["user", "end"] + [
         str(profile.get("name") or "").strip()
         for profile in agent_profiles or []
@@ -151,7 +158,7 @@ async def _host_decide_by_agent(
             "agent_names": _agent_catalog(agent_profiles, available_to_add),
             "allowed_target_agent_names": json.dumps(allowed_target_agent_names, ensure_ascii=False),
             "current_phase": current_phase or "（无）",
-            "user_message": user_message or discussion_goal or "（无）",
+            "user_message": user_message_context,
             "recent_history": recent_messages or "（无）",
             "skill_sessions": skill_sessions_to_host_context(skill_sessions_state),
         },
@@ -160,6 +167,18 @@ async def _host_decide_by_agent(
         selection_prompt += "\n\n" + render_platform_prompt(
             "host.previous_speaker.v1",
             {"last_speaker_agent_name": last_speaker_agent_name},
+        )
+    if last_expert_turn:
+        selection_prompt += "\n\n" + render_platform_prompt(
+            "host.last_expert_turn.v1",
+            {
+                "agent_name": str(last_expert_turn.get("agent_name") or ""),
+                "skill": str(last_expert_turn.get("skill") or ""),
+                "execution_status": str(last_expert_turn.get("execution_status") or ""),
+                "agent_turn": str(last_expert_turn.get("agent_turn") or ""),
+                "skill_session": str(last_expert_turn.get("skill_session") or ""),
+                "has_new_user_input": "是" if has_new_user_input else "否",
+            },
         )
 
     client = llm.get_client()
@@ -224,10 +243,22 @@ async def _host_decide_by_agent(
                     selection.get("suggested_add_agent_names") or [],
                     ensure_ascii=False,
                 ),
-                "user_message": user_message or discussion_goal or "（无）",
+                "user_message": user_message_context,
                 "recent_history": recent_messages or "（无）",
             },
         )
+        if last_expert_turn:
+            message_prompt += "\n\n" + render_platform_prompt(
+                "host.last_expert_turn.v1",
+                {
+                    "agent_name": str(last_expert_turn.get("agent_name") or ""),
+                    "skill": str(last_expert_turn.get("skill") or ""),
+                    "execution_status": str(last_expert_turn.get("execution_status") or ""),
+                    "agent_turn": str(last_expert_turn.get("agent_turn") or ""),
+                    "skill_session": str(last_expert_turn.get("skill_session") or ""),
+                    "has_new_user_input": "是" if has_new_user_input else "否",
+                },
+            )
         message_system_content = "\n\n".join(
             part
             for part in (

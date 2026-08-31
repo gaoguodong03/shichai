@@ -25,6 +25,7 @@ def _failure_content(*, speaker_type: str, agent_name: str, error_code: str) -> 
 def _clear_failed_orchestration_state(group_session_id: str, *, agent_name: str) -> None:
     state = load_group_orchestration_state(group_session_id)
     state.pop("host_scheduler", None)
+    state.pop("last_expert_turn", None)
     sessions = state.get("skill_sessions") if isinstance(state.get("skill_sessions"), dict) else {}
     matching_key = next(
         (

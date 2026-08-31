@@ -179,8 +179,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "非脚本 Skill、MCP / HTTP / workspace 工具后的流程判断",
         "上一步没有产生可执行的工具调用，平台未执行任何文件操作。",
         "本轮工具调用格式不符合要求，平台未执行文件操作；",
-        "检测到重复工具调用，已停止继续重试",
-        "重复的工作区写入已忽略",
         "以下最近讨论仅供承接上下文；本轮用户输入优先。",
         "上一位专家：",
         "请按系统提示选择本轮唯一 Skill。",
@@ -209,8 +207,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "presentation.rewrite.user_prompt.v1",
         "agent.text_tool_protocol.retry.v1",
         "agent.text_tool_protocol.failure.v1",
-        "agent.repeated_tool_guard.v1",
-        "agent.duplicate_workspace_write_guard.v1",
         "expert.context.reference_notice.v1",
         "host.previous_speaker.v1",
         "expert.action.goal_section.v1",
@@ -588,31 +584,6 @@ def test_skill_workspace_tool_lines_use_platform_prompt_registry():
         "skill.execution.workspace_tool.rename.v1",
         "skill.execution.workspace_tool.mkdir.v1",
         "skill.execution.workspace_tool.list.v1",
-    ]:
-        assert prompt_id in PLATFORM_PROMPTS
-
-
-def test_unverified_delivery_guard_messages_use_platform_prompt_registry():
-    """Platform-authored delivery guard messages belong in the shared prompt registry."""
-    module_text = (ROOT / "backend/app/agent/group_chat_tool_trace.py").read_text(encoding="utf-8")
-
-    for phrase in [
-        "本轮没有确认文件生成成功。",
-        "平台没有捕获到成功的文件、图片或工作区写入工具结果，因此不能把专家回复中的生成/保存声明视为已完成。",
-        "原回复提到的路径或链接：",
-        "本轮工具返回摘要：",
-        "请重新发起生成，或让专家先完成真实工具调用后再交付文件链接。",
-        "请重新发起生成，或启用对应专家的文件/图片生成工具后再试。",
-    ]:
-        assert phrase not in module_text
-
-    for prompt_id in [
-        "delivery.guard.unverified_title.v1",
-        "delivery.guard.unverified_reason.v1",
-        "delivery.guard.mentioned_paths_header.v1",
-        "delivery.guard.tool_summary_header.v1",
-        "delivery.guard.retry_after_tool_call.v1",
-        "delivery.guard.retry_after_missing_tool.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 

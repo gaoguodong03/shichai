@@ -34,6 +34,21 @@ def resolve_group_entry_route(
     )
     message = host_scheduler.get("message") if isinstance(host_scheduler.get("message"), dict) else {}
     target = str(message.get("target_agent_name") or "").strip()
+    last_expert_turn = (
+        orchestration_state.get("last_expert_turn")
+        if isinstance(orchestration_state.get("last_expert_turn"), dict)
+        else None
+    )
+    if last_expert_turn is not None:
+        new_user_message = str(last_expert_turn.get("user_message_id") or "") != request.message_id
+        can_resume_same_expert = (
+            new_user_message
+            and str(last_expert_turn.get("agent_turn") or "") == "respond"
+            and str(last_expert_turn.get("skill_session") or "") == "keep"
+            and str(last_expert_turn.get("execution_status") or "") in {"succeeded", "blocked", "failed"}
+        )
+        if not can_resume_same_expert:
+            return None
     if target in agent_names:
         return {
             "next_speaker": target,

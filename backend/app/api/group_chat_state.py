@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.group_chat_archive import build_archive_segments
+from app.agent.expert_turn_state import clean_last_expert_turn
 from app.agent.message_contracts import ChatMessageRecord, MessageBody
 from app.agent.runtime_status import RuntimePhase
 from app.core.user_context import get_current_user_context
@@ -78,6 +79,9 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
             skill_sessions[agent_name] = {"skill": skill}
     if skill_sessions:
         out["skill_sessions"] = skill_sessions
+    last_expert_turn = clean_last_expert_turn(raw.get("last_expert_turn"))
+    if last_expert_turn:
+        out["last_expert_turn"] = last_expert_turn
     host_scheduler = raw.get("host_scheduler") if isinstance(raw.get("host_scheduler"), dict) else None
     if host_scheduler:
         current_phase = str(host_scheduler.get("current_phase") or "").strip()
@@ -92,8 +96,6 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
             row = {"current_phase": current_phase, "message": message}
             out["host_scheduler"] = row
     return out
-
-
 def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return the session definition shape that belongs in session.json."""
     allowed = {

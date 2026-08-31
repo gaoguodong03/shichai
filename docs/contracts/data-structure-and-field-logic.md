@@ -515,6 +515,15 @@ checkpoints/
     "信息检索专家": {"skill": "research-skill"},
     "写作专家": {"skill": "writer-skill"}
   },
+  "last_expert_turn": {
+    "agent_name": "写作专家",
+    "skill": "writer-skill",
+    "execution_status": "succeeded",
+    "agent_turn": "respond",
+    "skill_session": "release",
+    "message_id": "msg-expert-1",
+    "user_message_id": "msg-user-1"
+  },
   "host_scheduler": {
     "current_phase": "主持人当前阶段",
     "message": {
@@ -532,6 +541,11 @@ checkpoints/
 | 字段 | 类型 | 运行时影响 |
 |------|------|------------|
 | `skill_sessions.<agent_name>.skill` | string | 该专家再次被调度时复用的 Skill；不产生路由，也不保存消息。 |
+| `last_expert_turn.agent_name` | string | 最近一次合法专家回合的专家名；只用于主持人决策输入和入口新鲜度判断，不直接产生路由。 |
+| `last_expert_turn.execution_status` | string | 最近一次专家回合的 `succeeded/blocked/failed` 状态。 |
+| `last_expert_turn.agent_turn` | string | 最近一次专家回合的 `continue/respond` 控制权。 |
+| `last_expert_turn.skill_session` | string | 最近一次专家回合的 `keep/release` Skill 绑定指令。 |
+| `last_expert_turn.user_message_id` | string | 最近一次专家回合所属用户消息 id；用于区分同一请求内续跑与新用户输入。 |
 | `host_scheduler.current_phase` | string | 主持人的跨轮阶段记忆。 |
 | `host_scheduler.message` | object | 主持人已经形成的标准消息；为场内专家时仍需先生成主持人交接消息。 |
 
@@ -647,7 +661,7 @@ checkpoints/
 
 模型终态中的 `next_action.agent_turn` 和 `next_action.skill_session` 是两个维度。平台校验后分别投影给 Agent Turn 控制器和 Skill Session 管理器，不写入消息 `skill_result`。主持人仍是跨专家调度入口；当 `agent_turn=respond` 交回主持人后，如果主持人再次选择同一专家，`skill_session=keep` 仍然要求沿用原 Skill。
 
-脚本 stdout 可以使用完整 `expert_final_state.v2` 结构描述脚本级结果，但只作为模型可见的 `tool_result`，不直接控制本轮专家流程。多个脚本结果可以不同。MCP / HTTP / workspace 和脚本工具都在同一次 `agent_turn` 内按标准多步工具循环执行：模型发出结构化 `tool_calls`，平台执行并把对应 `ToolMessage` 回灌同一上下文，模型随后可以继续调用其他工具或停止调用并产出唯一的本轮 `expert_final_state.v2`。平台不自动重试失败工具，也不自动切换同类工具；重复调用守卫和最大工具步数只负责终止死循环。模型停止调用工具后若输出不符合终态协议，或工具步数耗尽，平台才使用无工具 finalizer 规范化终态。平台先发布非空 `message`，再应用两个控制指令。脚本 stdout 格式非法时，该次脚本工具按协议失败；最终模型或 finalizer 的终态字段非法时，本轮不合成专家回复。
+脚本 stdout 可以使用完整 `expert_final_state.v2` 结构描述脚本级结果，但只作为模型可见的 `tool_result`，不直接控制本轮专家流程。多个脚本结果可以不同。MCP / HTTP / workspace 和脚本工具都在同一次 `agent_turn` 内按标准多步工具循环执行：模型发出结构化 `tool_calls`，平台执行并把对应 `ToolMessage` 回灌同一上下文，模型随后可以继续调用其他工具或停止调用并产出唯一的本轮 `expert_final_state.v2`。平台不自动重试失败工具，也不自动切换同类工具；最大工具步数负责终止死循环。模型停止调用工具后若输出不符合终态协议，或工具步数耗尽，平台才使用无工具 finalizer 规范化终态。平台先发布非空 `message`，再应用两个控制指令。脚本 stdout 格式非法时，该次脚本工具按协议失败；最终模型或 finalizer 的终态字段非法时，本轮不合成专家回复。
 
 Skill 是专家执行时生效的规则和工具上下文，不是一个包裹 `tool_result`、再返回 `message` 的持久化数据结构。每次工具调用只产生 `tool_result`，并回到当前专家、当前 Skill、当前 `agent_turn` 的 LLM 上下文，供模型选择下一工具或生成最终状态。只有合法 `expert_final_state.v2` 通过终态校验后，平台才把 `message` 投影给输出发布器、把 `execution_status` 写入 `ChatMessageRecord.skill_result`、把两个 `next_action` 字段投影给独立控制模块。`agent_turn=continue` 不能吞掉非空消息。工具执行器、MCP、HTTP、workspace 和脚本适配层都不得越过该边界直接构造聊天消息。
 

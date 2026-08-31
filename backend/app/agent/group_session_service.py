@@ -82,6 +82,7 @@ def _clear_host_scheduler_state(group_session_id: str) -> None:
     """Configuration changes invalidate only the host_scheduler orchestration block."""
     state = _load_group_orchestration_state(group_session_id)
     state.pop("host_scheduler", None)
+    state.pop("last_expert_turn", None)
     _write_group_orchestration_state(group_session_id, state)
 
 

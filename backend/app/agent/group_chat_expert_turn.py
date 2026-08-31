@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExpertTurnOutcome:
     status: Literal["pending", "succeeded", "failed"] = "pending"
+    execution_status: Literal["pending", "succeeded", "blocked", "failed"] = "pending"
     error_code: str = ""
     error_message: str = ""
     agent_turn: Literal["continue", "respond"] = "respond"
@@ -53,8 +54,10 @@ class ExpertTurnOutcome:
         *,
         agent_turn: Literal["continue", "respond"] = "respond",
         skill_session: Literal["keep", "release"] = "release",
+        execution_status: Literal["succeeded", "blocked", "failed"] = "succeeded",
     ) -> None:
         self.status = "succeeded"
+        self.execution_status = execution_status
         self.error_code = ""
         self.error_message = ""
         self.agent_turn = agent_turn
@@ -234,10 +237,12 @@ async def run_one_expert_turn(
         outcome.succeed(
             agent_turn="continue",
             skill_session="keep" if skill_session == "keep" else "release",
+            execution_status=completion.execution.status,
         )
         return
     await update_group_run(group_session_id, run_id, phase="finalizing")
     outcome.succeed(
         agent_turn="respond",
         skill_session="keep" if skill_session == "keep" else "release",
+        execution_status=completion.execution.status,
     )

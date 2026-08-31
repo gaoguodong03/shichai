@@ -504,8 +504,6 @@ def test_simple_agent_tool_flow_has_independent_module_boundary():
 
     for name in [
         "def iter_run_skill_raw_output_payloads",
-        "def remember_successful_workspace_writes",
-        "def all_workspace_write_calls_already_succeeded",
         "def read_file_should_synthesize_after_result",
     ]:
         assert name in flow_text

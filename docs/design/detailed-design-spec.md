@@ -111,7 +111,7 @@ backend/data/users/{user_id}/
 | `sessions/{session_id}/session.json` | 会话定义：标题、主持人、参与专家、新建时间、更新时间等；会话列表通过扫描该文件生成 |
 | `history.json` | 平台消息事实：用户、主持人、专家和 Skill 控制结果；不保存工具 stdout、stderr、调用参数和耗时 |
 | `runtime.json` | UI 恢复所需运行中镜像，只包含前端显示和停止运行需要的字段 |
-| `orchestration_state.json` | 刷新不能丢的短期编排状态，如续跑专家、Skill 策略和主持人调度阶段 |
+| `orchestration_state.json` | 刷新不能丢的短期编排状态，如最近专家回合、Skill 策略和主持人调度阶段 |
 | `workspace/` | 当前会话工作区文件 |
 | `memory/` | 当前会话内部记忆状态，不进入用户文件列表，但随检查点回滚 |
 | `checkpoints/` | 会话检查点、对象存储和回滚链 |
@@ -288,7 +288,7 @@ POST /api/sessions/{session_id}/chat/stream
 3. 否则先恢复有效的主持人调度消息；没有结构化目标时调用主持人，并向其提供历史和 Skill Session 摘要。
 4. 主持人只输出 `current_phase`、标准 `message` 和可选 `suggested_add_agent_names`。
 5. 决策通过严格结构校验后，若 `message.target_agent_name` 是场内专家，先写入该主持人消息，再进入专家执行。
-6. 专家回复完成后控制权回到主持人，主持人决定继续另一个专家、同一专家、等待用户或结束。
+6. 专家回复完成后，`blocked/failed` 直接等待用户；`succeeded` 回主持人，主持人决定继续另一个专家、同一专家、等待用户或结束。同一次请求内再次选择同一专家时，`keep` 沿用原 Skill，`release` 重新选择 Skill。
 7. 主持人调度说明和专家回复都以可见消息进入历史。
 
 关键文件：

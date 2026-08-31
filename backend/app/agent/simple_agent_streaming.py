@@ -27,9 +27,7 @@ from app.agent.simple_agent_text_tool_protocol import (
     text_tool_protocol_failure_message as _text_tool_protocol_failure_message,
 )
 from app.agent.simple_agent_tool_flow import (
-    all_workspace_write_calls_already_succeeded as _all_workspace_write_calls_already_succeeded,
     read_file_should_synthesize_after_result as _read_file_should_synthesize_after_result,
-    remember_successful_workspace_writes as _remember_successful_workspace_writes,
 )
 from app.agent.simple_agent_tool_ids import (
     _missing_tool_response_messages,
@@ -64,8 +62,6 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
     tool_result_cache: dict[str, dict[str, Any]] = {}
     all_tool_raw_outputs: list[str] = []
     all_tool_results: list[dict[str, Any]] = []
-    successful_workspace_write_keys: set[str] = set()
-    last_tool_signature = ""
     output_continuations = 0
     text_tool_protocol_retries = 0
 
@@ -129,67 +125,6 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
 
         tool_calls = getattr(response, "tool_calls", None) or []
         if tool_calls:
-            signatures = []
-            for tc in tool_calls:
-                name = str(tc.get("name") or "")
-                args = tc.get("args")
-                args_signature = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
-                signatures.append(f"{name}:{args_signature}")
-            current_signature = " | ".join(signatures)
-            if current_signature and current_signature == last_tool_signature:
-                logger.warning(
-                    "SimpleAgent: blocked exact duplicate tool-call round. step=%s signature=%s",
-                    step + 1,
-                    current_signature[:240],
-                )
-                tool_attempt_debug.append(
-                    {
-                        "source": "repeated_tool_guard",
-                        "matched": True,
-                        "signature_preview": current_signature[:240],
-                    }
-                )
-                guard_msgs = _missing_tool_response_messages(
-                    tool_calls,
-                    [],
-                    render_platform_prompt("agent.repeated_tool_guard.v1", {}),
-                )
-                messages.extend(guard_msgs)
-                yield {
-                    "type": "tool_step",
-                    "step": step + 1,
-                    "tool_messages": guard_msgs,
-                    "tool_calls": [],
-                    "tool_results": [],
-                    "tool_raw_outputs": [],
-                    "tool_attempt_debug": tool_attempt_debug,
-                }
-                break
-            last_tool_signature = current_signature
-            if _all_workspace_write_calls_already_succeeded(tool_calls, successful_workspace_write_keys):
-                tool_attempt_debug.append(
-                    {
-                        "source": "structured_duplicate_workspace_write_ignored",
-                        "matched": True,
-                        "signature_preview": current_signature[:240],
-                    }
-                )
-                duplicate_msgs = _missing_tool_response_messages(
-                    tool_calls,
-                    [],
-                    render_platform_prompt("agent.duplicate_workspace_write_guard.v1", {}),
-                )
-                messages.extend(duplicate_msgs)
-                yield {
-                    "type": "tool_step",
-                    "step": step + 1,
-                    "tool_messages": duplicate_msgs,
-                    "tool_calls": [],
-                    "tool_results": [],
-                    "tool_raw_outputs": [],
-                    "tool_attempt_debug": tool_attempt_debug,
-                }
-                continue
             tool_attempt_debug.append(
                 {
                     "source": "structured_tool_calls",
@@ -213,7 +148,6 @@ async def stream_simple_agent(agent: Any, initial_state: dict[str, Any], stream_
             tool_results = tool_out.get("tool_results") if isinstance(tool_out.get("tool_results"), list) else []
             all_tool_raw_outputs.extend([str(x) for x in tool_raw_outputs if str(x or "")])
             all_tool_results.extend([x for x in tool_results if isinstance(x, dict)])
-            _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
             if isinstance(out_msgs, list) and out_msgs:
                 _normalize_tool_message_ids(out_msgs, tool_call_id_map)
             if isinstance(out_msgs, list) and out_msgs:

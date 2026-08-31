@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
 from app.agent.group_chat_expert_turn import ExpertTurnOutcome, run_one_expert_turn
+from app.agent.expert_turn_state import build_last_expert_turn
 from app.agent.group_chat_failure import persist_group_chat_failure
 from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
@@ -329,6 +330,7 @@ async def _run_contract_events(
                 session_item=session_item,
                 host_scheduler_state=host_scheduler,
                 skill_sessions_state=orchestration_state.get("skill_sessions"),
+                has_new_user_input=True,
             )
         decision = finalize_host_scheduler_decision(
             decision,
@@ -594,15 +596,35 @@ async def _run_contract_events(
                 skill=expert_outcome.skill,
                 calls=expert_llm_calls,
             )
-        if expert_outcome.agent_turn == "continue":
-            suppress_host_message = True
-            continue
         latest_state = load_group_orchestration_state(group_session_id)
         host_scheduler = (
             dict(latest_state.get("host_scheduler") or {})
             if isinstance(latest_state.get("host_scheduler"), dict)
             else host_scheduler
         )
+        last_expert_turn = build_last_expert_turn(
+            agent_name=next_speaker,
+            skill=expert_outcome.skill,
+            execution_status=expert_outcome.execution_status,
+            agent_turn=expert_outcome.agent_turn,
+            skill_session=expert_outcome.skill_session,
+            message_id=expert_outcome.message_id,
+            user_message_id=request.message_id,
+        )
+        latest_state["last_expert_turn"] = last_expert_turn
+        write_group_orchestration_state(group_session_id, latest_state)
+        if expert_outcome.agent_turn == "continue":
+            suppress_host_message = True
+            continue
+        if expert_outcome.execution_status in {"blocked", "failed"}:
+            end = SseEndEvent(
+                type="end",
+                run_id=run_id,
+                phase="awaiting_user" if expert_outcome.execution_status == "blocked" else "failed",
+                waiting_for_user=True,
+            )
+            yield serialize_sse_event("end", end_event_payload(end))
+            return
         with collect_llm_calls("host_scheduler") as pending_host_llm_calls:
             decision = await _host_decide_by_agent(
                 _get_llm_for_agent(host_agent, app_settings),
@@ -616,10 +638,12 @@ async def _run_contract_events(
                 group_session_id=group_session_id,
                 messages=messages,
                 app_settings=app_settings,
-                user_message=user_text,
+                user_message="",
                 session_item=session_item,
                 host_scheduler_state=host_scheduler,
                 skill_sessions_state=latest_state.get("skill_sessions"),
+                last_expert_turn=last_expert_turn,
+                has_new_user_input=False,
             )
         decision = finalize_host_scheduler_decision(
             decision,

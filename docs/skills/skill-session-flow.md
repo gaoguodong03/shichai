@@ -47,6 +47,8 @@
 
 平台内部按固定顺序处理：发布专家输出、更新 `skill_sessions`、应用 Agent Turn。消息 `skill_result` 只保存 `execution_status`，不保存 `next_action`。
 
+平台收到 `agent_turn=respond` 后，`execution_status=blocked/failed` 时直接结束本轮并等待用户，不调用主持人；`execution_status=succeeded` 时交回主持人。主持人同一请求内仍可再次选择同一专家：`skill_session=keep` 沿用原 Skill，`skill_session=release` 清除绑定并重新选择 Skill。
+
 ## 3. 状态选择
 
 等待用户且下一轮继续当前 Skill：

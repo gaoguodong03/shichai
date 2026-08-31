@@ -340,6 +340,254 @@ async def test_expert_turn_returns_to_host_before_awaiting_user(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+async def test_post_expert_host_call_receives_structured_snapshot_without_old_user_text(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-post-expert-snapshot": {
+                "title": "结构化专家快照",
+                "agent_names": ["文档合著专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-post-expert-snapshot", [])
+    host_calls = []
+
+    async def _host_decision(*args, **kwargs):
+        host_calls.append(dict(kwargs))
+        if len(host_calls) == 1:
+            return {
+                "current_phase": "写作",
+                "message": {"content": "请写文章。", "target_agent_name": "文档合著专家"},
+                "suggested_add_agent_names": [],
+            }
+        return {
+            "current_phase": "等待确认",
+            "message": {"content": "请确认是否继续。", "target_agent_name": "user"},
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_turn(**kwargs):
+        outcome = kwargs["outcome"]
+        outcome.skill = "writer"
+        outcome.message_id = "msg-expert-snapshot"
+        outcome.succeed(
+            agent_turn="respond",
+            skill_session="release",
+            execution_status="succeeded",
+        )
+        expert_msg = {
+            "message_id": outcome.message_id,
+            "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": "writer"},
+            "message": {"content": "文章完成。"},
+            "created_at": "2026071100000100",
+            "skill_result": {"execution_status": "succeeded"},
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    _events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-post-expert-snapshot",
+            request=GroupChatRequest(message="请写文章", message_id="msg-user-1"),
+            run_id="run-snapshot",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-post-expert-snapshot"],
+            app_settings={},
+            agent_map={"文档合著专家": {"name": "文档合著专家", "description": "写作"}},
+            agent_names=["文档合著专家"],
+            messages=[],
+            discussion_goal="请写文章",
+            user_text="请写文章",
+        )
+    ]
+
+    assert len(host_calls) == 2
+    assert host_calls[0]["user_message"] == "请写文章"
+    assert host_calls[0]["has_new_user_input"] is True
+    assert host_calls[1]["user_message"] == ""
+    assert host_calls[1]["has_new_user_input"] is False
+    assert host_calls[1]["last_expert_turn"] == {
+        "agent_name": "文档合著专家",
+        "skill": "writer",
+        "execution_status": "succeeded",
+        "agent_turn": "respond",
+        "skill_session": "release",
+        "message_id": "msg-expert-snapshot",
+        "user_message_id": "msg-user-1",
+    }
+    persisted = state.load_group_orchestration_state("s-post-expert-snapshot")
+    assert persisted["last_expert_turn"]["execution_status"] == "succeeded"
+    assert persisted["last_expert_turn"]["skill_session"] == "release"
+
+
+@pytest.mark.asyncio
+async def test_blocked_expert_waits_for_user_without_second_host_call(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-blocked-expert": {
+                "title": "专家等待补充",
+                "agent_names": ["文档合著专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-blocked-expert", [])
+    host_calls = 0
+
+    async def _host_decision(*_args, **_kwargs):
+        nonlocal host_calls
+        host_calls += 1
+        return {
+            "current_phase": "写作",
+            "message": {"content": "请写文章。", "target_agent_name": "文档合著专家"},
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_turn(**kwargs):
+        outcome = kwargs["outcome"]
+        outcome.skill = "writer"
+        outcome.message_id = "msg-expert-blocked"
+        outcome.succeed(
+            agent_turn="respond",
+            skill_session="keep",
+            execution_status="blocked",
+        )
+        expert_msg = {
+            "message_id": outcome.message_id,
+            "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": "writer"},
+            "message": {"content": "请补充目标篇幅。"},
+            "created_at": "2026071100000100",
+            "skill_result": {"execution_status": "blocked"},
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-blocked-expert",
+            request=GroupChatRequest(message="请写文章", message_id="msg-user-1"),
+            run_id="run-blocked",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-blocked-expert"],
+            app_settings={},
+            agent_map={"文档合著专家": {"name": "文档合著专家", "description": "写作"}},
+            agent_names=["文档合著专家"],
+            messages=[],
+            discussion_goal="请写文章",
+            user_text="请写文章",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    assert host_calls == 1
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "awaiting_user"
+    persisted = state.load_group_orchestration_state("s-blocked-expert")
+    assert persisted["last_expert_turn"]["execution_status"] == "blocked"
+    assert persisted["last_expert_turn"]["skill_session"] == "keep"
+
+
+@pytest.mark.asyncio
+async def test_failed_expert_waits_for_user_without_second_host_call(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s-failed-expert": {
+                "title": "专家报告失败",
+                "agent_names": ["文档合著专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history("s-failed-expert", [])
+    host_calls = 0
+
+    async def _host_decision(*_args, **_kwargs):
+        nonlocal host_calls
+        host_calls += 1
+        return {
+            "current_phase": "写作",
+            "message": {"content": "请写文章。", "target_agent_name": "文档合著专家"},
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_turn(**kwargs):
+        outcome = kwargs["outcome"]
+        outcome.skill = "writer"
+        outcome.message_id = "msg-expert-failed"
+        outcome.succeed(
+            agent_turn="respond",
+            skill_session="release",
+            execution_status="failed",
+        )
+        expert_msg = {
+            "message_id": outcome.message_id,
+            "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": "writer"},
+            "message": {"content": "写作失败，请确认输入。"},
+            "created_at": "2026071100000100",
+            "skill_result": {"execution_status": "failed"},
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-failed-expert",
+            request=GroupChatRequest(message="请写文章", message_id="msg-user-1"),
+            run_id="run-failed",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-failed-expert"],
+            app_settings={},
+            agent_map={"文档合著专家": {"name": "文档合著专家", "description": "写作"}},
+            agent_names=["文档合著专家"],
+            messages=[],
+            discussion_goal="请写文章",
+            user_text="请写文章",
+        )
+    ]
+
+    parsed = [_parse_sse_block(item) for item in events]
+    assert host_calls == 1
+    assert parsed[-1][0] == "end"
+    assert parsed[-1][1]["phase"] == "failed"
+    persisted = state.load_group_orchestration_state("s-failed-expert")
+    assert persisted["last_expert_turn"]["execution_status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_agent_turn_continue_schedules_same_expert_without_host_decision(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
