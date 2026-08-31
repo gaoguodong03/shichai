@@ -497,6 +497,9 @@ async def test_host_decide_uses_structured_last_expert_turn_for_returning_expert
         assert "release" in prompt
         assert "本轮无新的用户输入" in prompt
         assert "原始用户请求不应重复出现" not in prompt
+        assert "上一条主持任务" in prompt
+        assert "不是一条新的用户任务" in prompt
+        assert "不得单独据此再次调度相同动作" in prompt
 
 
 @pytest.mark.asyncio

@@ -85,6 +85,37 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
     assert "你是书童四九平台的会话主持人" not in rendered
 
 
+def test_post_expert_host_prompt_marks_prior_task_as_completed_context_not_new_work():
+    selection = render_platform_prompt(
+        "host.select_next_speaker.v1",
+        {
+            "agent_names": "资源管理专家",
+            "allowed_target_agent_names": '["user", "end", "资源管理专家"]',
+            "current_phase": "资源管理",
+            "user_message": "（本轮无新的用户输入）",
+            "recent_history": "【主持人】请查询所有资源。\n\n【资源管理专家】已查询全部资源。",
+            "skill_sessions": "（无）",
+        },
+    )
+    expert_facts = render_platform_prompt(
+        "host.last_expert_turn.v1",
+        {
+            "agent_name": "资源管理专家",
+            "skill": "resource-query",
+            "execution_status": "succeeded",
+            "agent_turn": "respond",
+            "skill_session": "release",
+            "has_new_user_input": "否",
+        },
+    )
+
+    assert "此前的用户请求和主持任务仅用于识别该结果对应的任务，不是新的待办" in selection
+    assert "不得仅因历史中仍出现原用户请求或上一条主持任务" in selection
+    assert "这组事实对应最近专家消息和上一条主持任务，不是一条新的用户任务" in expert_facts
+    assert "不得单独据此再次调度相同动作" in expert_facts
+    assert "Skill 会话只说明同一专家以后被调度时是否复用 Skill" in expert_facts
+
+
 def test_host_prompts_route_from_the_skill_table_without_restoring_old_host_duties():
     runtime_prompt = render_platform_prompt(
         "host.select_next_speaker.v1",
