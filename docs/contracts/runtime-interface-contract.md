@@ -462,7 +462,7 @@ MCP / HTTP 的导入配置不声明 `workspace_id`、`session_id` 或平台产�
 | `output.artifacts` | 本次工具调用产生的产物引用。 |
 | `duration_ms` | 工具执行耗时。 |
 
-`source=llm` 表示一次经 LiteLLM 发出的模型调用。平台直接读取 LiteLLM 统一响应中的 usage，不额外调用厂商统计接口；日志至少可保存模型、调用阶段、输入消息数、输入/输出字符数、`input_tokens`、`output_tokens`、`total_tokens`、缓存 token、推理 token、结束原因和耗时。上游没有返回某一 usage 字段时，该字段保持缺失，不根据字符数伪造 token。
+`source=llm` 表示一次经 LiteLLM 发出的模型调用。平台直接读取 LiteLLM 统一响应中的 usage，不额外调用厂商统计接口；日志至少可保存模型、调用阶段、真实模型输出、输入消息数、输入/输出字符数、`input_tokens`、`output_tokens`、`total_tokens`、缓存 token、推理 token、结束原因和耗时。执行日志摘要接口通过 `output_content` 返回未截断的模型原始输出；`output_summary` 仅作为工具日志和旧客户端兼容字段。上游没有返回某一 usage 字段时，该字段保持缺失，不根据字符数伪造 token。每条模型与工具日志使用该次调用自身的时间，消息日志列表按 `created_at` 升序返回；同一时间的记录保持原始写入顺序。
 
 大模型调用故障统一使用以下稳定故障码；页面显示故障码、中文含义、异常摘要和处理建议：
 
@@ -529,7 +529,7 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 | `name` | 用户可读名称。 |
 | `path` | 当前会话 workspace 相对路径。 |
 
-`path` 不得指向 `memory/`、`checkpoints/` 或执行日志目录。专家终态中的 `message.attachments` 和 `message.artifacts` 在发布前还必须解析到当前 workspace 中真实存在的文件或目录；若模型先声称保存但路径不存在，执行循环允许一次真实产物工具调用纠正，仍未验证时移除无效引用并把该步记为 `failed`。前端可以把验证通过的 `message.artifacts` 渲染为正文前的产物按钮，点击后在右侧预览；工具级产物仍在执行日志详情中展示。
+`path` 不得指向 `memory/`、`checkpoints/` 或执行日志目录。前端可以把 `message.artifacts` 渲染为正文前的产物按钮，点击后在右侧预览；工具级产物仍在执行日志详情中展示。
 
 #### 2.5.19 专家下一步控制：内部控制对象
 
@@ -918,7 +918,7 @@ message.content = "主持人输出格式错误，请重试或联系管理员。"
 | `progress.phase` / `end.phase` | 各自事件内 | 是，限前端运行态 | 不等于接口 `status` 或 Skill `execution_status`。 |
 | `tool_execution.source` / `provider` / `provider_tool` | 否 | 否 | 只属于日志和 trace；不得作为路由、Skill 选择或消息事实。 |
 
-工具日志 UI 以 `message_id` 为入口：消息右侧的终端图标只表示该消息有关联执行日志。点击后先展示折叠的工具日志列表，例如 `list_workspace_directory`、`write_workspace_file`；继续点击某一条日志，才展开该次工具调用的参数摘要、输出摘要、产物路径、错误和耗时。长参数或正文内容默认折叠，不在聊天气泡内直接展开。
+工具日志 UI 以 `message_id` 为入口：消息右侧的终端图标只表示该消息有关联执行日志。摘要接口通过 `step_type=model_decision|tool_execution|execution_failure` 投影为统一执行时间线；主持调度事实继续落盘但不作为可见步骤。点击后先展示步骤名称、状态和 LLM Token，来源移入详情；继续点击某一条日志，按时间、来源、执行者、Skill、模型或阶段、Token、缓存、规模、结束原因、错误、参数、输出、产物、耗时的顺序展开。工具参数按顶层字段逐行展示，嵌套对象使用缩进 JSON，字符串值内的分号保持原样。长参数或正文内容默认折叠，不在聊天气泡内直接展开。
 
 SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用同一条消息结构。实时流只是同步通道，不得为前端单独制造第二套 `role` / `agent_name` / `timestamp` 结构。
 

@@ -98,10 +98,10 @@
                                   :class="['group-chat-execution-log-status', `group-chat-execution-log-status-${log.status || 'recorded'}`]"
                                 >{{ formatExecutionLogStatus(log.status) }}</span>
                                 <span v-if="log.total_tokens != null" class="group-chat-execution-log-token">{{ formatTokenCount(log.total_tokens) }} token</span>
-                                <span class="group-chat-execution-log-source">{{ formatExecutionLogSource(log.source) }}</span>
                               </button>
                               <div v-if="isExecutionLogDetailOpen(msg, logIndex)" class="group-chat-execution-log-detail">
                                 <div v-if="log.created_at"><span>时间</span><p>{{ formatGroupMsgFullTime(log.created_at) }}</p></div>
+                                <div v-if="log.source"><span>来源</span><p>{{ formatExecutionLogSource(log.source) }}</p></div>
                                 <div v-if="log.agent_name"><span>执行者</span><p>{{ log.agent_name }}</p></div>
                                 <div v-if="log.skill"><span>Skill</span><p>{{ formatSkill(log.skill) }}</p></div>
                                 <div v-if="log.model"><span>模型</span><p>{{ log.model }}</p></div>
@@ -109,13 +109,13 @@
                                 <div v-if="formatExecutionLogTokenUsage(log)"><span>Token</span><p class="group-chat-execution-log-token-detail">{{ formatExecutionLogTokenUsage(log) }}</p></div>
                                 <div v-if="formatExecutionLogCacheUsage(log)"><span>缓存</span><p>{{ formatExecutionLogCacheUsage(log) }}</p></div>
                                 <div v-if="formatExecutionLogMetrics(log)"><span>规模</span><p>{{ formatExecutionLogMetrics(log) }}</p></div>
-                                <div v-if="log.finish_reason"><span>结束</span><p>{{ log.finish_reason }}</p></div>
+                                <div v-if="log.finish_reason"><span>结束原因</span><p>{{ log.finish_reason }}</p></div>
                                 <div v-if="log.error_code" class="group-chat-execution-log-fault"><span>故障码</span><p><code>{{ log.error_code }}</code><template v-if="log.error_name"> · {{ log.error_name }}</template></p></div>
                                 <div v-if="log.error_summary"><span>原因</span><p>{{ log.error_summary }}</p></div>
                                 <div v-else-if="log.error_description"><span>说明</span><p>{{ log.error_description }}</p></div>
                                 <div v-if="log.error_action"><span>建议</span><p>{{ log.error_action }}</p></div>
                                 <div v-if="log.argument_summary"><span>参数</span><p>{{ log.argument_summary }}</p></div>
-                                <div v-if="log.output_summary"><span>输出</span><p>{{ log.output_summary }}</p></div>
+                                <div v-if="executionLogOutput(log)"><span>输出</span><p class="group-chat-execution-log-output">{{ executionLogOutput(log) }}</p></div>
                                 <div v-if="log.artifact_paths?.length"><span>产物</span><p>{{ log.artifact_paths.join('\n') }}</p></div>
                                 <div v-if="log.duration_ms != null"><span>耗时</span><p>{{ log.duration_ms }} ms</p></div>
                               </div>
@@ -370,22 +370,24 @@ function formatExecutionLogOperation(operation?: string) {
   const retry = raw.endsWith('_retry')
   const key = retry ? raw.slice(0, -6) : raw
   const labels: Record<string, string> = {
-    host_speaker_selection: '主持人选择发言者',
-    host_message_generation: '主持人生成交接话术',
-    host_scheduler: '主持人调度',
-    host_recruitment: '主持人推荐专家',
-    expert_turn: '专家生成',
-    ExpertFinalStatePayload: '专家整理最终响应',
-    EmptySessionRecruitmentPayload: '主持人推荐专家',
+    host_speaker_selection: '选择发言人',
+    host_message_generation: '生成交接话术',
+    host_recruitment: '推荐专家',
+    expert_turn: '模型决策',
+    ExpertFinalStatePayload: '整理最终回复',
+    EmptySessionRecruitmentPayload: '推荐专家',
   }
   const label = labels[key] || key
   return retry ? `${label}（重试）` : label
 }
 
 function executionLogDisplayName(log: MessageExecutionLogSummary) {
-  if (log.source === 'llm') return formatExecutionLogOperation(log.operation || log.provider_tool) || '大模型调用'
-  if (log.tool_name === 'group_chat_failure') return '运行失败'
-  return log.tool_name || '工具'
+  if (log.step_type === 'model_decision') {
+    return formatExecutionLogOperation(log.operation || log.provider_tool) || '模型决策'
+  }
+  if (log.step_type === 'tool_execution') return `执行工具：${log.tool_name || log.provider_tool || '未知工具'}`
+  if (log.step_type === 'execution_failure') return '执行失败'
+  return log.tool_name || '执行步骤'
 }
 
 function formatTokenCount(value: number) {
@@ -423,5 +425,10 @@ function formatExecutionLogMetrics(log: MessageExecutionLogSummary) {
   if (log.output_chars != null) parts.push(`${formatTokenCount(log.output_chars)} 输出字符`)
   if (log.tool_call_count != null) parts.push(`${formatTokenCount(log.tool_call_count)} 个历史工具调用`)
   return parts.join(' · ')
+}
+
+function executionLogOutput(log: MessageExecutionLogSummary) {
+  if (log.source === 'llm') return log.output_content || '历史日志未保存原始输出'
+  return log.output_summary || ''
 }
 </script>

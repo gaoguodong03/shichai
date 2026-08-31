@@ -38,6 +38,7 @@ export interface MessageExecutionLogSummary {
   log_id?: string
   created_at?: string
   source?: string
+  step_type?: 'model_decision' | 'tool_execution' | 'execution_failure'
   agent_name?: string
   skill?: string
   tool_name?: string
@@ -48,6 +49,7 @@ export interface MessageExecutionLogSummary {
   phase?: string
   argument_summary?: string
   output_summary?: string
+  output_content?: string
   artifact_paths?: string[]
   status?: 'succeeded' | 'blocked' | 'failed' | string
   duration_ms?: number

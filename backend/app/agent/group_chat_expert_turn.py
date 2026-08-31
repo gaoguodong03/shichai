@@ -32,7 +32,6 @@ from app.api.group_chat_state import (
     update_group_run,
     write_group_orchestration_state,
 )
-from app.api.files import get_workspace_root_path
 
 
 logger = logging.getLogger(__name__)
@@ -145,10 +144,6 @@ async def run_one_expert_turn(
         "tools": runtime.tools,
         "workspace_id": group_session_id,
     }
-    try:
-        initial_state["workspace_root"] = get_workspace_root_path(group_session_id)
-    except Exception:
-        logger.warning("expert workspace root unavailable session=%s", group_session_id, exc_info=True)
     run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{agent_name}:{uuid.uuid4().hex}"}}
     final_content = ""
     tool_results = outcome.tool_results

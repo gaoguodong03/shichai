@@ -12,14 +12,12 @@ from app.agent.expert_completion_contract import (
     ExpertExecutionOutcome,
     ExpertOutputSubmission,
 )
-from app.agent.expert_delivery_verifier import verify_expert_message_delivery
 from app.agent.group_chat_tool_trace import record_group_chat_tool_trace
 from app.api.group_chat_state import (
     frontend_history_message,
     save_group_history,
     save_session_definitions,
 )
-from app.api.files import get_workspace_root_path
 
 
 @dataclass(frozen=True)
@@ -68,18 +66,6 @@ def publish_expert_output(
     tool_results: list[dict[str, Any]],
 ) -> PublishedExpertMessage | None:
     """Persist one non-empty expert output and its associated tool trace."""
-    try:
-        workspace_root = get_workspace_root_path(group_session_id)
-    except Exception:
-        workspace_root = None
-    delivery = verify_expert_message_delivery(
-        submission.message,
-        tool_results=tool_results,
-        workspace_root=workspace_root,
-    )
-    if not delivery.is_verified:
-        submission = ExpertOutputSubmission(message=delivery.message)
-        execution = ExpertExecutionOutcome(status="failed")
     published = build_expert_message_record(
         submission=submission,
         execution=execution,

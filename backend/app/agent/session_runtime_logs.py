@@ -19,6 +19,7 @@ _TOOL_EXECUTION_LOG = "tool-execution.jsonl"
 _SUMMARY_LIMIT = 800
 _FAILURE_SUMMARY_LIMIT = 500
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[^\s;,]+")
+_LEGACY_LLM_OUTPUT_SUMMARY_PATTERN = re.compile(r"^模型响应已接收：\d+ 字(?:；finish_reason=.*)?$")
 _SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
     r"(?i)\b(authorization|api[_-]?key|access[_-]?token|token|secret|password)"
     r"\s*[:=]\s*([^\s;,]+|\"[^\"]*\"|'[^']*')"
@@ -88,7 +89,7 @@ def _runtime_log_from_tool_result(
         {
             "log_id": f"log-{uuid.uuid4().hex[:12]}",
             "message_id": str(message_id or "").strip() or None,
-            "created_at": created_at,
+            "created_at": str(item.get("created_at") or created_at).strip(),
             "source": source,
             "agent_name": str(agent_name or "").strip() or None,
             "skill": str(skill or "").strip() or None,
@@ -101,6 +102,7 @@ def _runtime_log_from_tool_result(
                 "stdout": str(output.get("stdout") or ""),
                 "stderr": str(output.get("stderr") or ""),
             },
+            "duration_ms": item.get("duration_ms") if isinstance(item.get("duration_ms"), int) else None,
         }
     )
     try:
@@ -234,10 +236,8 @@ def append_llm_execution_logs(
         output_chars = output_metrics.get("output_chars") if isinstance(output_metrics.get("output_chars"), int) else 0
         operation = str(call.get("operation") or "llm_completion").strip() or "llm_completion"
         model = str(response_metadata.get("model") or call.get("model") or "").strip()
-        content_summary = error_summary or (
-            f"模型响应已接收：{output_chars} 字"
-            + (f"；finish_reason={finish_reason}" if finish_reason else "")
-        )
+        output_content = str(call.get("output_content") or "")
+        content_summary = output_content if output_content.strip() else (error_summary or "无文本输出")
         json_data = _clean_dict(
             {
                 "operation": operation,
@@ -255,7 +255,7 @@ def append_llm_execution_logs(
             {
                 "log_id": f"log-{uuid.uuid4().hex[:12]}",
                 "message_id": str(message_id or "").strip() or None,
-                "created_at": format_storage_timestamp(),
+                "created_at": str(call.get("created_at") or format_storage_timestamp()).strip(),
                 "source": "llm",
                 "agent_name": str(agent_name or "").strip() or None,
                 "skill": str(skill or "").strip() or None,
@@ -416,11 +416,18 @@ def _argument_summary(arguments: Any) -> str:
         elif isinstance(value, (int, float, bool)) or value is None:
             parts.append(f"{key}={value}")
         else:
-            json_str = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            if len(json_str) > 120:
-                json_str = json_str[:117] + "..."
-            parts.append(f"{key}={json_str}")
-    return "; ".join(parts)
+            def summarize_json(item: Any) -> Any:
+                if isinstance(item, str):
+                    return item if len(item) <= 120 else f"<{len(item)} chars>"
+                if isinstance(item, dict):
+                    return {str(child_key): summarize_json(child_value) for child_key, child_value in item.items()}
+                if isinstance(item, list):
+                    return [summarize_json(child) for child in item]
+                return item
+
+            json_str = json.dumps(summarize_json(value), ensure_ascii=False, indent=2)
+            parts.append(f"{key}=\n{_short_text(json_str)}")
+    return "\n".join(parts)
 
 
 def _output_summary(output: Any) -> str:
@@ -441,6 +448,26 @@ def _output_summary(output: Any) -> str:
                 seps = (",", ":")
                 return f"message={json.dumps(status, ensure_ascii=False, separators=seps)}"
             return _short_text(status)
+    return ""
+
+
+def _llm_output_content(output: Any) -> str:
+    if not isinstance(output, dict):
+        return ""
+    content = str(output.get("content") or "")
+    if _LEGACY_LLM_OUTPUT_SUMMARY_PATTERN.fullmatch(content.strip()):
+        return ""
+    return content
+
+
+def _execution_step_type(source: Any) -> str:
+    normalized = str(source or "").strip()
+    if normalized == "llm":
+        return "model_decision"
+    if normalized in {"workspace", "mcp", "api", "script"}:
+        return "tool_execution"
+    if normalized == "runtime":
+        return "execution_failure"
     return ""
 
 
@@ -471,6 +498,7 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
                 "log_id": str(row.get("log_id") or "").strip() or None,
                 "created_at": str(row.get("created_at") or "").strip() or None,
                 "source": str(row.get("source") or "").strip() or None,
+                "step_type": _execution_step_type(row.get("source")) or None,
                 "agent_name": str(row.get("agent_name") or "").strip() or None,
                 "skill": str(row.get("skill") or "").strip() or None,
                 "tool_name": str(tool_call.get("name") or "").strip() or None,
@@ -481,6 +509,7 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
                 "phase": str(json_data.get("phase") or arguments.get("phase") or "").strip() or None,
                 "argument_summary": _argument_summary(tool_call.get("arguments")),
                 "output_summary": _output_summary(row.get("output")),
+                "output_content": (_llm_output_content(output) or None) if row.get("source") == "llm" else None,
                 "artifact_paths": artifact_paths,
                 "status": str(row.get("status") or "").strip() or None,
                 "duration_ms": row.get("duration_ms") if isinstance(row.get("duration_ms"), int) else None,
@@ -505,4 +534,5 @@ def message_execution_log_summaries(session_id: str, *, message_id: str) -> list
             }
         )
         summaries.append(summary)
+    summaries.sort(key=lambda item: str(item.get("created_at") or ""))
     return summaries

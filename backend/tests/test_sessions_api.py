@@ -180,7 +180,8 @@ def test_get_message_execution_logs_returns_folded_summaries(client: TestClient)
     assert row["tool_name"] == "write_workspace_file"
     assert row["source"] == "workspace"
     assert row["status"] == "succeeded"
-    assert row["argument_summary"] == "path=drafts/outline.md; content=<600 chars>"
+    assert row["argument_summary"] == "path=drafts/outline.md\ncontent=<600 chars>"
+    assert row["step_type"] == "tool_execution"
     assert row["output_summary"] == "已写入 drafts/outline.md"
     assert row["artifact_paths"] == ["drafts/outline.md"]
     assert row["detail_available"] is True

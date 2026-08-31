@@ -380,6 +380,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                                 arguments=arguments,
                                 tool_call_id=tool_call_id,
                                 raw_result=result,
+                                duration_ms=int((time.perf_counter() - t_tool) * 1000),
                             )
                         )
                     else:
@@ -414,6 +415,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                                 arguments=arguments,
                                 tool_call_id=tool_call_id,
                                 raw_result=result,
+                                duration_ms=int((time.perf_counter() - t_tool) * 1000),
                             )
                         )
                 except Exception as e:
@@ -433,6 +435,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                             arguments=arguments,
                             tool_call_id=tool_call_id,
                             error=e,
+                            duration_ms=int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
                         )
                     )
             else:

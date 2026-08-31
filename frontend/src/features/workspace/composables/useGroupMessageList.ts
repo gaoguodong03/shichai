@@ -366,7 +366,9 @@ export function useGroupMessageList(args: {
 
   function messageExecutionLogRows(msg: { message_id?: string }) {
     const messageId = String(msg?.message_id || '').trim()
-    return messageId ? (messageExecutionLogs.value[messageId] || []) : []
+    return messageId
+      ? (messageExecutionLogs.value[messageId] || []).filter((row) => Boolean(row.step_type))
+      : []
   }
 
   function messageExecutionTokenTotal(msg: { message_id?: string }): number | null {

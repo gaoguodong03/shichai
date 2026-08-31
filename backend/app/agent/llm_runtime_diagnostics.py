@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import time
+from datetime import datetime, timezone
 from typing import Any, Iterator
 
 
@@ -175,6 +176,11 @@ def current_llm_operation() -> str:
     return _operation_var.get() or _default_operation_var.get() or "llm_completion"
 
 
+def _runtime_timestamp() -> str:
+    dt = datetime.now(timezone.utc)
+    return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"
+
+
 def start_llm_call(
     *,
     method: str,
@@ -190,6 +196,7 @@ def start_llm_call(
         "method": str(method or "").strip(),
         "model": str(model or "").strip(),
         "provider_base_url": str(provider_base_url or "").strip(),
+        "created_at": _runtime_timestamp(),
         "status": "pending",
         "input_metrics": dict(input_metrics or {}),
     }
@@ -203,6 +210,7 @@ def finish_llm_call(
     *,
     response_metadata: dict[str, Any] | None = None,
     output_metrics: dict[str, Any] | None = None,
+    output_content: str = "",
 ) -> None:
     if record is None:
         return
@@ -212,6 +220,7 @@ def finish_llm_call(
             "duration_ms": max(0, round((time.perf_counter() - started_at) * 1000)),
             "response_metadata": dict(response_metadata or {}),
             "output_metrics": dict(output_metrics or {}),
+            "output_content": str(output_content or ""),
         }
     )
 

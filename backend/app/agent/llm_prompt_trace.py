@@ -92,28 +92,40 @@ class TracedLLMClient:
     async def astream(self, inp: Any, *args: Any, **kwargs: Any):
         self._log_prompt("astream", inp)
         record, started_at = self._start_call("astream", inp)
-        last_chunk = None
+        combined_response = None
         try:
             async for chunk in self._raw_client.astream(inp, *args, **kwargs):
-                last_chunk = chunk
+                if combined_response is None:
+                    combined_response = chunk
+                else:
+                    try:
+                        combined_response = combined_response + chunk
+                    except Exception:
+                        combined_response = chunk
                 yield chunk
         except Exception as exc:  # noqa: BLE001
             fail_llm_call(record, started_at, exc)
             raise
-        self._finish_call(record, started_at, last_chunk)
+        self._finish_call(record, started_at, combined_response)
 
     def stream(self, inp: Any, *args: Any, **kwargs: Any):
         self._log_prompt("stream", inp)
         record, started_at = self._start_call("stream", inp)
-        last_chunk = None
+        combined_response = None
         try:
             for chunk in self._raw_client.stream(inp, *args, **kwargs):
-                last_chunk = chunk
+                if combined_response is None:
+                    combined_response = chunk
+                else:
+                    try:
+                        combined_response = combined_response + chunk
+                    except Exception:
+                        combined_response = chunk
                 yield chunk
         except Exception as exc:  # noqa: BLE001
             fail_llm_call(record, started_at, exc)
             raise
-        self._finish_call(record, started_at, last_chunk)
+        self._finish_call(record, started_at, combined_response)
 
     def _start_call(self, method: str, inp: Any):
         return start_llm_call(
@@ -128,6 +140,7 @@ class TracedLLMClient:
         metadata = getattr(response, "response_metadata", None)
         content = getattr(response, "content", "")
         tool_calls = getattr(response, "tool_calls", None) or []
+        output_content = _llm_response_output(content=content, tool_calls=tool_calls)
         finish_llm_call(
             record,
             started_at,
@@ -136,6 +149,7 @@ class TracedLLMClient:
                 "output_chars": len(str(content or "")),
                 "tool_call_count": len(tool_calls),
             },
+            output_content=output_content,
         )
 
     def _log_prompt(self, method: str, inp: Any) -> None:
@@ -205,6 +219,21 @@ def _serialize_prompt_payload(value: Any) -> str:
         return json.dumps(_prompt_to_jsonable(value), ensure_ascii=False, indent=2, default=str)
     except Exception:
         return str(value)
+
+
+def _llm_response_output(*, content: Any, tool_calls: Any) -> str:
+    normalized_content = _prompt_to_jsonable(content)
+    normalized_tool_calls = _prompt_to_jsonable(tool_calls) if tool_calls else []
+    if normalized_tool_calls:
+        return json.dumps(
+            {"content": normalized_content, "tool_calls": normalized_tool_calls},
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
+    if isinstance(normalized_content, (dict, list)):
+        return json.dumps(normalized_content, ensure_ascii=False, indent=2, default=str)
+    return str(normalized_content or "")
 
 
 def _prompt_to_jsonable(value: Any) -> Any:

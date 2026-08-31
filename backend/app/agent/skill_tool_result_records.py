@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from app.agent.platform_prompts import render_platform_prompt
@@ -15,6 +16,19 @@ _WORKSPACE_TOOL_NAMES = {
     "mkdir_workspace",
     "list_workspace_directory",
 }
+
+
+def _runtime_timestamp() -> str:
+    dt = datetime.now(timezone.utc)
+    return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"
+
+
+def _with_timing(payload: dict[str, Any], *, duration_ms: int | None = None) -> dict[str, Any]:
+    timed = dict(payload)
+    timed.setdefault("created_at", _runtime_timestamp())
+    if duration_ms is not None:
+        timed["duration_ms"] = max(0, int(duration_ms))
+    return timed
 
 
 def _tool_metadata(tool: object) -> dict[str, Any]:
@@ -100,12 +114,22 @@ def _json_object_from_result(raw_result: object) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, arguments: dict, tool_call_id: str, raw_result: object) -> dict:
+def _tool_result_record_from_raw(
+    *,
+    tool_name: str,
+    tool: object | None,
+    arguments: dict,
+    tool_call_id: str,
+    raw_result: object,
+    duration_ms: int | None = None,
+) -> dict:
     if isinstance(raw_result, ToolResultRecord):
-        return raw_result.model_dump(exclude_none=True)
+        payload = _with_timing(raw_result.model_dump(exclude_none=True), duration_ms=duration_ms)
+        return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
     raw_payload = _json_object_from_result(raw_result)
     if isinstance(raw_payload, dict) and raw_payload.get("tool_call") and raw_payload.get("execution_status"):
-        return ToolResultRecord.model_validate(raw_payload).model_dump(exclude_none=True)
+        payload = _with_timing(raw_payload, duration_ms=duration_ms)
+        return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
     text = str(raw_result or "")
     status = "succeeded"
     message = "工具执行成功"
@@ -149,10 +173,19 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
         payload["error_log"] = error_log
     if artifacts:
         payload["output"]["artifacts"] = artifacts
+    payload = _with_timing(payload, duration_ms=duration_ms)
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
 
 
-def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, arguments: dict, tool_call_id: str, error: Exception) -> dict:
+def _tool_result_record_from_exception(
+    *,
+    tool_name: str,
+    tool: object | None,
+    arguments: dict,
+    tool_call_id: str,
+    error: Exception,
+    duration_ms: int | None = None,
+) -> dict:
     message = str(error or "").strip() or "工具执行异常"
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
@@ -160,6 +193,7 @@ def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, a
         "output": {"content": message},
         "error_log": {"message": message, "detail": type(error).__name__, "raw_output": message, "retryable": False},
     }
+    payload = _with_timing(payload, duration_ms=duration_ms)
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)
 
 
@@ -177,4 +211,5 @@ def _missing_tool_result_record(*, tool_name: str, arguments: dict, tool_call_id
     }
     if status != "blocked":
         payload["error_log"] = {"message": message, "detail": f"available_tools={available_tools}", "retryable": False}
+    payload = _with_timing(payload)
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)

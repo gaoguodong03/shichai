@@ -1,4 +1,5 @@
 import asyncio
+import re
 import sys
 from types import SimpleNamespace
 
@@ -37,6 +38,8 @@ def test_traced_llm_client_collects_call_usage():
     assert calls[0]["response_metadata"]["token_usage"]["total_tokens"] == 12
     assert calls[0]["input_metrics"]["input_messages"] == 1
     assert calls[0]["output_metrics"]["output_chars"] == 2
+    assert calls[0]["output_content"] == "完成"
+    assert re.fullmatch(r"\d{16}", calls[0]["created_at"])
 
 
 def test_llm_failure_classifier_uses_stable_fault_codes():

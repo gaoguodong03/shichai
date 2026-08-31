@@ -340,7 +340,7 @@ GET /api/sessions/{session_id}/messages/{message_id}/execution-logs
 
 用于消息右侧“终端/日志”入口。接口按 `message_id` 读取 `sessions/{session_id}/execution_logs/tool-execution.jsonl` 中关联的执行日志；它不读取 `history.json` 的消息正文，也不把日志写回消息结构。
 
-该接口返回的是执行日志摘要视图，不是聊天消息结构。响应里的 `source`、`provider`、`provider_tool`、`status`、`argument_summary`、`output_summary` 只用于日志面板和排障；前端不得把它们写回 `history.json`，后端也不得用它们替代 `speaker.skill`、`skill_result.execution_status`、`message.content` 或主持人路由字段。
+该接口返回的是执行日志摘要视图，不是聊天消息结构。响应里的 `step_type` 是前端统一执行时间线的派生分类：`model_decision` 表示 LLM 调用，`tool_execution` 表示工作区、MCP、API 或脚本调用，`execution_failure` 表示无法归入具体调用的平台异常。`source`、`provider`、`provider_tool`、`status`、`argument_summary`、`output_summary` 只用于日志面板和排障；前端不得把它们写回 `history.json`，后端也不得用它们替代 `speaker.skill`、`skill_result.execution_status`、`message.content` 或主持人路由字段。
 
 响应：
 
@@ -354,6 +354,7 @@ GET /api/sessions/{session_id}/messages/{message_id}/execution-logs
         "log_id": "log-xxxx",
         "created_at": "2026071116143000",
         "source": "workspace",
+        "step_type": "tool_execution",
         "agent_name": "文档合著专家",
         "skill": "document-coauthor",
         "tool_name": "write_workspace_file",
@@ -374,8 +375,10 @@ GET /api/sessions/{session_id}/messages/{message_id}/execution-logs
 前端展示规则：
 
 - 专家和主持人消息右侧显示终端图标，点击后按 `message_id` 拉取关联执行日志。
-- 点击图标后先打开折叠日志列表，按工具调用分组展示 `tool_name`、状态、时间和摘要。
-- 点击某条日志后再展开详情，包括参数摘要、输出摘要、产物路径、错误信息和耗时。
+- 点击图标后先打开按时间排序的执行步骤列表；列表只展示模型决策、工具执行和平台执行失败，主持调度事实保留在底层日志但不作为可见步骤。
+- 列表展示步骤名称、状态和 LLM Token；`source` 移入详情，不与模型决策、工具执行并列。
+- 点击某条日志后再展开详情；时间是第一项，其后展示来源、执行者、Skill、模型或阶段、Token、缓存、规模、结束原因、错误、参数、输出、产物和耗时。
+- 工具参数按顶层字段逐行展示，嵌套对象使用缩进 JSON；字符串值内部的分号不作为换行依据。
 - 长参数、长 stdout/stderr 和正文型 `arguments.content` 默认折叠或摘要化；聊天正文展示 `message.content`，用户可见产物由 `message.artifacts` 渲染，工具级产物只在执行日志详情中展示。
 
 ### 5.11 会话事件流

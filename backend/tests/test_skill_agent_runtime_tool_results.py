@@ -1,4 +1,5 @@
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -36,6 +37,20 @@ def test_script_nonzero_result_becomes_failed_tool_result():
     assert result["error_log"]["stderr"] == "boom"
     assert result["error_log"]["stdout"] == "partial stdout"
     assert result["output"]["stdout"] == "partial stdout"
+    assert re.fullmatch(r"\d{16}", result["created_at"])
+
+
+def test_tool_result_records_explicit_duration():
+    result = _tool_result_record_from_raw(
+        tool_name="read_workspace_file",
+        tool=SimpleNamespace(name="read_workspace_file", metadata={}),
+        arguments={"path": "demo.md"},
+        tool_call_id="call-timed",
+        raw_result="正文",
+        duration_ms=27,
+    )
+
+    assert result["duration_ms"] == 27
 
 
 def test_script_tool_result_uses_skill_directory_and_manifest_entry_identity():

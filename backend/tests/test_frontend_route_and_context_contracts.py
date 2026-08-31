@@ -535,6 +535,7 @@ def test_frontend_message_execution_logs_are_loaded_by_message_id():
     assert "fetchMessageExecutionLogs" in chat_api
     assert "`/sessions/${id}/messages/${messageId}/execution-logs`" in chat_api
     assert "messageExecutionLogs" in message_list
+    assert ".filter((row) => Boolean(row.step_type))" in message_list
     assert "toggleMessageExecutionLogs" in message_list
     assert "fetchMessageExecutionLogs(" in message_list
     assert "message_id" in message_list
@@ -546,6 +547,13 @@ def test_frontend_message_execution_logs_are_loaded_by_message_id():
     assert "artifactDisplayMeta(item).label" not in component
     assert "getArtifactDisplayItems" not in component
     assert "artifact_paths" in component
+    assert "执行工具：" in component
+    assert "模型决策" in component
+    assert "整理最终回复" in component
+    assert "执行失败" in component
+    assert "group-chat-execution-log-source" not in component
+    assert component.index('v-if="log.created_at"') < component.index('v-if="log.source"')
+    assert "结束原因" in component
     assert component.index("group-chat-bubble-name") < component.index("group-chat-action-terminal")
     assert component.index("group-chat-action-terminal") < component.index("group-chat-bubble-body")
 

@@ -1210,7 +1210,7 @@
 .group-chat-execution-log-summary {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.5rem;
   align-items: center;
   padding: 0.5rem 0.65rem;
@@ -1232,8 +1232,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .group-chat-execution-log-status,
-.group-chat-execution-log-token,
-.group-chat-execution-log-source {
+.group-chat-execution-log-token {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -1280,8 +1279,13 @@
   overflow-wrap: anywhere;
 }
 .group-chat-execution-log-token-detail {
-  color: var(--color-accent-text, #2563eb);
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+.group-chat-execution-log-output {
+  max-height: 20rem;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .group-chat-execution-log-fault code {
   color: var(--color-danger-text, #b91c1c);

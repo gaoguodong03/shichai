@@ -33,15 +33,12 @@ _WORKSPACE_FILE_EXTENSIONS = (
     ".htm",
 )
 _WORKSPACE_FILE_EXTENSION_RE = r"(?:md|txt|csv|json|png|jpg|jpeg|webp|pdf|docx?|xlsx?|pptx?|html?)"
-_WORKSPACE_SAVE_CLAIM_RE = r"保存[^。\n]{0,80}(?:到|至)工作区"
 _DELIVERY_CLAIM_RE = re.compile(
-    rf"(已生成|已经生成|生成完成|已保存|已经保存|{_WORKSPACE_SAVE_CLAIM_RE}|图片链接|下载链接|可下载路径)"
+    r"(已生成|已经生成|生成完成|已保存|已经保存|保存到工作区|保存至工作区|图片链接|下载链接|可下载路径)"
 )
-_EXPLICIT_FILE_DELIVERY_RE = re.compile(
-    rf"({_WORKSPACE_SAVE_CLAIM_RE}|图片链接|下载链接|可下载路径)"
-)
+_EXPLICIT_FILE_DELIVERY_RE = re.compile(r"(保存到工作区|保存至工作区|图片链接|下载链接|可下载路径)")
 _BARE_FILE_DELIVERY_CONTEXT_RE = re.compile(
-    rf"({_WORKSPACE_SAVE_CLAIM_RE}|候选清单已保存|文件已保存|已保存[:：]|已经保存[:：]|图片链接|下载链接|可下载路径)"
+    r"(保存到工作区|保存至工作区|候选清单已保存|文件已保存|已保存[:：]|已经保存[:：]|图片链接|下载链接|可下载路径)"
 )
 _MENTIONED_WORKSPACE_PATH_RE = re.compile(
     r"(?<![\w/:.])((?:[\w.\-\u4e00-\u9fff]+/)+[^\s`'\"）)>,，。；;]+"
@@ -246,7 +243,7 @@ def guard_unverified_delivery_claims(
         return content
 
     success_paths = _verified_existing_paths(_extract_success_paths_from_tool_results(output_texts), workspace_root)
-    if success_paths and (not mentioned_paths or all(path in success_paths for path in mentioned_paths)):
+    if success_paths:
         return content
 
     parts = [

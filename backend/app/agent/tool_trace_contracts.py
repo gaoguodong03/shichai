@@ -45,3 +45,5 @@ class ToolResultRecord(StrictTraceModel):
     execution_status: Literal["succeeded", "blocked", "failed"]
     output: ToolOutput = Field(default_factory=ToolOutput)
     error_log: ToolErrorLog | None = None
+    created_at: str | None = Field(default=None, min_length=1)
+    duration_ms: int | None = Field(default=None, ge=0)

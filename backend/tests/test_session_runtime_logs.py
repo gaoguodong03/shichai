@@ -71,6 +71,9 @@ def test_append_tool_execution_logs_writes_session_level_jsonl(tmp_path, monkeyp
     assert "kind" not in rows[0]["tool_call"]
     assert all(value is not None for value in rows[0].values())
 
+    summary = message_execution_log_summaries("s1", message_id="msg-1")[0]
+    assert summary["step_type"] == "tool_execution"
+
 
 def test_record_group_chat_tool_trace_writes_session_level_jsonl(tmp_path, monkeypatch):
     from app.agent import group_chat_tool_trace
@@ -140,6 +143,7 @@ def test_append_host_execution_log_records_scheduler_fact(tmp_path, monkeypatch)
     assert summary["source"] == "host"
     assert summary["tool_name"] == "host_scheduler"
     assert summary["output_summary"] == "请生成工作区文档。"
+    assert "step_type" not in summary
 
 
 def test_append_runtime_failure_log_records_sanitized_failure_fact(tmp_path, monkeypatch):
@@ -181,6 +185,7 @@ def test_append_runtime_failure_log_records_sanitized_failure_fact(tmp_path, mon
 
     summary = message_execution_log_summaries("s1", message_id="failed-1")[0]
     assert summary["source"] == "runtime"
+    assert summary["step_type"] == "execution_failure"
     assert summary["output_summary"].endswith("upstream timeout")
 
 
@@ -199,8 +204,10 @@ def test_append_llm_execution_logs_records_usage_and_canonical_fault(tmp_path, m
                 "method": "ainvoke",
                 "model": "qwen3-max",
                 "provider_base_url": "https://example.test/v1?api_key=must-not-persist",
+                "created_at": "2026062908104700",
                 "status": "failed",
                 "duration_ms": 321,
+                "output_content": '{"next_speaker":"文档专家"}',
                 "input_metrics": {"input_messages": 3, "prompt_chars": 2400, "tool_call_count": 0},
                 "output_metrics": {"output_chars": 52, "tool_call_count": 0},
                 "response_metadata": {
@@ -227,18 +234,99 @@ def test_append_llm_execution_logs_records_usage_and_canonical_fault(tmp_path, m
     assert rows[0]["tool_call"]["arguments"]["endpoint"] == "https://example.test/v1"
     assert "must-not-persist" not in json.dumps(rows[0], ensure_ascii=False)
     assert rows[0]["duration_ms"] == 321
+    assert rows[0]["created_at"] == "2026062908104700"
+    assert rows[0]["output"]["content"] == '{"next_speaker":"文档专家"}'
 
     summary = message_execution_log_summaries("s1", message_id="msg-llm-1")[0]
+    assert summary["step_type"] == "model_decision"
     assert summary["model"] == "qwen3-max"
     assert summary["input_tokens"] == 640
     assert summary["output_tokens"] == 80
     assert summary["total_tokens"] == 720
     assert summary["cached_tokens"] == 128
+    assert summary["output_summary"] == '{"next_speaker":"文档专家"}'
+    assert summary["output_content"] == '{"next_speaker":"文档专家"}'
     assert summary["error_code"] == "LLM_RESPONSE_INVALID"
     assert summary["error_name"] == "大模型响应不正确"
     assert "JSON" in summary["error_summary"]
     assert "结构校验" in summary["error_description"]
     assert summary["error_action"]
+
+
+def test_llm_output_content_is_not_truncated_and_legacy_summary_is_not_exposed(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
+    original_output = "原始模型输出" * 200
+
+    append_llm_execution_logs(
+        "s1",
+        message_id="msg-raw-output",
+        agent_name="专家",
+        skill="writer",
+        calls=[{"status": "succeeded", "output_content": original_output}],
+    )
+    append_llm_execution_logs(
+        "s1",
+        message_id="msg-legacy-output",
+        agent_name="专家",
+        skill="writer",
+        calls=[{"status": "succeeded", "output_content": "模型响应已接收：92 字；finish_reason=stop"}],
+    )
+
+    raw_summary = message_execution_log_summaries("s1", message_id="msg-raw-output")[0]
+    legacy_summary = message_execution_log_summaries("s1", message_id="msg-legacy-output")[0]
+
+    assert raw_summary["output_content"] == original_output
+    assert raw_summary["output_summary"].endswith("...")
+    assert "output_content" not in legacy_summary
+
+
+def test_execution_log_summaries_pretty_print_json_arguments_and_sort_by_call_time(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": TS1}})
+
+    append_tool_execution_logs(
+        "s1",
+        message_id="msg-ordered",
+        agent_name="四九",
+        skill="group-host",
+        tool_results=[
+            {
+                "created_at": "2026062908104802",
+                "tool_call": {
+                    "id": "call-later",
+                    "name": "write_workspace_file",
+                    "kind": "workspace",
+                    "arguments": {"path": "later.md"},
+                },
+                "execution_status": "succeeded",
+                "output": {"content": "later"},
+            },
+            {
+                "created_at": "2026062908104801",
+                "tool_call": {
+                    "id": "call-earlier",
+                    "name": "host_payload",
+                    "kind": "host",
+                    "arguments": {
+                        "current_phase": "写作",
+                        "message": {"content": "请继续。", "target_agent_name": "文档专家"},
+                        "note": "甲；乙;丙",
+                    },
+                },
+                "execution_status": "succeeded",
+                "output": {"content": "earlier"},
+            },
+        ],
+    )
+
+    rows = message_execution_log_summaries("s1", message_id="msg-ordered")
+
+    assert [row["created_at"] for row in rows] == ["2026062908104801", "2026062908104802"]
+    assert rows[0]["argument_summary"] == (
+        'current_phase=写作\nmessage=\n{\n  "content": "请继续。",\n  "target_agent_name": "文档专家"\n}'
+        '\nnote=甲；乙;丙'
+    )
 
 
 def test_append_tool_execution_logs_records_script_stdout_artifacts(tmp_path, monkeypatch):
