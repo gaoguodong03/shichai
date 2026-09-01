@@ -129,7 +129,7 @@ vNext 的核心收敛点：
 6. `tool_result.output` 统一承载工具输出；文本字段叫 `content`，结构化字段叫 `json_data`，产物字段叫 `artifacts`。
 7. `skill_result` 不再保存 `content`；可见正文在 `message.content`，可见产物在 `message.artifacts`，工具原输出在执行日志。
 8. 模型 `expert_final_state.v2.next_action` 保留 `agent_turn` 和 `skill_session` 两个维度；平台解析后分别交给独立控制模块，不写入消息 `skill_result`。
-9. 主持人不再输出 `next_speaker` / `next_action`；平台先让主持人选择 `current_phase`、`target_agent_name`、`suggested_add_agent_names`，再用独立调用生成不含路由字段的主持话术，最后机械合并为标准消息。
+9. 主持人不再输出 `next_speaker` / `next_action`；平台先让主持人选择 `current_phase`、`target_agent_name`、`suggested_add_agent_names` 并用 `selected_action` 锁定同一四列表命中行的本轮动作，再用独立调用生成不含路由字段的可执行交接，最后机械合并为标准消息。
 10. 专家落盘只接受 `expert_final_state.v2`；工具执行后的中间 `AIMessage`、`ToolMessage`、deterministic tool summary 和 MCP 原文都不是可落盘专家回复。
 
 ```text
@@ -235,7 +235,7 @@ scenario.json
 
 #### 2.5.6 主持人两阶段严格输出
 
-主持人调度由两个彼此隔离的 LLM 输出组成。第一阶段 `HostSpeakerSelectionPayload` 只决定路由；第二阶段 `HostMessagePayload` 接收已经固定的选择，只负责生成展示话术，不能改写下一位发言者。平台最后机械合并为 `HostSchedulerDecisionPayload`，不解析 `content` 中的关键词。
+主持人调度由两个彼此隔离的 LLM 输出组成。第一阶段 `HostSpeakerSelectionPayload` 决定路由，并用 `selected_action` 锁定同一四列表命中行的本轮动作；第二阶段 `HostMessagePayload` 接收已经固定的选择和动作，只负责生成简短但可直接承接的交接，不能改写下一位发言者或命中动作。平台最后机械合并为 `HostSchedulerDecisionPayload`，不解析 `content` 中的关键词。
 
 第一阶段字段：
 
@@ -243,17 +243,18 @@ scenario.json
 | --- | --- |
 | `current_phase` | 主持人对当前协作阶段的判断；用于跨轮阶段记忆。 |
 | `target_agent_name` | 必填枚举：`user`、`end` 或当前 `agent_names` 中的完整专家名。询问用户填 `user`，结束填 `end`，调度专家填专家名。 |
+| `selected_action` | 必填；忠实表达与 `current_phase`、`target_agent_name` 同一命中行的“本轮动作”。只作为两次主持人调用之间的语义锁，不进入最终标准消息。 |
 | `suggested_add_agent_names` | 可邀请专家名称数组；非空时 `target_agent_name` 必须为 `user`。场景模式禁止建议邀请。 |
 
 第二阶段字段：
 
 | 字段 | 作用 |
 | --- | --- |
-| `content` | 主持人可见交接、等待或结束说明；必须非空。 |
+| `content` | 主持人可见且可供下一位发言者直接承接的交接、等待或结束说明；必须非空，并忠实表达固定的 `selected_action`。 |
 | `attachments` | 主持人传给下一位专家的输入文件引用。 |
 | `artifacts` | 主持人产出或暴露给用户的产物。 |
 
-第二阶段禁止输出 `target_agent_name`、`current_phase` 和 `suggested_add_agent_names`。两个阶段分别最多重试一次协议错误；任一阶段仍失败时，平台生成目标为 `user` 的协议错误消息。多余字段、非 JSON、非法目标和旧字段都不是主持人业务回复。
+第二阶段禁止输出 `target_agent_name`、`current_phase`、`selected_action` 和 `suggested_add_agent_names`。两个阶段分别最多重试一次协议错误；任一阶段仍失败时，平台生成目标为 `user` 的协议错误消息。多余字段、非 JSON、非法目标和旧字段都不是主持人业务回复。
 
 #### 2.5.7 主持人运行态：`orchestration_state.json.host_scheduler`
 
@@ -717,8 +718,8 @@ deterministic tool summary 只属于平台内部失败诊断或日志摘要，�
 
 ```text
 _host_decide_by_agent(...)
-  -> HostSpeakerSelectionPayload（选择路由）
-  -> HostMessagePayload（生成话术，不含路由）
+  -> HostSpeakerSelectionPayload（选择路由并锁定 selected_action）
+  -> HostMessagePayload（依据固定动作生成可执行交接，不含路由）
   -> compose_host_scheduler_decision(...)
   -> finalize_host_scheduler_decision(...)
   -> _apply_decision_to_ctx(...)
@@ -739,7 +740,7 @@ _host_decide_by_agent(...)
 }
 ```
 
-主持人消息的正文来自平台对严格调度结果的展示化处理，不允许依赖旧字段 `announcement`、`speaker_task`、`next_prompt` 或 `handoff_reason`。主持人消息只负责说明交接，不承载工具日志、专家产物或隐藏状态块。
+主持人消息的正文来自平台对固定 `selected_action` 的交接化处理，不允许依赖旧字段 `announcement`、`speaker_task`、`next_prompt` 或 `handoff_reason`。面向专家时正文应简短说明本轮目标、已有真实输入、预期结果和停止边界，使专家可以直接承接；不得替专家决定 Skill、工具、参数或扩写多步骤计划，也不承载工具日志、专家产物或隐藏状态块。
 
 如果没有会话 `host` 或主持人失败，则进入协议错误或等待用户状态，不再回退到旧 `leader` 路径：
 
@@ -754,6 +755,7 @@ message.content = "主持人输出格式错误，请重试或联系管理员。"
 {
   "current_phase": "阶段",
   "target_agent_name": "user | end | 场内专家名称",
+  "selected_action": "同一命中行的本轮动作",
   "suggested_add_agent_names": ["可邀请专家名称"]
 }
 ```
@@ -768,13 +770,13 @@ message.content = "主持人输出格式错误，请重试或联系管理员。"
 }
 ```
 
-`current_phase` 和 `target_agent_name` 必填。`target_agent_name=end` 与 `current_phase=end` 必须同时成立；`suggested_add_agent_names` 非空时 `target_agent_name` 必须为 `user`。第二阶段不接收任何路由字段，因此其自然语言无法改变第一阶段的选择。
+`current_phase`、`target_agent_name` 和 `selected_action` 必填。三者必须来自同一条四列表命中行；`target_agent_name=end` 与 `current_phase=end` 必须同时成立；`suggested_add_agent_names` 非空时 `target_agent_name` 必须为 `user`。第二阶段不接收任何路由字段，也不能输出 `selected_action`，因此其自然语言无法改变第一阶段的选择或命中动作。
 
 第一阶段在解释主持人 Skill 四列表的判定条件时，应把“最近一位专家向用户提出尚未被回答、明确要求确认、选择、补充或决定下一步的问题”视为等待用户的强证据，在没有更高优先级明确命中条件时优先选择 `user`。这是 LLM 对上下文语义的判断，不是平台对问号、“是否”或其他固定词的文本匹配；反问、自问自答、面向其他专家的问题和已经被用户回答的问题不适用。
 
 平台所有要求 LLM 返回机器可读控制结构的调用，都必须经统一结构化输出入口完成严格 schema 校验。JSON 输出统一走 `LLM raw output -> strict JSON object -> Pydantic model_validate`；该规则适用于主持人调度、专家 Skill 选择、专家 finalizer，以及以后新增的任何会驱动平台分支、路由、状态、工具、落盘或前端结构展示的 LLM 输出字段。专家最终正文虽然是自然语言，但必须作为 `expert_final_state.v2.message.content` 的字段通过结构化入口返回；普通标题、摘要和展示文案只有在不驱动平台落盘或状态机时，才不使用该入口。
 
-`group_host_decision.py` 使用严格结构解析，`extra="forbid"`。多余字段、非 JSON、非法 `target_agent_name` 都不是可展示的主持人业务回复。选择和话术两个阶段各自第一次输出未通过结构校验时，平台只允许按该阶段 schema 做一次协议重问；重问仍未通过时才转成系统保护决策，等待用户或管理员重试。平台不得从非标准文本或主持话术中抽取路由、不得把模型解释文字当主持人消息展示，也不得把旧字段补丁化映射成当前字段。`next_speaker`、`next_action`、`speaker_task`、`reason`、`invite`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 和 id 类字段都不是主持人 JSON 契约的一部分：
+`group_host_decision.py` 使用严格结构解析，`extra="forbid"`。多余字段、非 JSON、非法 `target_agent_name` 或空 `selected_action` 都不是可展示的主持人业务回复。选择和交接两个阶段各自第一次输出未通过结构校验时，平台只允许按该阶段 schema 做一次协议重问；重问仍未通过时才转成系统保护决策，等待用户或管理员重试。平台不得从非标准文本或主持交接中抽取路由、不得把模型解释文字当主持人消息展示，也不得把旧字段补丁化映射成当前字段。`next_speaker`、`next_action`、`speaker_task`、`reason`、`invite`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 和 id 类字段都不是主持人 JSON 契约的一部分：
 
 ```text
 message.target_agent_name = "user"

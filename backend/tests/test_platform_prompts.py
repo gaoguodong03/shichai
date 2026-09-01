@@ -79,6 +79,7 @@ def test_host_runtime_prompt_contains_inputs_without_repeating_long_term_contrac
         assert runtime_value in rendered
     assert "不要生成 message 或主持话术" in rendered
     assert "target_agent_name" in rendered
+    assert "selected_action" in rendered
     assert '"next_speaker"' not in rendered
     assert '"next_action"' not in rendered
     assert "只允许输出上述字段" not in rendered
@@ -141,11 +142,33 @@ def test_host_prompts_route_from_the_skill_table_without_restoring_old_host_duti
     assert "确认、选择、补充信息或决定下一步" in runtime_prompt
     assert "优先选择 target_agent_name=user" in runtime_prompt
     assert "不得只凭问号" in runtime_prompt
-    assert "只选择下一位发言者，不生成主持话术" in runtime_prompt
+    assert "只选择下一位发言者并锁定本轮命中动作，不生成主持话术" in runtime_prompt
+    assert "current_phase、target_agent_name 和 selected_action 必须同时来自这一行" in runtime_prompt
     assert "命中询问用户的动作时 target_agent_name 填 user" in runtime_prompt
-    assert "字段只能是 current_phase、target_agent_name、suggested_add_agent_names" in retry_prompt
+    assert "字段只能是 current_phase、target_agent_name、selected_action、suggested_add_agent_names" in retry_prompt
+    assert "selected_action 必须非空" in retry_prompt
     assert "询问用户填 user" in retry_prompt
     assert "等待用户条件成立的强证据" in retry_prompt
+
+
+def test_host_handoff_prompt_uses_fixed_selected_action_as_executable_source():
+    rendered = render_platform_prompt(
+        "host.write_scheduler_message.v1",
+        {
+            "target_agent_name": "资源管理专家",
+            "current_phase": "资源管理",
+            "selected_action": "依据用户最新回复继续同一资源任务。",
+            "suggested_add_agent_names": "[]",
+            "user_message": "渲染为网页正文（富文本）",
+            "recent_history": "【资源管理专家】请确认发布形式。",
+        },
+    )
+
+    assert "固定 selected_action" in rendered
+    assert "依据用户最新回复继续同一资源任务" in rendered
+    assert "显示在前端、同时可供下一位发言者直接承接" in rendered
+    assert "本轮目标、已经确认且确有依据的必要输入、预期结果和停止边界" in rendered
+    assert "不得重新读取四列表选择另一行动" in rendered
 
 
 def test_host_prompt_receives_skill_sessions_as_context_not_route_instruction():

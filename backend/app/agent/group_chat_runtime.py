@@ -350,6 +350,7 @@ async def _run_contract_events(
 
     turns = 0
     suppress_host_message = route_source == "target_agent"
+    expert_user_text = user_text
     while True:
         host_message_body = host_scheduler.get("message") if isinstance(host_scheduler.get("message"), dict) else {}
         if next_speaker in {"user", "end"}:
@@ -468,7 +469,7 @@ async def _run_contract_events(
                     agent_name=next_speaker,
                     messages=messages,
                     discussion_goal=discussion_goal,
-                    user_text=user_text,
+                    user_text=expert_user_text,
                     next_action=next_action,
                     outcome=expert_outcome,
                     skills_loader=_request_skills_loader(),
@@ -613,6 +614,7 @@ async def _run_contract_events(
         )
         latest_state["last_expert_turn"] = last_expert_turn
         write_group_orchestration_state(group_session_id, latest_state)
+        expert_user_text = ""
         if expert_outcome.agent_turn == "continue":
             suppress_host_message = True
             continue

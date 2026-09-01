@@ -227,11 +227,12 @@ async def _host_decide_by_agent(
         selection = host_speaker_selection_from_payload(selection_payload, agent_profiles, host_mode=host_mode)
         logger.info(
             "host_speaker_selection session=%s host=%s target_agent_name=%s current_phase=%s "
-            "suggested_add_agent_names=%s",
+            "selected_action_chars=%s suggested_add_agent_names=%s",
             group_session_id,
             host_name,
             selection["target_agent_name"],
             selection["current_phase"],
+            len(str(selection.get("selected_action") or "")),
             selection.get("suggested_add_agent_names") or [],
         )
         message_prompt = render_platform_prompt(
@@ -243,6 +244,7 @@ async def _host_decide_by_agent(
                     selection.get("suggested_add_agent_names") or [],
                     ensure_ascii=False,
                 ),
+                "selected_action": selection["selected_action"],
                 "user_message": user_message_context,
                 "recent_history": recent_messages or "（无）",
             },

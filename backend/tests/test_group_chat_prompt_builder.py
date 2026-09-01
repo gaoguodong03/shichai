@@ -44,9 +44,68 @@ def test_expert_turn_prompt_keeps_host_task_and_user_input_without_memory(monkey
     assert "【主持人本轮指派" in bundle.user_content
     assert "智能软件工程及伦理" in bundle.user_content
     assert "【本轮用户输入】\n开始写报告" in bundle.user_content
-    assert "【最近讨论】" in bundle.user_content
+    assert "【输入依据】" in bundle.user_content
+    assert "【最近讨论】" not in bundle.user_content
+    assert bundle.user_content.count("以下最近讨论仅供承接上下文") == 1
     assert bundle.debug["has_next_action"] is True
     assert bundle.debug["has_user_message"] is True
+
+
+def test_expert_turn_prompt_promotes_current_host_task_even_when_same_text_is_in_history(monkeypatch):
+    from app.agent import group_chat_memory_prompt
+    from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
+
+    monkeypatch.setattr(
+        group_chat_memory_prompt,
+        "build_dispatch_context",
+        lambda *args, **kwargs: {"has_memory": False, "rendered": ""},
+    )
+    host_task = "请资源管理专家处理用户发布 operation.md 的需求。"
+    recent = (
+        "以下最近讨论仅供承接上下文；本轮用户输入优先。\n\n"
+        "【用户】我希望发布以下文件。\n\n"
+        f"【主持人】{host_task}\n\n"
+        "【资源管理专家】请确认发布形式。\n\n"
+        "【用户】渲染为网页正文（富文本）"
+    )
+
+    bundle = build_expert_turn_prompt(
+        session_id="group-resource",
+        target_agent_name="资源管理专家",
+        discussion_goal="渲染为网页正文（富文本）",
+        user_message="渲染为网页正文（富文本）",
+        memory_prompt=recent,
+        app_settings={"group_memory": {"enabled": True}},
+        next_action=host_task,
+    )
+
+    assert bundle.user_content.startswith("【主持人本轮指派")
+    assert bundle.user_content.count(host_task) == 2
+    assert bundle.user_content.count("以下最近讨论仅供承接上下文") == 1
+    assert "【最近讨论】" not in bundle.user_content
+
+
+def test_expert_turn_prompt_marks_absent_new_user_input_explicitly(monkeypatch):
+    from app.agent import group_chat_memory_prompt
+    from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
+
+    monkeypatch.setattr(
+        group_chat_memory_prompt,
+        "build_dispatch_context",
+        lambda *args, **kwargs: {"has_memory": False, "rendered": ""},
+    )
+
+    bundle = build_expert_turn_prompt(
+        session_id="group-resource",
+        target_agent_name="资源管理专家",
+        discussion_goal="发布文档",
+        user_message="",
+        memory_prompt="【资源管理专家】上一步已经完成。",
+        app_settings={"group_memory": {"enabled": True}},
+        next_action="继续处理主持人明确分配的下一阶段任务。",
+    )
+
+    assert "【本轮用户输入】\n（无）" in bundle.user_content
 
 
 def test_expert_turn_prompt_direct_user_branch_uses_same_builder():

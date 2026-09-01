@@ -79,6 +79,7 @@ def host_speaker_selection_from_payload(
             agent_profiles,
             schema_name="HostSpeakerSelectionPayload",
         ),
+        "selected_action": payload.selected_action,
         "suggested_add_agent_names": suggested or None,
     }
 
@@ -87,7 +88,12 @@ def compose_host_scheduler_decision(
     selection: HostSpeakerSelectionPayload | Dict[str, Any],
     message_payload: HostMessagePayload,
 ) -> Dict[str, Any]:
-    """Combine a fixed speaker selection with target-free host presentation fields."""
+    """Combine a fixed speaker selection with target-free host handoff fields.
+
+    ``selected_action`` is an ephemeral semantic lock between the two host calls.
+    The rendered handoff becomes the canonical message, so the lock is not copied
+    into the persisted scheduler decision.
+    """
     selected = (
         selection.model_dump(exclude_none=True)
         if isinstance(selection, HostSpeakerSelectionPayload)

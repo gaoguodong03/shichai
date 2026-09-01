@@ -53,7 +53,10 @@ def build_expert_turn_prompt(
             dict(app_settings or {}),
             host_next_action=task_text,
         ).strip()
-        if task_text and task_text not in user_content:
+        # The same task text may already appear in the historical context.  That
+        # does not make it the current instruction, so require the explicit
+        # high-priority section instead of relying on a substring match.
+        if task_text and "【主持人本轮指派" not in user_content:
             user_content = render_platform_prompt(
                 "expert.turn.host_instruction_section.v1",
                 {"host_instruction": task_text},
@@ -63,7 +66,18 @@ def build_expert_turn_prompt(
                 "expert.turn.user_input_section.v1",
                 {"current_user_input": current_user_input},
             )
-        if not _has_any_section(user_content, ("最近讨论", "历史对话（供参考）", "最近几轮讨论内容")):
+        if not _has_any_section(
+            user_content,
+            (
+                "最近讨论",
+                "历史对话（供参考）",
+                "最近几轮讨论内容",
+                "输入依据",
+                "上下文",
+                "已知信息",
+                "关键事实",
+            ),
+        ):
             user_content += "\n\n" + render_platform_prompt(
                 "expert.turn.memory_prompt_section.v1",
                 {"memory_prompt": memory_prompt_text},

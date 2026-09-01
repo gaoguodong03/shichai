@@ -33,6 +33,7 @@ def test_host_speaker_selection_accepts_explicit_user_and_end_targets():
         {
             "current_phase": "文档合著",
             "target_agent_name": "user",
+            "selected_action": "询问用户补充目标篇幅。",
             "suggested_add_agent_names": [],
         }
     )
@@ -40,6 +41,7 @@ def test_host_speaker_selection_accepts_explicit_user_and_end_targets():
         {
             "current_phase": "end",
             "target_agent_name": "end",
+            "selected_action": "告知用户协作已经结束。",
             "suggested_add_agent_names": [],
         }
     )
@@ -61,6 +63,7 @@ def test_host_speaker_selection_schema_enumerates_only_current_routes():
             {
                 "current_phase": "文档合著",
                 "target_agent_name": "信息检索专家",
+                "selected_action": "调度信息检索专家继续检索。",
                 "suggested_add_agent_names": [],
             }
         )
@@ -82,6 +85,7 @@ def test_host_speaker_selection_requires_user_target_for_recruitment():
             {
                 "current_phase": "招募",
                 "target_agent_name": "写作专家",
+                "selected_action": "建议邀请检索专家。",
                 "suggested_add_agent_names": ["检索专家"],
             }
         )
@@ -92,6 +96,7 @@ def test_compose_host_decision_cannot_be_retargeted_by_message_payload():
         {
             "current_phase": "文档合著",
             "target_agent_name": "user",
+            "selected_action": "询问用户补充目标篇幅与侧重维度。",
             "suggested_add_agent_names": [],
         }
     )
@@ -107,6 +112,18 @@ def test_compose_host_decision_cannot_be_retargeted_by_message_payload():
         },
         "suggested_add_agent_names": [],
     }
+
+
+def test_host_speaker_selection_requires_nonempty_selected_action():
+    with pytest.raises(ValidationError):
+        HostSpeakerSelectionPayload.model_validate(
+            {
+                "current_phase": "文档合著",
+                "target_agent_name": "文档合著专家",
+                "selected_action": "",
+                "suggested_add_agent_names": [],
+            }
+        )
 
 
 @pytest.mark.parametrize("extra_field", ["next_speaker", "next_action", "reason", "invite", "announcement"])

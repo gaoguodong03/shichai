@@ -607,6 +607,7 @@ async def test_agent_turn_continue_schedules_same_expert_without_host_decision(m
     state.save_group_history("s-agent-turn-continue", [])
     host_calls = 0
     expert_calls: list[str] = []
+    expert_user_inputs: list[str] = []
 
     async def _host_decision(*_args, **_kwargs):
         nonlocal host_calls
@@ -625,6 +626,7 @@ async def test_agent_turn_continue_schedules_same_expert_without_host_decision(m
 
     async def _expert_turn(**kwargs):
         expert_calls.append(kwargs["agent_name"])
+        expert_user_inputs.append(kwargs["user_text"])
         outcome = kwargs["outcome"]
         outcome.succeed()
         if len(expert_calls) == 1:
@@ -669,11 +671,95 @@ async def test_agent_turn_continue_schedules_same_expert_without_host_decision(m
     parsed = [_parse_sse_block(item) for item in events]
     assert host_calls == 2
     assert expert_calls == ["文档合著专家", "文档合著专家"]
+    assert expert_user_inputs == ["帮我写文章", ""]
     assert [payload["message"]["content"] for event, payload in parsed if event == "message"] == [
         "请先写文章大纲。",
         "最终完成。",
         "请确认是否继续。",
     ]
+
+
+@pytest.mark.asyncio
+async def test_host_reassigned_expert_does_not_receive_old_user_text_as_new_input(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    session_id = "s-host-reassigned-expert"
+    state.save_session_definitions(
+        {
+            session_id: {
+                "title": "主持人再次派发",
+                "agent_names": ["资源管理专家"],
+                "host": {"name": "四九"},
+                "created_at": "2026071100000000",
+                "updated_at": "2026071100000000",
+            }
+        }
+    )
+    state.save_group_history(session_id, [])
+    decisions = [
+        {
+            "current_phase": "资源管理",
+            "message": {"content": "执行资源查询。", "target_agent_name": "资源管理专家"},
+            "suggested_add_agent_names": [],
+        },
+        {
+            "current_phase": "资源管理",
+            "message": {"content": "继续处理下一阶段。", "target_agent_name": "资源管理专家"},
+            "suggested_add_agent_names": [],
+        },
+        {
+            "current_phase": "等待用户",
+            "message": {"content": "处理完成。", "target_agent_name": "user"},
+            "suggested_add_agent_names": [],
+        },
+    ]
+    expert_user_inputs: list[str] = []
+
+    async def _host_decision(*_args, **_kwargs):
+        return decisions.pop(0)
+
+    async def _expert_turn(**kwargs):
+        expert_user_inputs.append(kwargs["user_text"])
+        call_number = len(expert_user_inputs)
+        outcome = kwargs["outcome"]
+        outcome.skill = "resource-query"
+        outcome.message_id = f"msg-expert-{call_number}"
+        outcome.succeed(agent_turn="respond", skill_session="release", execution_status="succeeded")
+        expert_msg = {
+            "message_id": outcome.message_id,
+            "speaker": {"type": "expert", "agent_name": kwargs["agent_name"], "skill": outcome.skill},
+            "message": {"content": f"第 {call_number} 阶段完成。"},
+            "created_at": f"202607110000010{call_number}",
+            "skill_result": {"execution_status": "succeeded"},
+        }
+        kwargs["messages"].append(expert_msg)
+        yield runtime.serialize_sse_event("message", expert_msg)
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(runtime, "run_one_expert_turn", _expert_turn)
+
+    _events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id=session_id,
+            request=GroupChatRequest(message="查询全部资源", message_id="msg-user-1"),
+            run_id="run-host-reassigned",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()[session_id],
+            app_settings={},
+            agent_map={"资源管理专家": {"name": "资源管理专家", "description": "管理资源"}},
+            agent_names=["资源管理专家"],
+            messages=[],
+            discussion_goal="查询全部资源",
+            user_text="查询全部资源",
+        )
+    ]
+
+    assert expert_user_inputs == ["查询全部资源", ""]
+    assert decisions == []
 
 
 @pytest.mark.asyncio

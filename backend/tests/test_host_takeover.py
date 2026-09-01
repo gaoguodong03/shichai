@@ -378,6 +378,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
             if len(calls) == 1:
                 return FakeResponse(
                     '{"current_phase":"阶段2","target_agent_name":"写作专家",'
+                    '"selected_action":"调度写作专家完成大纲。",'
                     '"suggested_add_agent_names":[]}'
                 )
             return FakeResponse('{"content":"请写大纲","attachments":[],"artifacts":[]}')
@@ -423,14 +424,16 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     assert system_prompt.index("场景共享任务契约") < system_prompt.index("主持人系统提示")
     assert system_prompt.index("主持人系统提示") < system_prompt.index("网文专用主持 Skill 正文")
     assert system_prompt.index("网文专用主持 Skill 正文") < system_prompt.index("平台内部协议")
-    assert "本次只执行主持人发言人选择阶段" in system_prompt
-    assert "本次只执行主持人展示话术生成阶段" in message_system_prompt
+    assert "本次只执行主持人发言人选择与命中动作锁定阶段" in system_prompt
+    assert "本次只执行主持人交接内容生成阶段" in message_system_prompt
     assert "书童四九平台主持人" not in system_prompt
     assert "只允许输出上述字段" not in selection_prompt
     assert "允许的 target_agent_name 值" in selection_prompt
     assert '["user", "end", "写作专家"]' in selection_prompt
-    assert "下一位发言者已经固定" in message_prompt
+    assert "下一位发言者和四列表命中动作已经固定" in message_prompt
     assert "写作专家" in message_prompt
+    assert "调度写作专家完成大纲" in message_prompt
+    assert "同时可供下一位发言者直接承接" in message_prompt
     assert '"next_action"' not in selection_prompt
     assert "scheduler_state" not in session_item
 
@@ -453,6 +456,7 @@ async def test_host_decide_uses_structured_last_expert_turn_for_returning_expert
             if len(calls) == 1:
                 return FakeResponse(
                     '{"current_phase":"阶段2","target_agent_name":"写作专家",'
+                    '"selected_action":"调度写作专家继续下一阶段写作。",'
                     '"suggested_add_agent_names":[]}'
                 )
             return FakeResponse('{"content":"继续写作","attachments":[],"artifacts":[]}')
@@ -521,6 +525,7 @@ async def test_host_decide_retries_once_on_protocol_output(monkeypatch):
             if len(calls) == 2:
                 return FakeResponse(
                     '{"current_phase":"阶段1","target_agent_name":"写作专家",'
+                    '"selected_action":"调度写作专家完成大纲。",'
                     '"suggested_add_agent_names":[]}'
                 )
             return FakeResponse('{"content":"请写大纲","attachments":[],"artifacts":[]}')
@@ -566,6 +571,7 @@ async def test_host_decide_logs_protocol_evidence_and_fallback_context(monkeypat
                     FakeResponse("first invalid host output"),
                     FakeResponse(
                         '{"current_phase":"阶段1","target_agent_name":"不存在的专家",'
+                        '"selected_action":"调度不存在的专家处理任务。",'
                         '"suggested_add_agent_names":[]}'
                     ),
                 ]
@@ -626,7 +632,9 @@ async def test_host_decide_separates_speaker_selection_from_message_generation(m
             calls.append(messages)
             if len(calls) == 1:
                 return FakeResponse(
-                    '{"current_phase":"文档合著","target_agent_name":"user","suggested_add_agent_names":[]}'
+                    '{"current_phase":"文档合著","target_agent_name":"user",'
+                    '"selected_action":"询问用户补充目标篇幅与侧重维度。",'
+                    '"suggested_add_agent_names":[]}'
                 )
             return FakeResponse(
                 '{"content":"请文档合著专家等待用户补充目标篇幅与侧重维度。","attachments":[],"artifacts":[]}'

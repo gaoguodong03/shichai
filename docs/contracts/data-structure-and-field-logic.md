@@ -703,6 +703,7 @@ MCP / HTTP 工具返回的结构化图片或二进制资源先进入平台统一
 | `tool_execution.source` | 执行日志归一化 | 日志面板、排障 | 只允许 `mcp`、`script`、`workspace`、`api`、`host`；不进入消息核心字段，也不作为业务路由字段。 |
 | `tool_execution.provider` / `tool_execution.provider_tool` | 工具日志归一化 | 日志面板、排障 | 只描述工具来源容器和容器内工具；不得替代 Skill 选择、专家路由或工具授权。 |
 | `speaker.agent_name` / `speaker.skill` | 后端消息落盘 | 前端渲染、历史事实 | 消息发言人与本轮实际 Skill；不同于 `progress.agent_name`、`route.agent_name` 和工具日志标签。 |
+| `HostSpeakerSelectionPayload.selected_action` | 主持人第一阶段 LLM 输出 | 主持人第二阶段交接生成 | 临时锁定与 `current_phase`、`target_agent_name` 同一四列表命中行的本轮动作；不持久化、不进入前端消息，也不单独产生路由。 |
 | `host_scheduler.message` | 主持人调度 | 主持人交接消息、统一路由 | 主持人跨轮阶段消息；不得退回旧 `next_speaker` / `next_action`。 |
 
 新增或修改字段时，必须先在本表或相邻契约中说明完整字段路径、生产方、消费方、是否持久化、是否可进入前端消息、是否影响主持人路由。若某字段只用于 trace、日志或排障，应明确写成日志字段，不得把它提升为消息事实或运行时分支条件。

@@ -123,9 +123,10 @@ class HostMessagePayload(StrictModel):
 class HostSpeakerSelectionPayload(StrictModel):
     current_phase: str = Field(min_length=1)
     target_agent_name: str = Field(min_length=1)
+    selected_action: str = Field(min_length=1)
     suggested_add_agent_names: list[str] = Field(default_factory=list)
 
-    @field_validator("current_phase", "target_agent_name", mode="before")
+    @field_validator("current_phase", "target_agent_name", "selected_action", mode="before")
     @classmethod
     def _routing_values_must_be_strings(cls, value: Any) -> Any:
         if not isinstance(value, str):
