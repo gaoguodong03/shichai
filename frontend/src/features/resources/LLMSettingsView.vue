@@ -132,17 +132,31 @@
 
             <label class="block text-sm font-medium text-primary mb-1">环境变量名</label>
 
-            <input
+            <select
 
               v-model="edit.api_key_env"
 
-              type="text"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring text-sm"
 
-              placeholder="QWEN_API_KEY"
+            >
 
-              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
+              <option value="">选择环境变量</option>
 
-            />
+              <option
+
+                v-if="edit.api_key_env && !envVarItems.some((s) => s.name === edit.api_key_env)"
+
+                :value="edit.api_key_env"
+
+              >
+
+                {{ edit.api_key_env }}（当前）
+
+              </option>
+
+              <option v-for="s in envVarItems" :key="s.name" :value="s.name">{{ s.label || s.name }}</option>
+
+            </select>
 
           </div>
 
@@ -247,8 +261,11 @@ import { apiRequest } from '@/api/base'
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
+import { useEnvVars } from '@/composables/useEnvVars'
 import LLMAdvancedParamsPanel from './LLMAdvancedParamsPanel.vue'
 import type { ModelParams } from './llmSettingsTypes'
+
+const { envVarItems, loadEnvVars } = useEnvVars()
 
 
 
@@ -555,7 +572,7 @@ async function saveAll(nextSelectedId?: string) {
 
 
 onMounted(async () => {
-  await load()
+  await Promise.all([load(), loadEnvVars()])
   await syncEditForProvider(effectiveLlmName.value)
 })
 
