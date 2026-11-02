@@ -8,14 +8,9 @@
 
 项目覆盖从任务对话到脚本执行、文件产物交付的完整流程：专家通过 ReAct 循环调用模型与工具，Skill 描述工作方法并按需携带脚本，MCP 接入外部能力，OpenSandbox 提供用户级脚本运行环境。会话、资源配置与工作区文件按用户隔离，便于在私有化环境中管理和复用 AI 能力。
 
-<table>
-  <tr>
-    <td width="50%"><img src="frontend/public/feature/feature1.png" alt="模型与工具生态：接入云端及本地大模型，结合 MCP 工具与 Skill 技能" width="100%" /></td>
-    <td width="50%"><img src="frontend/public/feature/feature2.png" alt="多专家场景协作：围绕数据分析、论文写作、技术调研等任务组合专家" width="100%" /></td>
-  </tr>
-</table>
+![协作会话：主持人分派任务，文档合著专家交付阶段文稿，右侧工作区保存对应文件](docs/user-manual/images/showcase-collaboration.jpg)
 
-*功能示意：模型与工具接入，以及面向不同任务的多专家协作。*
+*协同写作实景：主持人分派任务，专家交付大纲与正文，阶段成果保存到会话工作区，等待用户反馈后继续修订。*
 
 ### 核心能力
 
@@ -24,6 +19,37 @@
 - **用户级沙箱执行**：通过 OpenSandbox 执行技能脚本，支持运行依赖配置、工作区挂载与 Skill 资源只读挂载，可选择带 Playwright / Chromium 的镜像。
 - **文件与产物管理**：在会话中上传、引用、预览和编辑工作区文件，将任务过程与交付产物放在同一工作空间。
 - **资源复用与用户隔离**：集中管理场景、专家、技能、工具和模型，支持 ZIP 资源包导入导出；按用户隔离保存会话、配置、技能与文件。
+
+### 产品截图
+
+从配置专家与技能，到保存场景、预览交付文件，以下均为实际运行界面。点击图片可查看大图。
+
+<table>
+  <tr>
+    <th width="50%">专家配置</th>
+    <th width="50%">Skill 管理</th>
+  </tr>
+  <tr>
+    <td><a href="docs/user-manual/images/showcase-expert.jpg"><img src="docs/user-manual/images/showcase-expert.jpg" alt="专家配置界面：维护角色名称、模型、职责说明、系统提示词和绑定技能" width="100%" /></a></td>
+    <td><a href="docs/user-manual/images/showcase-skill.jpg"><img src="docs/user-manual/images/showcase-skill.jpg" alt="Skill 管理界面：维护 SKILL.md、工具依赖以及 references、assets、scripts 等文件" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td>明确角色职责，选择模型并绑定可用技能。</td>
+    <td>将工作步骤、阶段确认与成果保存规则沉淀为可复用技能。</td>
+  </tr>
+  <tr>
+    <th>场景配置</th>
+    <th>文件预览与交付</th>
+  </tr>
+  <tr>
+    <td><a href="docs/user-manual/images/showcase-scenario.jpg"><img src="docs/user-manual/images/showcase-scenario.jpg" alt="场景配置界面：保存应用目标、专家分工、主持人与协作规则" width="100%" /></a></td>
+    <td><a href="docs/user-manual/images/showcase-file-preview.jpg"><img src="docs/user-manual/images/showcase-file-preview.jpg" alt="会话文件预览界面：对话记录、工作区文件树与正文预览并排展示，支持编辑和下载" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td>以简历协作为例，保存专家组合与主持人规则，供同类任务复用。</td>
+    <td>在对话旁检查实际文件，继续编辑或下载阶段成果。</td>
+  </tr>
+</table>
 
 ### 技术栈
 
